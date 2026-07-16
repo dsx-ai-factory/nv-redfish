@@ -243,8 +243,14 @@ async fn get_account_collection(
     Ok(account_service.accounts().await.map(Option::unwrap)?)
 }
 
-fn slot_member(accounts_id: &str, id: u32, enabled: bool, user_name: &str) -> JsonValue {
-    json!({
+fn slot_member(
+    accounts_id: &str,
+    id: u32,
+    enabled: bool,
+    user_name: &str,
+    etag: Option<&str>,
+) -> JsonValue {
+    let mut member = json!({
         ODATA_ID: format!("{accounts_id}/{id}"),
         ODATA_TYPE: MANAGER_ACCOUNT_DATA_TYPE,
         "Id": id.to_string(),
@@ -252,20 +258,11 @@ fn slot_member(accounts_id: &str, id: u32, enabled: bool, user_name: &str) -> Js
         "Enabled": enabled,
         "AccountTypes": [],
         "UserName": user_name,
-    })
-}
-
-fn slot_member_with_etag(
-    accounts_id: &str,
-    id: u32,
-    enabled: bool,
-    user_name: &str,
-    etag: &str,
-) -> JsonValue {
-    json_merge([
-        &slot_member(accounts_id, id, enabled, user_name),
-        &json!({ "@odata.etag": etag }),
-    ])
+    });
+    if let Some(etag) = etag {
+        member["@odata.etag"] = JsonValue::String(etag.to_string());
+    }
+    member
 }
 
 async fn account_fixture(
@@ -280,7 +277,9 @@ async fn account_fixture(
     let members = JsonValue::Array(
         slots
             .iter()
-            .map(|&(id, enabled, user_name)| slot_member(&accounts_id, id, enabled, user_name))
+            .map(|&(id, enabled, user_name)| {
+                slot_member(&accounts_id, id, enabled, user_name, None)
+            })
             .collect(),
     );
 
@@ -437,14 +436,14 @@ async fn create_account_dell_slot_defined_first_available() -> TestResult<()> {
 
     bmc.expect(Expect::get(
         &account_id,
-        slot_member_with_etag(&accounts_id, 3, false, "", etag),
+        slot_member(&accounts_id, 3, false, "", Some(etag)),
     ));
 
     bmc.expect(Expect::update(
         &account_id,
         update_json,
         json_merge([
-            &slot_member(&accounts_id, 3, true, "user"),
+            &slot_member(&accounts_id, 3, true, "user", None),
             &json! {{"RoleId": "Operator"}},
         ]),
     ));
@@ -471,17 +470,17 @@ async fn create_account_slot_defined_rechecks_stale_candidate() -> TestResult<()
 
     bmc.expect(Expect::get(
         &stale_account_id,
-        slot_member_with_etag(&accounts_id, 3, true, "another-user", "slot-3-v2"),
+        slot_member(&accounts_id, 3, true, "another-user", Some("slot-3-v2")),
     ));
     bmc.expect(Expect::get(
         &available_account_id,
-        slot_member_with_etag(&accounts_id, 4, false, "", etag),
+        slot_member(&accounts_id, 4, false, "", Some(etag)),
     ));
     bmc.expect(Expect::update(
         &available_account_id,
         update_json,
         json_merge([
-            &slot_member(&accounts_id, 4, true, "user"),
+            &slot_member(&accounts_id, 4, true, "user", None),
             &json! {{ "RoleId": "Operator" }},
         ]),
     ));
@@ -501,7 +500,7 @@ async fn create_account_slot_defined_requires_etag() -> TestResult<()> {
 
     bmc.expect(Expect::get(
         &account_id,
-        slot_member(&accounts_id, 3, false, ""),
+        slot_member(&accounts_id, 3, false, "", None),
     ));
 
     assert!(matches!(
@@ -524,7 +523,7 @@ async fn create_account_slot_defined_preserves_async_task() -> TestResult<()> {
 
     bmc.expect(Expect::get(
         &account_id,
-        slot_member_with_etag(&accounts_id, 3, false, "", "slot-3-v1"),
+        slot_member(&accounts_id, 3, false, "", Some("slot-3-v1")),
     ));
 
     bmc.expect(Expect::update_task(
