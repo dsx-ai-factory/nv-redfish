@@ -185,6 +185,21 @@ impl<B: Bmc> AccountCollection<B> {
                     // Slot is already explicitly enabled. Find another slot.
                     continue;
                 }
+
+                // Expanded collection members are a snapshot. Re-fetch the
+                // candidate immediately before updating it so concurrent
+                // account creation cannot reuse stale slot state.
+                let fresh_nav = NavProperty::new_reference(account.raw().odata_id().clone());
+                let Ok(account) = Account::new(&self.bmc, &fresh_nav, &self.config.account).await
+                else {
+                    continue;
+                };
+                if account.is_enabled() || account.raw().etag().is_none() {
+                    // Without a fresh ETag, the HTTP BMC would fall back to an
+                    // unconditional `If-Match: *` update.
+                    continue;
+                }
+
                 // Build an update based on the create request:
                 let update = ManagerAccountUpdate {
                     base: None,
