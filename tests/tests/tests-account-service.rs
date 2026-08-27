@@ -243,8 +243,14 @@ async fn get_account_collection(
     Ok(account_service.accounts().await.map(Option::unwrap)?)
 }
 
-fn slot_member(accounts_id: &str, id: u32, enabled: bool, user_name: &str) -> JsonValue {
-    json!({
+fn slot_member(
+    accounts_id: &str,
+    id: u32,
+    enabled: bool,
+    user_name: &str,
+    etag: Option<&str>,
+) -> JsonValue {
+    let mut member = json!({
         ODATA_ID: format!("{accounts_id}/{id}"),
         ODATA_TYPE: MANAGER_ACCOUNT_DATA_TYPE,
         "Id": id.to_string(),
@@ -252,7 +258,11 @@ fn slot_member(accounts_id: &str, id: u32, enabled: bool, user_name: &str) -> Js
         "Enabled": enabled,
         "AccountTypes": [],
         "UserName": user_name,
-    })
+    });
+    if let Some(etag) = etag {
+        member["@odata.etag"] = JsonValue::String(etag.to_string());
+    }
+    member
 }
 
 async fn account_fixture(
@@ -267,7 +277,9 @@ async fn account_fixture(
     let members = JsonValue::Array(
         slots
             .iter()
-            .map(|&(id, enabled, user_name)| slot_member(&accounts_id, id, enabled, user_name))
+            .map(|&(id, enabled, user_name)| {
+                slot_member(&accounts_id, id, enabled, user_name, None)
+            })
             .collect(),
     );
 
@@ -419,12 +431,19 @@ async fn create_account_dell_slot_defined_first_available() -> TestResult<()> {
 
     let update_req = slot_update();
     let update_json = serde_json::to_value(&update_req).unwrap();
+    let account_id = format!("{accounts_id}/3");
+    let etag = "slot-3-v1";
+
+    bmc.expect(Expect::get(
+        &account_id,
+        slot_member(&accounts_id, 3, false, "", Some(etag)),
+    ));
 
     bmc.expect(Expect::update(
-        format!("{accounts_id}/3"),
+        &account_id,
         update_json,
         json_merge([
-            &slot_member(&accounts_id, 3, true, "user"),
+            &slot_member(&accounts_id, 3, true, "user", None),
             &json! {{"RoleId": "Operator"}},
         ]),
     ));
@@ -440,6 +459,59 @@ async fn create_account_dell_slot_defined_first_available() -> TestResult<()> {
 }
 
 #[test]
+async fn create_account_slot_defined_rechecks_stale_candidate() -> TestResult<()> {
+    let (bmc, accounts_id, accounts) =
+        account_fixture("Dell", &[(3, false, ""), (4, false, "")]).await?;
+    let update_req = slot_update();
+    let update_json = serde_json::to_value(&update_req).unwrap();
+    let stale_account_id = format!("{accounts_id}/3");
+    let available_account_id = format!("{accounts_id}/4");
+    let etag = "slot-4-v1";
+
+    bmc.expect(Expect::get(
+        &stale_account_id,
+        slot_member(&accounts_id, 3, true, "another-user", Some("slot-3-v2")),
+    ));
+    bmc.expect(Expect::get(
+        &available_account_id,
+        slot_member(&accounts_id, 4, false, "", Some(etag)),
+    ));
+    bmc.expect(Expect::update(
+        &available_account_id,
+        update_json,
+        json_merge([
+            &slot_member(&accounts_id, 4, true, "user", None),
+            &json! {{ "RoleId": "Operator" }},
+        ]),
+    ));
+
+    let account = into_entity(accounts.create_account(create_request("user")).await?).raw();
+
+    assert_eq!(account.base.id, "4");
+    assert_eq!(account.user_name.as_deref(), Some("user"));
+
+    Ok(())
+}
+
+#[test]
+async fn create_account_slot_defined_requires_etag() -> TestResult<()> {
+    let (bmc, accounts_id, accounts) = account_fixture("Dell", &[(3, false, "")]).await?;
+    let account_id = format!("{accounts_id}/3");
+
+    bmc.expect(Expect::get(
+        &account_id,
+        slot_member(&accounts_id, 3, false, "", None),
+    ));
+
+    assert!(matches!(
+        accounts.create_account(create_request("user")).await,
+        Err(nv_redfish::Error::AccountSlotNotAvailable)
+    ));
+
+    Ok(())
+}
+
+#[test]
 async fn create_account_slot_defined_preserves_async_task() -> TestResult<()> {
     let (bmc, accounts_id, accounts) =
         account_fixture("Dell", &[(1, true, "root"), (3, false, "")]).await?;
@@ -448,6 +520,11 @@ async fn create_account_slot_defined_preserves_async_task() -> TestResult<()> {
     let update_json = serde_json::to_value(&update_req).unwrap();
     let account_id = format!("{accounts_id}/3");
     let task_id = "/redfish/v1/TaskService/Tasks/43";
+
+    bmc.expect(Expect::get(
+        &account_id,
+        slot_member(&accounts_id, 3, false, "", Some("slot-3-v1")),
+    ));
 
     bmc.expect(Expect::update_task(
         &account_id,
