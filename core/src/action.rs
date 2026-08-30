@@ -47,17 +47,15 @@
 //! `"#ComputerSystem.Reset"` and retains the `target` field only.
 //!
 
+use crate::Bmc;
+use crate::ModificationResponse;
 use core::fmt::Debug;
 use core::fmt::Display;
 use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
-use std::marker::PhantomData;
-
-use crate::Bmc;
-use crate::ModificationResponse;
-
 use serde::Deserialize;
 use serde::Serialize;
+use std::marker::PhantomData;
 
 /// URI reference for the `target` field of an action.
 ///
@@ -101,7 +99,6 @@ pub struct Action<T, R> {
     /// Establishes a dependency on the `T` (parameters) type.
     #[serde(skip)]
     _marker: PhantomData<T>,
-
     /// Establishes a dependency on the `R` (return value) type.
     #[serde(skip)]
     _marker_retval: PhantomData<R>,

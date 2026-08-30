@@ -27,14 +27,11 @@
 //! - [`NavProperty<T>::id`] is always available (delegates to inner entity for expanded form).
 //! - [`NavProperty<T>::get`] returns `Arc<T>`; if already expanded, it clones the `Arc` without I/O.
 //! - [`EntityTypeRef::etag`] is `None` for reference form.
-//! - Serialization preserves the reference or expanded representation held by the value.
 //!
 //! References:
 //! - DMTF Redfish Specification DSP0266 — `https://www.dmtf.org/standards/redfish`
 //! - OASIS OData 4.01 — navigation properties in CSDL
 //!
-
-use std::sync::Arc;
 
 use crate::Bmc;
 use crate::Creatable;
@@ -45,12 +42,12 @@ use crate::FilterQuery;
 use crate::ODataETag;
 use crate::ODataId;
 use crate::Updatable;
-
 use serde::de;
 use serde::de::Deserializer;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
+use std::sync::Arc;
 
 /// Reference variant of the navigation property (only `@odata.id`
 /// property is specified).

@@ -132,6 +132,24 @@ pub enum Commands {
 ///
 /// Returns an error if command processing fails.
 pub fn process_command(command: &Commands) -> Result<Vec<String>, Error> {
+    process_command_inner(command, false)
+}
+
+/// Process a compiler command with serialization enabled for read and excerpt models.
+///
+/// # Errors
+///
+/// Returns an error if command processing fails.
+pub fn process_command_with_read_model_serialization(
+    command: &Commands,
+) -> Result<Vec<String>, Error> {
+    process_command_inner(command, true)
+}
+
+fn process_command_inner(
+    command: &Commands,
+    serialize_read_models: bool,
+) -> Result<Vec<String>, Error> {
     let mut display_output = Vec::new();
     match command {
         Commands::Compile {
@@ -161,7 +179,8 @@ pub fn process_command(command: &Commands) -> Result<Vec<String>, Error> {
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());
             let generator = RustGenerator::new(compiled, GeneratorConfig::default())
-                .map_err(Error::generate_error)?;
+                .map_err(Error::generate_error)?
+                .with_read_model_serialization(serialize_read_models);
 
             let syntax_tree =
                 syn::parse2::<syn::File>(generator.generate()).map_err(Error::ParseGenerated)?;
@@ -191,7 +210,8 @@ pub fn process_command(command: &Commands) -> Result<Vec<String>, Error> {
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());
             let generator = RustGenerator::new(compiled, GeneratorConfig::default())
-                .map_err(Error::generate_error)?;
+                .map_err(Error::generate_error)?
+                .with_read_model_serialization(serialize_read_models);
             let syntax_tree =
                 syn::parse2::<syn::File>(generator.generate()).map_err(Error::ParseGenerated)?;
             write(output, prettyplease::unparse(&syntax_tree))

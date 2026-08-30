@@ -354,6 +354,15 @@ impl<'a> ModDef<'a> {
 
     /// Generate Rust code.
     pub fn generate(self, tokens: &mut TokenStream, config: &Config) {
+        self.generate_with_read_model_serialization(tokens, config, false);
+    }
+
+    pub(crate) fn generate_with_read_model_serialization(
+        self,
+        tokens: &mut TokenStream,
+        config: &Config,
+        serialize_read_models: bool,
+    ) {
         let mut typedefs = self.typedefs.into_values().collect::<Vec<_>>();
         typedefs.sort_by_key(|v| v.name);
 
@@ -376,11 +385,11 @@ impl<'a> ModDef<'a> {
             }
 
             for s in structs {
-                s.generate(ts, config);
+                s.generate_with_read_model_serialization(ts, config, serialize_read_models);
             }
 
             for m in sub_mods {
-                m.generate(ts, config);
+                m.generate_with_read_model_serialization(ts, config, serialize_read_models);
             }
         };
 

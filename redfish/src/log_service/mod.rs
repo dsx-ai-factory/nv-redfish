@@ -154,7 +154,7 @@ impl<B: Bmc> Resource for LogService<B> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "resource-serialization"))]
 mod tests {
     use crate::schema::log_entry::LogEntry;
 

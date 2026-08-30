@@ -27,6 +27,7 @@ http-extras = [
     "bmc-http",
     "nv-redfish-bmc-http/http-extras",
 ]
+resource-serialization = []
 
 std-redfish = [
     "accounts",

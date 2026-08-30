@@ -122,6 +122,7 @@ impl Display for Error<'_> {
 pub struct RustGenerator<'a> {
     root: ModDef<'a>,
     config: Config,
+    serialize_read_models: bool,
 }
 
 impl<'a> RustGenerator<'a> {
@@ -168,7 +169,22 @@ impl<'a> RustGenerator<'a> {
             .enum_types
             .into_iter()
             .try_fold(root, |m, (_, t)| m.add_enum_type(t))?;
-        Ok(Self { root, config })
+
+        Ok(Self {
+            root,
+            config,
+            serialize_read_models: false,
+        })
+    }
+
+    /// Configures whether generated read and excerpt models implement
+    /// [`serde::Serialize`].
+    ///
+    /// Serialization is disabled by default.
+    #[must_use]
+    pub const fn with_read_model_serialization(mut self, enabled: bool) -> Self {
+        self.serialize_read_models = enabled;
+        self
     }
 
     /// Generate Rust code from the collected data.
@@ -227,7 +243,69 @@ impl<'a> RustGenerator<'a> {
                 pub type PrimitiveType = nv_redfish_core::EdmPrimitiveType;
             }
         });
-        self.root.generate(&mut tokens, &self.config);
+
+        self.root.generate_with_read_model_serialization(
+            &mut tokens,
+            &self.config,
+            self.serialize_read_models,
+        );
+
         tokens
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+    use super::RustGenerator;
+    use crate::compiler::Config as CompilerConfig;
+    use crate::compiler::SchemaBundle;
+    use crate::edmx::Edmx;
+    use quote::quote;
+
+    #[test]
+    fn read_model_serialization_is_selected_per_generator_invocation() -> Result<(), String> {
+        let schema = r#"<edmx:Edmx Version="4.0">
+          <edmx:DataServices>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Example">
+              <EntityType Name="Example"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
+              <EntityType Name="Resource" Abstract="true"/>
+              <EntityType Name="ResourceCollection" Abstract="true"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
+              <ComplexType Name="Settings"/><ComplexType Name="PreferredApplyTime"/>
+            </Schema>
+          </edmx:DataServices>
+        </edmx:Edmx>"#;
+
+        let bundle = SchemaBundle {
+            edmx_docs: vec![Edmx::parse(schema).map_err(|error| error.to_string())?],
+            root_set_threshold: None,
+        };
+
+        let serialize_and_deserialize = quote! {
+            #[derive(Serialize)]
+            #[derive(Deserialize, Debug)]
+            pub struct Example
+        }
+        .to_string();
+
+        for enabled in [false, true] {
+            let compiled = bundle
+                .compile_all(CompilerConfig::default())
+                .map_err(|error| error.to_string())?;
+
+            let generated = RustGenerator::new(compiled, Config::default())
+                .map_err(|error| error.to_string())?
+                .with_read_model_serialization(enabled)
+                .generate()
+                .to_string();
+
+            assert_eq!(generated.contains(&serialize_and_deserialize), enabled);
+        }
+
+        Ok(())
     }
 }
