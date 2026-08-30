@@ -62,8 +62,10 @@ impl EnumDef<'_> {
                 Self::#member_name => #snake_case_literal,
             });
         }
+
         members_content.extend(quote! {
-            #[doc = " Fallback value for values that are not supported by current version of Redfish schema."]
+            #[doc = " Fallback value for values that are not supported by the current Redfish schema."]
+            #[doc = " The original wire spelling is not retained; serialization emits `UnsupportedValue`."]
             #[serde(other)]
             UnsupportedValue,
         });

@@ -27,11 +27,14 @@
 //! - [`NavProperty<T>::id`] is always available (delegates to inner entity for expanded form).
 //! - [`NavProperty<T>::get`] returns `Arc<T>`; if already expanded, it clones the `Arc` without I/O.
 //! - [`EntityTypeRef::etag`] is `None` for reference form.
+//! - Serialization preserves the reference or expanded representation held by the value.
 //!
 //! References:
 //! - DMTF Redfish Specification DSP0266 — `https://www.dmtf.org/standards/redfish`
 //! - OASIS OData 4.01 — navigation properties in CSDL
 //!
+
+use std::sync::Arc;
 
 use crate::Bmc;
 use crate::Creatable;
@@ -42,11 +45,12 @@ use crate::FilterQuery;
 use crate::ODataETag;
 use crate::ODataId;
 use crate::Updatable;
+
 use serde::de;
 use serde::de::Deserializer;
 use serde::Deserialize;
 use serde::Serialize;
-use std::sync::Arc;
+use serde::Serializer;
 
 /// Reference variant of the navigation property (only `@odata.id`
 /// property is specified).
@@ -146,6 +150,21 @@ where
     }
 }
 
+impl<T> Serialize for NavProperty<T>
+where
+    T: EntityTypeRef + Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Expanded(expanded) => expanded.0.as_ref().serialize(serializer),
+            Self::Reference(reference) => reference.serialize(serializer),
+        }
+    }
+}
+
 impl<T: EntityTypeRef> EntityTypeRef for NavProperty<T> {
     fn odata_id(&self) -> &ODataId {
         match self {
@@ -241,8 +260,9 @@ mod tests {
     use crate::ODataETag;
     use crate::ODataId;
     use serde::Deserialize;
+    use serde::Serialize;
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Debug, Deserialize, Serialize)]
     struct DummyEntity {
         #[serde(rename = "@odata.id")]
         odata_id: ODataId,
@@ -306,6 +326,13 @@ mod tests {
         let parsed: NavProperty<DummyEntity> =
             serde_json::from_str(r#"{ "@odata.id": "/redfish/v1/Systems/System_1" }"#).unwrap();
 
+        let serialized = serde_json::to_value(&parsed).expect("reference must serialize");
+
+        assert_eq!(
+            serialized,
+            serde_json::json!({"@odata.id": "/redfish/v1/Systems/System_1"})
+        );
+
         match parsed {
             NavProperty::Reference(reference) => {
                 assert_eq!(
@@ -326,6 +353,16 @@ mod tests {
             }"#,
         )
         .unwrap();
+
+        let serialized = serde_json::to_value(&parsed).expect("expanded property must serialize");
+
+        assert_eq!(
+            serialized,
+            serde_json::json!({
+                "@odata.id": "/redfish/v1/Systems/System_1",
+                "Name": "System_1"
+            })
+        );
 
         match parsed {
             NavProperty::Expanded(expanded) => {

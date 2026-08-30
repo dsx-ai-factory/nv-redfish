@@ -204,7 +204,7 @@ impl<'a> StructDef<'a> {
         tokens.extend([
             doc_format_and_generate(self.name, &self.odata),
             quote! {
-                #[derive(Deserialize, Debug)]
+                #[derive(Serialize, Deserialize, Debug)]
                 pub struct #name { #content }
                 #[doc = "SAFETY: All generated data types are Send"]
                 unsafe impl Send for #name {}
@@ -272,8 +272,9 @@ impl<'a> StructDef<'a> {
         content.extend(all_properties);
 
         let name = self.name.for_excerpt_copy(excerpt_copy);
+
         tokens.extend([quote! {
-            #[derive(Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug)]
             pub struct #name { #content }
         }]);
     }
@@ -304,12 +305,12 @@ impl<'a> StructDef<'a> {
                         quote! {
                             #[serde(rename="@odata.id")]
                             pub #odata_id: ODataId,
-                            #[serde(rename="@odata.etag")]
+                            #[serde(rename="@odata.etag", skip_serializing_if = "Option::is_none")]
                             pub #odata_etag: Option<ODataETag>,
                             #maybe_odata_type
-                            #[serde(rename = "@Redfish.Settings")]
+                            #[serde(rename = "@Redfish.Settings", skip_serializing_if = "Option::is_none")]
                             pub redfish_settings: Option<#top::settings::Settings>,
-                            #[serde(rename = "@Redfish.SettingsApplyTime")]
+                            #[serde(rename = "@Redfish.SettingsApplyTime", skip_serializing_if = "Option::is_none")]
                             pub redfish_settings_apply_type: Option<#top::settings::PreferredApplyTime>,
                         },
                         ImplType::Root,
@@ -573,9 +574,18 @@ impl<'a> StructDef<'a> {
         } else if required.into_inner() {
             quote! { #[serde(rename=#rename)] }
         } else if nullable.into_inner() {
-            quote! { #[serde(rename=#rename, default, deserialize_with="de_optional_nullable")] }
+            quote! {
+                #[serde(
+                    rename=#rename,
+                    default,
+                    deserialize_with="de_optional_nullable",
+                    skip_serializing_if = "Option::is_none"
+                )]
+            }
         } else {
-            quote! { #[serde(rename=#rename, default)] }
+            quote! {
+                #[serde(rename=#rename, default, skip_serializing_if = "Option::is_none")]
+            }
         }
     }
 
@@ -782,8 +792,9 @@ impl<'a> StructDef<'a> {
             }
             None => quote! { () },
         };
+
         quote! {
-            #[serde(rename=#rename)]
+            #[serde(rename=#rename, skip_serializing_if = "Option::is_none")]
             pub #name: Option<#top::Action<#typename, #ret_type>>,
         }
     }
