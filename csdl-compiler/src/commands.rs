@@ -178,9 +178,14 @@ fn process_command_inner(
                 )
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());
-            let generator = RustGenerator::new(compiled, GeneratorConfig::default())
-                .map_err(Error::generate_error)?
-                .with_read_model_serialization(serialize_read_models);
+            let generator = RustGenerator::new(
+                compiled,
+                GeneratorConfig {
+                    serialize_read_models,
+                    ..GeneratorConfig::default()
+                },
+            )
+            .map_err(Error::generate_error)?;
 
             let syntax_tree =
                 syn::parse2::<syn::File>(generator.generate()).map_err(Error::ParseGenerated)?;
@@ -209,9 +214,14 @@ fn process_command_inner(
                 })
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());
-            let generator = RustGenerator::new(compiled, GeneratorConfig::default())
-                .map_err(Error::generate_error)?
-                .with_read_model_serialization(serialize_read_models);
+            let generator = RustGenerator::new(
+                compiled,
+                GeneratorConfig {
+                    serialize_read_models,
+                    ..GeneratorConfig::default()
+                },
+            )
+            .map_err(Error::generate_error)?;
             let syntax_tree =
                 syn::parse2::<syn::File>(generator.generate()).map_err(Error::ParseGenerated)?;
             write(output, prettyplease::unparse(&syntax_tree))

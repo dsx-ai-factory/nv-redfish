@@ -108,36 +108,18 @@ impl<'a> StructDef<'a> {
 
     /// Generate rust code for the structure.
     pub fn generate(self, tokens: &mut TokenStream, config: &Config) {
-        self.generate_with_read_model_serialization(tokens, config, false);
-    }
-
-    pub(crate) fn generate_with_read_model_serialization(
-        self,
-        tokens: &mut TokenStream,
-        config: &Config,
-        serialize_read_models: bool,
-    ) {
         for t in &self.generate {
             match t {
                 GenerateType::Create => self.generate_create(tokens, config),
-                GenerateType::Read => {
-                    self.generate_read(tokens, config, serialize_read_models);
-                }
-                GenerateType::Excerpt(v) => {
-                    self.generate_excerpt(tokens, config, v, serialize_read_models);
-                }
+                GenerateType::Read => self.generate_read(tokens, config),
+                GenerateType::Excerpt(v) => self.generate_excerpt(tokens, config, v),
                 GenerateType::Update => self.generate_update(tokens, config),
                 GenerateType::Action => self.generate_action(tokens, config),
             }
         }
     }
 
-    fn generate_read(
-        &self,
-        tokens: &mut TokenStream,
-        config: &Config,
-        serialize_read_models: bool,
-    ) {
+    fn generate_read(&self, tokens: &mut TokenStream, config: &Config) {
         let top = &config.top_module_alias;
         let mut content = TokenStream::new();
         let odata_id = Ident::new("odata_id", Span::call_site());
@@ -208,7 +190,9 @@ impl<'a> StructDef<'a> {
 
         let name = self.name;
 
-        let serialize = serialize_read_models.then(|| quote! { #[derive(Serialize)] });
+        let serialize = config
+            .serialize_read_models
+            .then(|| quote! { #[derive(Serialize)] });
 
         // Note: Manual implementation of Send and Sync is needed to
         // help compiler. It goes through all properties deeper and
@@ -276,7 +260,6 @@ impl<'a> StructDef<'a> {
         tokens: &mut TokenStream,
         config: &Config,
         excerpt_copy: &ExcerptCopy,
-        serialize_read_models: bool,
     ) {
         let mut content = TokenStream::new();
         let all_properties = self.properties.properties.iter().filter_map(|p| {
@@ -296,7 +279,9 @@ impl<'a> StructDef<'a> {
 
         let name = self.name.for_excerpt_copy(excerpt_copy);
 
-        let serialize = serialize_read_models.then(|| quote! { #[derive(Serialize)] });
+        let serialize = config
+            .serialize_read_models
+            .then(|| quote! { #[derive(Serialize)] });
 
         tokens.extend([quote! {
             #serialize
@@ -818,7 +803,6 @@ impl<'a> StructDef<'a> {
             }
             None => quote! { () },
         };
-
         quote! {
             #[serde(rename=#rename, skip_serializing_if = "Option::is_none")]
             pub #name: Option<#top::Action<#typename, #ret_type>>,

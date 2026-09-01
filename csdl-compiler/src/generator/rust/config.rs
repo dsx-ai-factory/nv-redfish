@@ -29,6 +29,9 @@ pub struct Config {
     /// Maximum number of parameters that are passed as function
     /// parameter before switching to action struct.
     pub action_fn_max_param_number_threshold: usize,
+
+    /// Whether generated read and excerpt models implement `serde::Serialize`.
+    pub serialize_read_models: bool,
 }
 
 impl Default for Config {
@@ -39,6 +42,7 @@ impl Default for Config {
                 "Base".parse().expect("should always be parsed"),
             ),
             action_fn_max_param_number_threshold: 3,
+            serialize_read_models: false,
         }
     }
 }

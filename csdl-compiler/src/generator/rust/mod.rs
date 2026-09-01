@@ -122,7 +122,6 @@ impl Display for Error<'_> {
 pub struct RustGenerator<'a> {
     root: ModDef<'a>,
     config: Config,
-    serialize_read_models: bool,
 }
 
 impl<'a> RustGenerator<'a> {
@@ -169,22 +168,7 @@ impl<'a> RustGenerator<'a> {
             .enum_types
             .into_iter()
             .try_fold(root, |m, (_, t)| m.add_enum_type(t))?;
-
-        Ok(Self {
-            root,
-            config,
-            serialize_read_models: false,
-        })
-    }
-
-    /// Configures whether generated read and excerpt models implement
-    /// [`serde::Serialize`].
-    ///
-    /// Serialization is disabled by default.
-    #[must_use]
-    pub const fn with_read_model_serialization(mut self, enabled: bool) -> Self {
-        self.serialize_read_models = enabled;
-        self
+        Ok(Self { root, config })
     }
 
     /// Generate Rust code from the collected data.
@@ -243,13 +227,7 @@ impl<'a> RustGenerator<'a> {
                 pub type PrimitiveType = nv_redfish_core::EdmPrimitiveType;
             }
         });
-
-        self.root.generate_with_read_model_serialization(
-            &mut tokens,
-            &self.config,
-            self.serialize_read_models,
-        );
-
+        self.root.generate(&mut tokens, &self.config);
         tokens
     }
 }
@@ -297,9 +275,12 @@ mod tests {
                 .compile_all(CompilerConfig::default())
                 .map_err(|error| error.to_string())?;
 
-            let generated = RustGenerator::new(compiled, Config::default())
+            let config = Config {
+                serialize_read_models: enabled,
+                ..Config::default()
+            };
+            let generated = RustGenerator::new(compiled, config)
                 .map_err(|error| error.to_string())?
-                .with_read_model_serialization(enabled)
                 .generate()
                 .to_string();
 
