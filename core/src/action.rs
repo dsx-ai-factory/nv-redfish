@@ -22,9 +22,9 @@
 //! - `T`: request parameters payload type (sent as the POST body when running the action)
 //! - `R`: response type returned by the BMC for that action
 //!
-//! Only the `target` field is deserialized. Any additional metadata
-//! (such as `...@Redfish.AllowableValues`) is ignored by this type
-//! and may be used by higher layers.
+//! Only the `target` field is retained when serializing or deserializing.
+//! Additional metadata (such as `...@Redfish.AllowableValues`) is ignored by
+//! this type and may be used by higher layers.
 //!
 //! Example: how an action appears in a Redfish resource and which part maps to [`Action`]
 //!
@@ -44,7 +44,7 @@
 //! ```
 //!
 //! The [`Action<T, R>`] value corresponds to the inner object of
-//! `"#ComputerSystem.Reset"` and deserializes the `target` field only.
+//! `"#ComputerSystem.Reset"` and retains the `target` field only.
 //!
 
 use crate::Bmc;
@@ -61,7 +61,7 @@ use std::marker::PhantomData;
 ///
 /// The [`Bmc`] implementation resolves this value when the action is run and
 /// may reject values that violate its outbound request policy before transport.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ActionTarget(String);
 
@@ -85,22 +85,22 @@ impl Display for ActionTarget {
     }
 }
 
-/// Defines a deserializable Action. It is almost always a member of the
-/// `Actions` struct in different parts of the Redfish object tree.
+/// Defines a serializable and deserializable Action. It is almost always a
+/// member of the `Actions` struct in different parts of the Redfish object tree.
 ///
 /// `T` is the type for parameters.
 /// `R` is the type for the return value.
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Action<T, R> {
     /// URI reference used to trigger the action.
     #[serde(rename = "target")]
     pub target: ActionTarget,
     // TODO: we can retrieve constraints on attributes here.
     /// Establishes a dependency on the `T` (parameters) type.
-    #[serde(skip_deserializing)]
+    #[serde(skip)]
     _marker: PhantomData<T>,
     /// Establishes a dependency on the `R` (return value) type.
-    #[serde(skip_deserializing)]
+    #[serde(skip)]
     _marker_retval: PhantomData<R>,
 }
 
@@ -157,6 +157,22 @@ mod tests {
         assert_eq!(
             format!("{action:?}"),
             "Action { target: ActionTarget(\"/redfish/v1/Actions/Test\") }"
+        );
+    }
+
+    #[test]
+    fn serialization_includes_only_the_action_target() {
+        let action: Action<NotDebug, NotDebug> = Action {
+            target: ActionTarget::new("/redfish/v1/Actions/Test".into()),
+            _marker: PhantomData,
+            _marker_retval: PhantomData,
+        };
+
+        let value = serde_json::to_value(action).expect("action must serialize");
+
+        assert_eq!(
+            value,
+            serde_json::json!({"target": "/redfish/v1/Actions/Test"})
         );
     }
 }

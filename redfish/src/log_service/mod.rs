@@ -153,3 +153,66 @@ impl<B: Bmc> Resource for LogService<B> {
         &self.data.as_ref().base
     }
 }
+
+#[cfg(all(test, feature = "resource-serialization"))]
+mod tests {
+    use crate::schema::log_entry::LogEntry;
+
+    #[test]
+    fn log_entry_serialization_preserves_retained_wire_properties() {
+        let value = serde_json::json!({
+            "@odata.id": "/redfish/v1/Systems/System/LogServices/EventLog/Entries/1",
+            "Id": "1",
+            "Name": "Event log entry",
+            "EntryType": "Event",
+            "MessageId": "ResourceEvent.1.0.ResourceErrorsDetected",
+            "DiagnosticDataType": "CPER",
+            "DiagnosticData": null,
+            "Actions": {},
+            "CPER": {
+                "NotificationType": null,
+                "Oem": {
+                    "Vendor": {
+                        "RecordType": "Example"
+                    }
+                }
+            },
+            "Links": {
+                "OriginOfCondition": {
+                    "@odata.id": "/redfish/v1/Systems/System"
+                }
+            },
+            "Oem": {
+                "Vendor": {
+                    "ErrorId": "EXAMPLE-ERROR"
+                }
+            }
+        });
+
+        let entry: LogEntry =
+            serde_json::from_value(value.clone()).expect("log entry must deserialize");
+
+        let serialized = serde_json::to_value(entry).expect("log entry must serialize");
+
+        assert_eq!(serialized, value);
+    }
+
+    #[test]
+    fn log_entry_serialization_normalizes_unknown_enum_values() {
+        let value = serde_json::json!({
+            "@odata.id": "/redfish/v1/Systems/System/LogServices/EventLog/Entries/1",
+            "Id": "1",
+            "Name": "Event log entry",
+            "EntryType": "FutureEntryType"
+        });
+
+        let entry: LogEntry = serde_json::from_value(value).expect("log entry must deserialize");
+
+        let serialized = serde_json::to_value(entry).expect("log entry must serialize");
+
+        assert_eq!(
+            serialized.get("EntryType"),
+            Some(&serde_json::json!("UnsupportedValue"))
+        );
+    }
+}

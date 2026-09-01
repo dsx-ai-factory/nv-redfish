@@ -61,7 +61,7 @@ std-not-standalone-features = assembly \
 
 std-standalone-features = $(filter-out $(std-not-standalone-features),$(all-std-features))
 
-ci-features-list := $(subst $(space),$(comma),$(all-std-features)),http-extras
+ci-features-list := $(subst $(space),$(comma),$(all-std-features)),http-extras,resource-serialization
 
 # Feature sets whose only job is to prove the configuration type checks.
 # Nothing downstream consumes the artifacts, so they run under `cargo check`:

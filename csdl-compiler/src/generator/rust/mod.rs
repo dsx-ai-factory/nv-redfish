@@ -231,3 +231,62 @@ impl<'a> RustGenerator<'a> {
         tokens
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+    use super::RustGenerator;
+    use crate::compiler::Config as CompilerConfig;
+    use crate::compiler::SchemaBundle;
+    use crate::edmx::Edmx;
+    use quote::quote;
+
+    #[test]
+    fn read_model_serialization_is_selected_per_generator_invocation() -> Result<(), String> {
+        let schema = r#"<edmx:Edmx Version="4.0">
+          <edmx:DataServices>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Example">
+              <EntityType Name="Example"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
+              <EntityType Name="Resource" Abstract="true"/>
+              <EntityType Name="ResourceCollection" Abstract="true"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
+              <ComplexType Name="Settings"/><ComplexType Name="PreferredApplyTime"/>
+            </Schema>
+          </edmx:DataServices>
+        </edmx:Edmx>"#;
+
+        let bundle = SchemaBundle {
+            edmx_docs: vec![Edmx::parse(schema).map_err(|error| error.to_string())?],
+            root_set_threshold: None,
+        };
+
+        let serialize_and_deserialize = quote! {
+            #[derive(Serialize)]
+            #[derive(Deserialize, Debug)]
+            pub struct Example
+        }
+        .to_string();
+
+        for enabled in [false, true] {
+            let compiled = bundle
+                .compile_all(CompilerConfig::default())
+                .map_err(|error| error.to_string())?;
+
+            let config = Config {
+                serialize_read_models: enabled,
+                ..Config::default()
+            };
+            let generated = RustGenerator::new(compiled, config)
+                .map_err(|error| error.to_string())?
+                .generate()
+                .to_string();
+
+            assert_eq!(generated.contains(&serialize_and_deserialize), enabled);
+        }
+
+        Ok(())
+    }
+}

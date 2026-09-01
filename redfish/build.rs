@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use nv_redfish_csdl_compiler::commands::process_command;
+use nv_redfish_csdl_compiler::commands::process_command as process_command_default;
+use nv_redfish_csdl_compiler::commands::process_command_with_read_model_serialization;
 use nv_redfish_csdl_compiler::commands::Commands;
 use nv_redfish_csdl_compiler::commands::DEFAULT_ROOT;
 use nv_redfish_csdl_compiler::features_manifest::FeaturesManifest;
@@ -41,6 +42,15 @@ fn run() -> Result<(), Box<dyn StdError>> {
     let features_manifest = PathBuf::from("features.toml");
     let manifest = FeaturesManifest::read(&features_manifest)?;
     rerun_for([&features_manifest]);
+
+    let serialize_read_models = cargo_feature_enabled("resource-serialization");
+
+    let process_command: fn(&Commands) -> Result<Vec<String>, nv_redfish_csdl_compiler::Error> =
+        if serialize_read_models {
+            process_command_with_read_model_serialization
+        } else {
+            process_command_default
+        };
 
     let redfish_csdl: [&str; 5] = [
         "Settings_v1.xml",
