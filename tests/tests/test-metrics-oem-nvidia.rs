@@ -202,7 +202,8 @@ async fn processor_metrics_oem_nvidia_malformed_payload_is_parse_error(
     };
     assert!(
         err.to_string().contains("invalid type"),
-        "unexpected error: {err}"
+        "unexpected error: {}",
+        err
     );
 
     Ok(())
@@ -275,7 +276,8 @@ async fn memory_metrics_oem_nvidia_malformed_payload_is_parse_error(
     };
     assert!(
         err.to_string().contains("invalid type"),
-        "unexpected error: {err}"
+        "unexpected error: {}",
+        err
     );
 
     Ok(())
