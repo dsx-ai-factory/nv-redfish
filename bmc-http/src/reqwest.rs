@@ -38,6 +38,7 @@ use futures_util::Stream;
 use futures_util::StreamExt as _;
 use http::header;
 use http::HeaderMap;
+use nv_redfish_core::ActionError;
 use nv_redfish_core::AsyncTask;
 use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::DataStream;
@@ -174,6 +175,19 @@ impl StdErr for BmcError {
             Self::DecodeError(e) | Self::EncodeError(e) => Some(e),
             _ => None,
         }
+    }
+}
+
+impl ActionError for BmcError {
+    fn not_supported() -> Self {
+        Self::InvalidRequest("action is not supported".to_string())
+    }
+
+    fn is_not_found(&self) -> bool {
+        matches!(
+            self,
+            Self::InvalidResponse { status, .. } if *status == reqwest::StatusCode::NOT_FOUND
+        )
     }
 }
 
@@ -1505,6 +1519,28 @@ mod tests {
 
         let created_miss = BmcError::cache_miss();
         assert!(matches!(created_miss, BmcError::CacheMiss));
+    }
+
+    #[test]
+    fn action_error_classifies_only_not_found_responses() {
+        let url: Url = "http://example.com/redfish/v1/Actions/Test"
+            .parse()
+            .expect("valid URL");
+
+        for (status, expected) in [
+            (reqwest::StatusCode::NOT_FOUND, true),
+            (reqwest::StatusCode::INTERNAL_SERVER_ERROR, false),
+        ] {
+            let error = BmcError::InvalidResponse {
+                url: url.clone(),
+                status,
+                text: String::new(),
+            };
+
+            assert_eq!(error.is_not_found(), expected);
+        }
+
+        assert!(!BmcError::CacheMiss.is_not_found());
     }
 
     #[tokio::test]

@@ -50,6 +50,7 @@ use serde_json::Error as JsonError;
 #[derive(Debug)]
 pub enum Error {
     NotSupported,
+    NotFound,
     ErrorResponse(Box<dyn StdError + Send + Sync>),
     MutexLock(String),
     NothingIsExpected,
@@ -72,6 +73,7 @@ impl Display for Error {
         match self {
             Self::ErrorResponse(err) => write!(f, "response: {err}"),
             Self::NotSupported => write!(f, "not supported"),
+            Self::NotFound => write!(f, "not found"),
             Self::MutexLock(err) => write!(f, "lock error: {err}"),
             Self::NothingIsExpected => {
                 write!(f, "nothing is expected to happen but something happened")
@@ -384,6 +386,10 @@ where
         let in_request = to_value(params).expect("json serializable");
         match expect {
             Expect {
+                request: ExpectedRequest::ActionNotFound { target, request },
+                ..
+            } if target == action.target && request == in_request => Err(Error::NotFound),
+            Expect {
                 request: ExpectedRequest::Action { target, request },
                 response,
             } if target == action.target && request == in_request => {
@@ -527,5 +533,9 @@ where
 impl ActionError for Error {
     fn not_supported() -> Self {
         Error::NotSupported
+    }
+
+    fn is_not_found(&self) -> bool {
+        matches!(self, Error::NotFound)
     }
 }

@@ -222,7 +222,7 @@ impl<B: Bmc> Chassis<B> {
             return Ok(None);
         };
 
-        action
+        match action
             .run(
                 self.bmc.as_ref(),
                 &ForceDpuResetRequest {
@@ -230,8 +230,11 @@ impl<B: Bmc> Chassis<B> {
                 },
             )
             .await
-            .map(Some)
-            .map_err(Error::Bmc)
+        {
+            Ok(response) => Ok(Some(response)),
+            Err(error) if nv_redfish_core::ActionError::is_not_found(&error) => Ok(None),
+            Err(error) => Err(Error::Bmc(error)),
+        }
     }
 
     /// Get hardware identifier of the network adpater.

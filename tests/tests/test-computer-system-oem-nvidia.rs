@@ -92,6 +92,34 @@ async fn force_restart_falls_back_when_nvidia_dpu_reset_is_absent() -> Result<()
 }
 
 #[test]
+async fn force_restart_falls_back_when_nvidia_dpu_reset_target_is_stale(
+) -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = bluefield_4_ids();
+    let standard_target = format!("{}/Actions/ComputerSystem.Reset", ids.system_id);
+    let base = system_payload(&ids, None);
+    let standard_action = redfish_action_payload("ComputerSystem.Reset", &standard_target);
+    let system = get_system(bmc.clone(), &ids, json_merge([&base, &standard_action])).await?;
+    let oem_target = expect_bluefield_chassis(&bmc, &ids, true);
+    bmc.expect(Expect::action_not_found(
+        &oem_target,
+        json!({ "ResetType": "ForceDpuReset" }),
+    ));
+    bmc.expect(Expect::action(
+        &standard_target,
+        json!({ "ResetType": "ForceRestart" }),
+        json!(null),
+    ));
+
+    assert!(matches!(
+        system.reset(Some(ResetType::ForceRestart)).await?,
+        ModificationResponse::Entity(())
+    ));
+
+    Ok(())
+}
+
+#[test]
 async fn oem_nvidia_dpu_missing_odata_id_in_oem_target_payload() -> Result<(), Box<dyn StdError>> {
     // Platform under test: NVIDIA BlueField DPU.
     // Quirk under test: missing @odata.id in OEM target payload.

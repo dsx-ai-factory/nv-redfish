@@ -75,6 +75,12 @@ pub enum ExpectedRequest {
         request: JsonValue,
     },
 
+    /// Expected action whose target is not found by the service.
+    ActionNotFound {
+        target: ActionTarget,
+        request: JsonValue,
+    },
+
     /// Expected multipart update.
     MultipartUpdate {
         uri: String,
@@ -207,6 +213,16 @@ impl<E> Expect<E> {
                 request: from_str(&request.to_string()).expect("invalid json"),
             },
             response: Ok(from_str(&response.to_string()).expect("invalid json")),
+        }
+    }
+
+    pub fn action_not_found(uri: impl Display, request: impl Display) -> Self {
+        Expect {
+            request: ExpectedRequest::ActionNotFound {
+                target: ActionTarget::new(uri.to_string()),
+                request: from_str(&request.to_string()).expect("invalid json"),
+            },
+            response: Ok(JsonValue::Null),
         }
     }
 
