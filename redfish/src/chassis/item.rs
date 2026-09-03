@@ -59,6 +59,8 @@ use crate::log_service::LogService;
 use crate::oem::liteon;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaCbcChassis;
+#[cfg(feature = "oem-nvidia")]
+use crate::oem::nvidia::NvidiaChassisActions;
 #[cfg(feature = "pcie-devices")]
 use crate::pcie_device::PcieDeviceCollection;
 #[cfg(feature = "sensors")]
@@ -472,6 +474,23 @@ impl<B: Bmc> Chassis<B> {
             .map(NvidiaCbcChassis::new)
             .transpose()
             .map(|v| v.and_then(identity))
+    }
+
+    /// Get the NVIDIA OEM actions advertised by this chassis.
+    ///
+    /// Returns `Ok(None)` when the chassis has no OEM actions object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if NVIDIA OEM actions cannot be parsed.
+    #[cfg(feature = "oem-nvidia")]
+    pub fn oem_nvidia_actions(&self) -> Result<Option<NvidiaChassisActions<B>>, Error<B>> {
+        self.data
+            .actions
+            .as_ref()
+            .and_then(|actions| actions.oem.as_ref())
+            .map(|actions| NvidiaChassisActions::new(&self.bmc, actions))
+            .transpose()
     }
 }
 

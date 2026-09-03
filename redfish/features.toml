@@ -498,6 +498,7 @@ patterns = [
     "NvidiaCable.*.*",
     "NvidiaPCIeSlots.*.*",
 ]
+action_patterns = ["NvidiaChassis.*"]
 
 [[oem-features]]
 # NVIDIA manager, power-compliance manager and managed-entity inventory..

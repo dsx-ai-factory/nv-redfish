@@ -54,7 +54,7 @@ impl ToTokens for ActionName<'_> {
 
 impl Display for ActionName<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.write_str(&casemungler::to_snake(self.0.inner()))
+        f.write_str(&casemungler::to_snake(self.0.inner().inner()))
     }
 }
 

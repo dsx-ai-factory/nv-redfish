@@ -29,6 +29,7 @@ use std::io::Error as IoError;
 use std::io::Read as _;
 use std::path::PathBuf;
 
+use crate::compiler::ActionFilterPattern;
 use crate::compiler::EntityTypeFilterPattern;
 use crate::compiler::PropertyPattern;
 
@@ -50,6 +51,16 @@ pub struct Collected<'a> {
     pub patterns: Vec<&'a EntityTypeFilterPattern>,
     pub root_patterns: Vec<&'a EntityTypeFilterPattern>,
     pub rigid_array_patterns: Vec<&'a PropertyPattern>,
+}
+
+/// OEM CSDLs and patterns collected for selected vendor features.
+#[derive(Default)]
+pub struct CollectedOem<'a> {
+    pub root_csdls: Vec<&'a String>,
+    pub resolve_csdls: Vec<&'a String>,
+    pub swordfish_resolve_csdls: Vec<&'a String>,
+    pub patterns: Vec<&'a EntityTypeFilterPattern>,
+    pub action_patterns: Vec<&'a ActionFilterPattern>,
 }
 
 impl FeaturesManifest {
@@ -127,24 +138,21 @@ impl FeaturesManifest {
         &'a self,
         vendor: &String,
         features: &[&String],
-    ) -> (
-        Vec<&'a String>, // root csdl
-        Vec<&'a String>, // resolve csdl (DMTF Redfish)
-        Vec<&'a String>, // resolve csdl (SNIA Swordfish)
-        Vec<&'a EntityTypeFilterPattern>,
-    ) {
-        self.oem_features.iter().fold(
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-            |(mut root, mut resolve, mut swordfish_resolve, mut patterns), f| {
+    ) -> CollectedOem<'a> {
+        self.oem_features
+            .iter()
+            .fold(CollectedOem::default(), |mut collected, f| {
                 if f.vendor == *vendor && features.contains(&&f.name) {
-                    root.extend(f.oem_csdl_files.iter());
-                    resolve.extend(f.csdl_files.iter());
-                    swordfish_resolve.extend(f.swordfish_csdl_files.iter());
-                    patterns.extend(f.patterns.iter());
+                    collected.root_csdls.extend(f.oem_csdl_files.iter());
+                    collected.resolve_csdls.extend(f.csdl_files.iter());
+                    collected
+                        .swordfish_resolve_csdls
+                        .extend(f.swordfish_csdl_files.iter());
+                    collected.patterns.extend(f.patterns.iter());
+                    collected.action_patterns.extend(f.action_patterns.iter());
                 }
-                (root, resolve, swordfish_resolve, patterns)
-            },
-        )
+                collected
+            })
     }
 }
 
@@ -186,6 +194,9 @@ pub struct OemFeature {
     /// compilation.
     #[serde(default)]
     pub patterns: Vec<EntityTypeFilterPattern>,
+    /// Actions to include in the OEM root set.
+    #[serde(default)]
+    pub action_patterns: Vec<ActionFilterPattern>,
 }
 
 /// Errors reading or parsing the manifest.
@@ -229,6 +240,7 @@ mod tests {
                 csdl_files: Vec::new(),
                 swordfish_csdl_files: Vec::new(),
                 patterns: Vec::new(),
+                action_patterns: Vec::new(),
             })
             .collect(),
         };

@@ -41,6 +41,11 @@ fn run() -> Result<(), Error> {
             .map(|v| v.parse())
             .collect::<Result<Vec<_>, _>>()
             .expect("must be successfuly parsed"),
+        action_patterns: ["ContosoAccountService.*"]
+            .iter()
+            .map(|v| v.parse())
+            .collect::<Result<Vec<_>, _>>()
+            .expect("must be successfuly parsed"),
         rigid_array_patterns: vec![],
     })?;
     Ok(())

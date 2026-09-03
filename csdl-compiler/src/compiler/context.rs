@@ -48,14 +48,22 @@ pub struct Context<'a> {
 }
 
 /// Compilation configuration.
-/// Filter and include rules for entity types during compilation.
+/// Filter and include rules applied during compilation.
 #[derive(Default)]
 pub struct Config {
     /// Entity type filter applied during compilation.
     pub entity_type_filter: EntityTypeFilter,
+    /// Action filter applied during compilation.
+    pub action_filter: ActionFilter,
     /// Array properties that should be generated as rigid.
     pub rigid_array_filter: PropertyFilter,
 }
+
+/// Action filter specified by wildcard patterns.
+pub type ActionFilter = EntityTypeFilter;
+
+/// Qualified-name pattern for an action's defining namespace and name.
+pub type ActionFilterPattern = EntityTypeFilterPattern;
 
 /// Entity type filter specified by wildcard patterns.
 pub struct EntityTypeFilter {
@@ -73,8 +81,8 @@ impl Default for EntityTypeFilter {
 }
 
 impl EntityTypeFilter {
-    /// Create a new filter from a list of patterns. If patterns empty
-    /// then matches anything.
+    /// Create a new filter from a list of patterns. If patterns are empty,
+    /// matches nothing.
     #[must_use]
     pub const fn new_restrictive(patterns: Vec<EntityTypeFilterPattern>) -> Self {
         Self {
@@ -82,8 +90,8 @@ impl EntityTypeFilter {
             permissive: false,
         }
     }
-    /// Create a new filter from a list of patterns. If patterns empty
-    /// then matches nothing.
+    /// Create a new filter from a list of patterns. If patterns are empty,
+    /// matches anything.
     #[must_use]
     pub const fn new_permissive(patterns: Vec<EntityTypeFilterPattern>) -> Self {
         Self {

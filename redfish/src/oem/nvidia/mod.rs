@@ -44,6 +44,9 @@ pub const OEM_KEY: &str = "Nvidia";
 #[cfg(feature = "chassis")]
 pub mod cbc_chassis;
 
+#[cfg(feature = "chassis")]
+pub mod chassis_actions;
+
 #[cfg(feature = "computer-systems")]
 pub mod computer_system;
 
@@ -53,6 +56,14 @@ pub mod processor_metrics;
 #[cfg(feature = "chassis")]
 #[doc(inline)]
 pub use cbc_chassis::NvidiaCbcChassis;
+
+#[cfg(feature = "chassis")]
+#[doc(inline)]
+pub use chassis_actions::NvidiaChassisActions;
+
+#[cfg(feature = "chassis")]
+#[doc(inline)]
+pub use chassis_actions::NvidiaChassisResetType;
 
 #[cfg(feature = "computer-systems")]
 #[doc(inline)]

@@ -123,7 +123,7 @@ pub type LocalTypeName = TaggedType<SimpleIdentifier, LocalTypeNameTag>;
 pub enum LocalTypeNameTag {}
 
 /// Name of the Action.
-pub type ActionName = TaggedType<String, ActionNameTag>;
+pub type ActionName = TaggedType<SimpleIdentifier, ActionNameTag>;
 #[doc(hidden)]
 #[derive(tagged_types::Tag)]
 #[implement(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
