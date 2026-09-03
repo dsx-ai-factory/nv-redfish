@@ -494,6 +494,48 @@ mod tests {
     }
 
     #[test]
+    fn a_released_permit_goes_to_the_longest_waiter_not_a_barger() {
+        let (client, mut transport) = controlled_client();
+        let bmc = create_bmc(client, NonZeroUsize::MIN, 0);
+        let holder_id = ODataId::from("/holder".to_owned());
+        let waiter_id = ODataId::from("/waiter".to_owned());
+        let barger_id = ODataId::from("/barger".to_owned());
+
+        // The holder takes the only permit; then two operations queue in
+        // arrival order.
+        let mut holder = tokio_test::task::spawn(bmc.get::<TestResource>(&holder_id));
+        assert_pending!(holder.poll());
+        let holder_attempt = transport.next_attempt();
+
+        let mut waiter = tokio_test::task::spawn(bmc.get::<TestResource>(&waiter_id));
+        assert_pending!(waiter.poll());
+        let mut barger = tokio_test::task::spawn(bmc.get::<TestResource>(&barger_id));
+        assert_pending!(barger.poll());
+        transport.assert_no_attempt();
+
+        // Release the permit, then poll the barger FIRST: arrival order
+        // must beat poll order, or a hot caller starves the queue.
+        respond(holder_attempt, TestResponse::Resource(None));
+        assert_ready_ok!(holder.poll());
+        assert_pending!(barger.poll());
+        transport.assert_no_attempt();
+
+        assert!(waiter.is_woken());
+        assert_pending!(waiter.poll());
+        let waiter_attempt = transport.next_attempt();
+        assert_eq!(waiter_attempt.path, "/waiter");
+        respond(waiter_attempt, TestResponse::Resource(None));
+        assert_ready_ok!(waiter.poll());
+
+        assert!(barger.is_woken());
+        assert_pending!(barger.poll());
+        let barger_attempt = transport.next_attempt();
+        assert_eq!(barger_attempt.path, "/barger");
+        respond(barger_attempt, TestResponse::Resource(None));
+        assert_ready_ok!(barger.poll());
+    }
+
+    #[test]
     fn limit_two_allows_two_operations_and_blocks_a_third() {
         let (client, mut transport) = controlled_client();
         let limit = NonZeroUsize::new(2).expect("test limit must be non-zero");

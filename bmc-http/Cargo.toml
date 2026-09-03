@@ -14,12 +14,11 @@ documentation = "https://docs.rs/nv-redfish-bmc-http"
 default = ["reqwest"]
 
 # HTTP client implementations with reqwest
-reqwest = ["dep:reqwest", "dep:serde_path_to_error", "dep:futures-util", "dep:sse-stream", "dep:tokio-util", "dep:tokio", "dep:bytes"]
-http-extras = ["dep:async-lock"]
+reqwest = ["dep:reqwest", "dep:serde_path_to_error", "dep:futures-util", "dep:sse-stream", "dep:tokio-util", "dep:tokio", "tokio/time", "dep:bytes"]
+http-extras = ["dep:tokio", "tokio/sync"]
 update-service-deprecated = ["nv-redfish-core/update-service-deprecated"]
 
 [dependencies]
-async-lock = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 futures-core = { workspace = true }
 futures-util = { workspace = true, optional = true }
@@ -36,7 +35,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_path_to_error = { workspace = true, optional = true }
 sse-stream = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true, features = ["time"] }
+tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true, features = ["compat", "io"] }
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
