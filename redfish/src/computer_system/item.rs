@@ -38,6 +38,8 @@ use std::convert::identity;
 use std::sync::Arc;
 use tagged_types::TaggedType;
 
+#[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+use crate::chassis::Chassis;
 #[cfg(feature = "bios")]
 use crate::computer_system::Bios;
 #[cfg(feature = "boot-options")]
@@ -50,6 +52,8 @@ use crate::computer_system::Processor;
 use crate::computer_system::SecureBoot;
 #[cfg(feature = "storages")]
 use crate::computer_system::Storage;
+#[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+use crate::core::ODataId;
 #[cfg(feature = "ethernet-interfaces")]
 use crate::ethernet_interface::EthernetInterfaceCollection;
 #[cfg(feature = "log-services")]
@@ -58,6 +62,8 @@ use crate::log_service::LogService;
 use crate::oem::lenovo::computer_system::LenovoComputerSystem;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaComputerSystem;
+#[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+use crate::schema::chassis_collection::ChassisCollection as ChassisCollectionSchema;
 
 #[doc(hidden)]
 pub enum ComputerSystemTag {}
@@ -111,6 +117,8 @@ pub struct ComputerSystem<B: Bmc> {
     #[allow(dead_code)] // feature-enabled...
     bmc: NvBmc<B>,
     data: Arc<ComputerSystemSchema>,
+    #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+    chassis_collection_id: Option<ODataId>,
 }
 
 impl<B: Bmc> ComputerSystem<B> {
@@ -119,6 +127,9 @@ impl<B: Bmc> ComputerSystem<B> {
         bmc: &NvBmc<B>,
         nav: &NavProperty<ComputerSystemSchema>,
         read_patch_fn: Option<&ReadPatchFn>,
+        #[cfg(all(feature = "chassis", feature = "oem-nvidia"))] chassis_collection_id: Option<
+            ODataId,
+        >,
     ) -> Result<Self, Error<B>> {
         if let Some(read_patch_fn) = read_patch_fn {
             Payload::get(bmc.as_ref(), nav, read_patch_fn.as_ref()).await
@@ -128,6 +139,8 @@ impl<B: Bmc> ComputerSystem<B> {
         .map(|data| Self {
             bmc: bmc.clone(),
             data,
+            #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+            chassis_collection_id,
         })
     }
 
@@ -190,6 +203,10 @@ impl<B: Bmc> ComputerSystem<B> {
 
     /// Reset this computer system.
     ///
+    /// A `ForceRestart` prefers the NVIDIA OEM DPU reset when it is advertised
+    /// by the system's matching chassis. If that action is not advertised, the
+    /// standard `ComputerSystem.Reset` action is used.
+    ///
     /// # Errors
     ///
     /// Returns an error if the system does not support the `Reset` action or
@@ -201,6 +218,13 @@ impl<B: Bmc> ComputerSystem<B> {
     where
         B::Error: nv_redfish_core::ActionError,
     {
+        #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+        if reset_type == Some(ResetType::ForceRestart) {
+            if let Some(response) = self.try_oem_nvidia_force_dpu_reset().await? {
+                return Ok(response);
+            }
+        }
+
         let actions = self
             .data
             .actions
@@ -215,6 +239,33 @@ impl<B: Bmc> ComputerSystem<B> {
             .reset(self.bmc.as_ref(), reset_type)
             .await
             .map_err(Error::Bmc)
+    }
+
+    #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+    async fn try_oem_nvidia_force_dpu_reset(
+        &self,
+    ) -> Result<Option<ModificationResponse<()>>, Error<B>>
+    where
+        B::Error: nv_redfish_core::ActionError,
+    {
+        let Some(chassis_collection_id) = &self.chassis_collection_id else {
+            return Ok(None);
+        };
+        let chassis_collection =
+            NavProperty::<ChassisCollectionSchema>::new_reference(chassis_collection_id.clone())
+                .get(self.bmc.as_ref())
+                .await
+                .map_err(Error::Bmc)?;
+        let Some(chassis_nav) = chassis_collection
+            .members
+            .iter()
+            .find(|member| member.id().last_segment() == Some(*self.id().inner()))
+        else {
+            return Ok(None);
+        };
+        let chassis = Chassis::new(&self.bmc, chassis_nav).await?;
+
+        chassis.oem_nvidia_force_dpu_reset().await
     }
 
     /// An array of `BootOptionReference` strings that represent the persistent boot order for with this
@@ -271,6 +322,8 @@ impl<B: Bmc> ComputerSystem<B> {
                 Ok(Self {
                     bmc: self.bmc.clone(),
                     data,
+                    #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+                    chassis_collection_id: self.chassis_collection_id.clone(),
                 })
             })
             .await

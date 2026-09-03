@@ -16,9 +16,12 @@
 
 use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::oem::nvidia::computer_system::Mode;
+use nv_redfish::resource::ResetType;
 use nv_redfish::ServiceRoot;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::json_merge;
+use nv_redfish_tests::redfish_action_payload;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Expect;
 use nv_redfish_tests::ODATA_ID;
@@ -33,11 +36,60 @@ const SERVICE_ROOT_DATA_TYPE: &str = "#ServiceRoot.v1_13_0.ServiceRoot";
 const SYSTEM_COLLECTION_DATA_TYPE: &str = "#ComputerSystemCollection.ComputerSystemCollection";
 const SYSTEM_DATA_TYPE: &str = "#ComputerSystem.v1_19_0.ComputerSystem";
 const NVIDIA_SYSTEM_DATA_TYPE: &str = "#NvidiaComputerSystem.v1_0_0.NvidiaComputerSystem";
+const CHASSIS_COLLECTION_DATA_TYPE: &str = "#ChassisCollection.ChassisCollection";
+const CHASSIS_DATA_TYPE: &str = "#Chassis.v1_22_0.Chassis";
 
 /// Service-root identity of an NVIDIA DPU.
 const DPU_VENDOR: &str = "Nvidia";
 const DPU_PRODUCT: &str = "Nvidia-BMCMezz";
 const BF3_DPU_PRODUCT: &str = "BlueField-3 DPU";
+
+#[test]
+async fn force_restart_prefers_advertised_nvidia_dpu_reset() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = bluefield_4_ids();
+    let standard_target = format!("{}/Actions/ComputerSystem.Reset", ids.system_id);
+    let base = system_payload(&ids, None);
+    let standard_action = redfish_action_payload("ComputerSystem.Reset", &standard_target);
+    let system = get_system(bmc.clone(), &ids, json_merge([&base, &standard_action])).await?;
+    let oem_target = expect_bluefield_chassis(&bmc, &ids, true);
+    bmc.expect(Expect::action(
+        &oem_target,
+        json!({ "ResetType": "ForceDpuReset" }),
+        json!(null),
+    ));
+
+    assert!(matches!(
+        system.reset(Some(ResetType::ForceRestart)).await?,
+        ModificationResponse::Entity(())
+    ));
+
+    Ok(())
+}
+
+#[test]
+async fn force_restart_falls_back_when_nvidia_dpu_reset_is_absent() -> Result<(), Box<dyn StdError>>
+{
+    let bmc = Arc::new(Bmc::default());
+    let ids = bluefield_4_ids();
+    let standard_target = format!("{}/Actions/ComputerSystem.Reset", ids.system_id);
+    let base = system_payload(&ids, None);
+    let standard_action = redfish_action_payload("ComputerSystem.Reset", &standard_target);
+    let system = get_system(bmc.clone(), &ids, json_merge([&base, &standard_action])).await?;
+    expect_bluefield_chassis(&bmc, &ids, false);
+    bmc.expect(Expect::action(
+        &standard_target,
+        json!({ "ResetType": "ForceRestart" }),
+        json!(null),
+    ));
+
+    assert!(matches!(
+        system.reset(Some(ResetType::ForceRestart)).await?,
+        ModificationResponse::Entity(())
+    ));
+
+    Ok(())
+}
 
 #[test]
 async fn oem_nvidia_dpu_missing_odata_id_in_oem_target_payload() -> Result<(), Box<dyn StdError>> {
@@ -393,6 +445,7 @@ async fn expect_service_root(
                 }
             },
             "Systems": { ODATA_ID: &ids.systems_id },
+            "Chassis": { ODATA_ID: format!("{}/Chassis", ids.root_id) },
             "Links": {
                 "Sessions": {
                     ODATA_ID: format!("{}/SessionService/Sessions", ids.root_id),
@@ -423,12 +476,69 @@ fn ids() -> Ids {
     }
 }
 
+fn bluefield_4_ids() -> Ids {
+    let root_id = ODataId::service_root();
+    let systems_id = format!("{root_id}/Systems");
+    let system_id = format!("{systems_id}/BlueField_0");
+    let nvidia_oem_id = format!("{system_id}/Oem/Nvidia");
+    Ids {
+        root_id,
+        systems_id,
+        system_id,
+        nvidia_oem_id,
+    }
+}
+
+fn expect_bluefield_chassis(bmc: &Bmc, ids: &Ids, with_reset_action: bool) -> String {
+    let chassis_collection_id = format!("{}/Chassis", ids.root_id);
+    let chassis_id = format!("{chassis_collection_id}/BlueField_0");
+    let action_target = format!("{chassis_id}/Actions/Oem/NvidiaChassis.Reset");
+    bmc.expect(Expect::get(
+        &chassis_collection_id,
+        json!({
+            ODATA_ID: &chassis_collection_id,
+            ODATA_TYPE: CHASSIS_COLLECTION_DATA_TYPE,
+            "Id": "Chassis",
+            "Name": "Chassis Collection",
+            "Members": [{ ODATA_ID: &chassis_id }]
+        }),
+    ));
+    let actions = if with_reset_action {
+        json!({
+            "Actions": {
+                "Oem": {
+                    "#NvidiaChassis.Reset": {
+                        "target": &action_target
+                    }
+                }
+            }
+        })
+    } else {
+        json!({ "Actions": { "Oem": {} } })
+    };
+    let chassis = json!({
+        ODATA_ID: &chassis_id,
+        ODATA_TYPE: CHASSIS_DATA_TYPE,
+        "Id": "BlueField_0",
+        "Name": "BlueField_0",
+        "ChassisType": "Card"
+    });
+    bmc.expect(Expect::get(&chassis_id, json_merge([&chassis, &actions])));
+
+    action_target
+}
+
 fn system_payload(ids: &Ids, nvidia_oem: Option<Value>) -> Value {
+    let name = ids
+        .system_id
+        .rsplit('/')
+        .next()
+        .unwrap_or(ids.system_id.as_str());
     let base = json!({
         ODATA_ID: &ids.system_id,
         ODATA_TYPE: SYSTEM_DATA_TYPE,
-        "Id": "Bluefield",
-        "Name": "Bluefield",
+        "Id": name,
+        "Name": name,
         "Status": {
             "Health": "OK",
             "State": "Enabled"

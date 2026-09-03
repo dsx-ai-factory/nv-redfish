@@ -101,6 +101,8 @@ pub struct SystemCollection<B: Bmc> {
     bmc: NvBmc<B>,
     collection: Arc<ComputerSystemCollectionSchema>,
     read_patch_fn: Option<ReadPatchFn>,
+    #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+    chassis_collection_id: Option<nv_redfish_core::ODataId>,
 }
 
 impl<B: Bmc> SystemCollection<B> {
@@ -131,6 +133,8 @@ impl<B: Bmc> SystemCollection<B> {
             .then(|| Arc::new(move |v| patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn);
         let filters_fn = (!filters.is_empty())
             .then(move || Arc::new(move |v: &JsonValue| filters.iter().any(|f| f(v))) as FilterFn);
+        #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+        let chassis_collection_id = root.root.chassis.as_ref().map(|nav| nav.id().clone());
 
         if let Some(collection_ref) = &root.root.systems {
             Self::expand_collection(
@@ -155,6 +159,8 @@ impl<B: Bmc> SystemCollection<B> {
                 bmc: bmc.clone(),
                 collection,
                 read_patch_fn,
+                #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+                chassis_collection_id,
             })
         })
     }
@@ -167,7 +173,16 @@ impl<B: Bmc> SystemCollection<B> {
     pub async fn members(&self) -> Result<Vec<ComputerSystem<B>>, Error<B>> {
         let mut members = Vec::new();
         for m in &self.collection.members {
-            members.push(ComputerSystem::new(&self.bmc, m, self.read_patch_fn.as_ref()).await?);
+            members.push(
+                ComputerSystem::new(
+                    &self.bmc,
+                    m,
+                    self.read_patch_fn.as_ref(),
+                    #[cfg(all(feature = "chassis", feature = "oem-nvidia"))]
+                    self.chassis_collection_id.clone(),
+                )
+                .await?,
+            );
         }
         Ok(members)
     }
