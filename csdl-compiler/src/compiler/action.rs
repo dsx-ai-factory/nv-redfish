@@ -33,6 +33,7 @@ use crate::edmx::ActionName;
 use crate::edmx::ParameterName;
 use crate::redfish::annotations::RedfishAnnotations as _;
 use crate::IsNullable;
+use crate::IsRequired;
 use crate::OneOrCollection;
 
 /// Compiled action.
@@ -146,11 +147,20 @@ pub(crate) fn compile_action<'a>(
         }
         .map_err(Box::new)
         .map_err(|e| Error::ActionParameter(&p.name, e))?;
+        let nullable = p.nullable.unwrap_or(IsNullable::new(false));
+        // Redfish Specification 11.1.5.3 uses an explicit
+        // `Nullable="false"` on an action parameter to mark it as required
+        // in the request body. Preserve the generic `Redfish.Required`
+        // annotation as an additional way to express the same constraint.
+        let required = IsRequired::new(
+            p.is_required().into_inner()
+                || p.nullable.is_some_and(|nullable| !nullable.into_inner()),
+        );
         params.push(Parameter {
             name: &p.name,
             ptype,
-            nullable: p.nullable.unwrap_or(IsNullable::new(false)),
-            required: p.is_required(),
+            nullable,
+            required,
             odata: OData::new(MustHaveId::new(false), p),
         });
         Ok((cstack.merge(compiled), params))

@@ -126,9 +126,7 @@ async fn oem_nvidia_reset_invokes_advertised_action() -> Result<(), Box<dyn StdE
 
     let actions = chassis.oem_nvidia_actions()?.unwrap();
     assert!(matches!(
-        actions
-            .reset(Some(NvidiaChassisResetType::ForceDpuReset))
-            .await?,
+        actions.reset(NvidiaChassisResetType::ForceDpuReset).await?,
         ModificationResponse::Entity(())
     ));
 
@@ -163,9 +161,7 @@ async fn oem_nvidia_reset_returns_action_not_available_when_reset_is_absent(
 
     let actions = chassis.oem_nvidia_actions()?.unwrap();
     assert!(matches!(
-        actions
-            .reset(Some(NvidiaChassisResetType::ForceDpuReset))
-            .await,
+        actions.reset(NvidiaChassisResetType::ForceDpuReset).await,
         Err(nv_redfish::Error::ActionNotAvailable)
     ));
 

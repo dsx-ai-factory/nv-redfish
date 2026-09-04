@@ -304,6 +304,7 @@ mod tests {
               </Action>
               <Action Name="AuxPowerReset" IsBound="true">
                 <Parameter Name="Chassis" Type="Chassis.v1_0_0.OemActions"/>
+                <Parameter Name="Mode" Type="Edm.String"/>
               </Action>
             </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="OtherOem">
@@ -375,6 +376,16 @@ mod tests {
                 ..CompilerConfig::default()
             })
             .map_err(|error| error.to_string())?;
+        let action = |name| {
+            compiled
+                .actions
+                .values()
+                .flat_map(|actions| actions.values())
+                .find(|action| action.name.inner().inner() == name)
+                .unwrap_or_else(|| panic!("{} action is compiled", name))
+        };
+        assert!(action("Reset").parameters[0].required.into_inner());
+        assert!(!action("AuxPowerReset").parameters[0].required.into_inner());
         let compiled = optimize(compiled, &OptimizerConfig::default());
         let generated = RustGenerator::new(compiled, Config::default())
             .map_err(|error| error.to_string())?
@@ -395,6 +406,7 @@ mod tests {
         assert!(generated.contains("pub struct ChassisAuxPowerResetAction"));
         assert!(reset_action.contains("pub reset_type"));
         assert!(reset_action.contains("NvidiaChassisResetType"));
+        assert!(!reset_action.contains("Option"));
         assert!(oem_actions.contains("pub reset"));
         assert!(oem_actions.contains("pub aux_power_reset"));
         assert!(generated.contains("pub async fn reset"));

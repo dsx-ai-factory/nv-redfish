@@ -227,7 +227,7 @@ impl<B: Bmc> UpdateService<B> {
             .simple_update(
                 self.bmc.as_ref(),
                 &UpdateServiceSimpleUpdateAction {
-                    image_uri: Some(image_uri),
+                    image_uri,
                     transfer_protocol,
                     targets,
                     username,

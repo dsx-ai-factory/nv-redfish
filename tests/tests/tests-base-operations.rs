@@ -651,7 +651,7 @@ async fn action_method_test() -> Result<(), Error> {
 
     assert!(matches!(
         service_actions
-            .test_action(&bmc, Some(ActionType::Option1))
+            .test_action(&bmc, ActionType::Option1)
             .await
             .map_err(Error::Bmc)?,
         ModificationResponse::Entity(())

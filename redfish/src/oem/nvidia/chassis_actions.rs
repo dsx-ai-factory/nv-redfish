@@ -51,7 +51,7 @@ impl<B: Bmc> NvidiaChassisActions<B> {
     /// action or if invoking the action fails.
     pub async fn reset(
         &self,
-        reset_type: Option<NvidiaChassisResetType>,
+        reset_type: NvidiaChassisResetType,
     ) -> Result<ModificationResponse<()>, Error<B>>
     where
         B::Error: nv_redfish_core::ActionError,
