@@ -117,6 +117,12 @@ impl<T, R> Debug for Action<T, R> {
 pub trait ActionError {
     /// Create an error when the action is not supported.
     fn not_supported() -> Self;
+
+    /// Returns whether the Redfish service reported that the action target was
+    /// not found.
+    fn is_not_found(&self) -> bool {
+        false
+    }
 }
 
 impl<T: Send + Sync + Serialize, R: Send + Sync + Sized + for<'de> Deserialize<'de>> Action<T, R> {

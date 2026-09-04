@@ -70,6 +70,23 @@ use crate::sensor::SensorLink;
 #[cfg(feature = "oem-nvidia")]
 use std::convert::identity;
 
+#[cfg(all(feature = "oem-nvidia", feature = "computer-systems"))]
+const NVIDIA_RESET_ACTION: &str = "#NvidiaChassis.Reset";
+
+#[cfg(all(feature = "oem-nvidia", feature = "computer-systems"))]
+#[derive(serde::Serialize)]
+struct ForceDpuResetRequest {
+    #[serde(rename = "ResetType")]
+    reset_type: NvidiaChassisResetType,
+}
+
+#[cfg(all(feature = "oem-nvidia", feature = "computer-systems"))]
+#[derive(serde::Serialize)]
+enum NvidiaChassisResetType {
+    #[serde(rename = "ForceDpuReset")]
+    ForceDpuReset,
+}
+
 #[doc(hidden)]
 pub enum ChassisTag {}
 
@@ -176,6 +193,50 @@ impl<B: Bmc> Chassis<B> {
             .reset(self.bmc.as_ref(), reset_type)
             .await
             .map_err(Error::Bmc)
+    }
+
+    #[cfg(all(feature = "oem-nvidia", feature = "computer-systems"))]
+    pub(crate) async fn oem_nvidia_force_dpu_reset(
+        &self,
+    ) -> Result<Option<ModificationResponse<()>>, Error<B>>
+    where
+        B::Error: nv_redfish_core::ActionError,
+    {
+        let Some(oem_actions) = self
+            .data
+            .actions
+            .as_ref()
+            .and_then(|actions| actions.oem.as_ref())
+        else {
+            return Ok(None);
+        };
+        let Some(action) = oem_actions
+            .additional_properties
+            .get(NVIDIA_RESET_ACTION)
+            .map(|value| {
+                serde_json::from_value::<nv_redfish_core::Action<ForceDpuResetRequest, ()>>(
+                    value.clone(),
+                )
+            })
+            .transpose()
+            .map_err(Error::Json)?
+        else {
+            return Ok(None);
+        };
+
+        match action
+            .run(
+                self.bmc.as_ref(),
+                &ForceDpuResetRequest {
+                    reset_type: NvidiaChassisResetType::ForceDpuReset,
+                },
+            )
+            .await
+        {
+            Ok(response) => Ok(Some(response)),
+            Err(error) if nv_redfish_core::ActionError::is_not_found(&error) => Ok(None),
+            Err(error) => Err(Error::Bmc(error)),
+        }
     }
 
     /// Get hardware identifier of the network adpater.
