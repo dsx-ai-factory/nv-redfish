@@ -341,10 +341,11 @@ mod test {
             </Schema>
           </edmx:DataServices>
         </edmx:Edmx>"#;
-        SchemaBundle {
-            edmx_docs: vec![Edmx::parse(schema).expect("query test schema must be valid")],
-            root_set_threshold: None,
-        }
+
+        SchemaBundle::new(
+            vec![Edmx::parse(schema).expect("query test schema must be valid")],
+            Vec::new(),
+        )
     }
 
     #[test]

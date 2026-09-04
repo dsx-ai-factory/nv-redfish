@@ -261,10 +261,10 @@ mod tests {
           </edmx:DataServices>
         </edmx:Edmx>"#;
 
-        let bundle = SchemaBundle {
-            edmx_docs: vec![Edmx::parse(schema).map_err(|error| error.to_string())?],
-            root_set_threshold: None,
-        };
+        let bundle = SchemaBundle::new(
+            vec![Edmx::parse(schema).map_err(|error| error.to_string())?],
+            Vec::new(),
+        );
 
         let serialize_and_deserialize = quote! {
             #[derive(Serialize)]
@@ -341,13 +341,11 @@ mod tests {
           </edmx:DataServices>
         </edmx:Edmx>"#;
 
-        let bundle = SchemaBundle {
-            edmx_docs: vec![
-                Edmx::parse(oem_schema).map_err(|error| error.to_string())?,
-                Edmx::parse(resolve_schema).map_err(|error| error.to_string())?,
-            ],
-            root_set_threshold: Some(1),
-        };
+        let bundle = SchemaBundle::new(
+            vec![Edmx::parse(oem_schema).map_err(|error| error.to_string())?],
+            vec![Edmx::parse(resolve_schema).map_err(|error| error.to_string())?],
+        );
+
         let compiled_without_action_patterns = bundle
             .compile_all(CompilerConfig {
                 action_filter: ActionFilter::new_restrictive(Vec::new()),

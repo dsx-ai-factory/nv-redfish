@@ -46,21 +46,26 @@ fn main() -> Result<(), Error> {
         println!(" {} <root service> <redfish-csdl-file> ...", args[0]);
         return Err(Error::ParameterNeeded);
     }
+
     let root_service = args[1].parse().map_err(Error::WrongRootService)?;
-    let schema_bundle =
-        args[2..]
-            .iter()
-            .try_fold(SchemaBundle::default(), |mut schema_bundle, fname| {
-                let mut file =
-                    std::fs::File::open(fname).map_err(|err| Error::Io(fname.clone(), err))?;
-                let mut content = String::new();
-                file.read_to_string(&mut content)
-                    .map_err(|err| Error::Io(fname.clone(), err))?;
-                schema_bundle
-                    .edmx_docs
-                    .push(Edmx::parse(&content).map_err(|e| Error::Edmx(fname.clone(), e))?);
-                Ok(schema_bundle)
-            })?;
+
+    let root_docs = args
+        .iter()
+        .skip(2)
+        .map(|fname| {
+            let mut file =
+                std::fs::File::open(fname).map_err(|err| Error::Io(fname.clone(), err))?;
+
+            let mut content = String::new();
+            file.read_to_string(&mut content)
+                .map_err(|err| Error::Io(fname.clone(), err))?;
+
+            Edmx::parse(&content).map_err(|e| Error::Edmx(fname.clone(), e))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let schema_bundle = SchemaBundle::new(root_docs, Vec::new());
+
     let compiled = schema_bundle
         .compile(
             &[root_service],

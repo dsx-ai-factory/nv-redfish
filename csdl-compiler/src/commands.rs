@@ -173,7 +173,9 @@ fn process_command_inner(
             if csdls.is_empty() {
                 return Err(Error::AtLeastOneCSDLFileNeeded);
             }
-            let schema_bundle = read_csdls(&[], csdls)?;
+
+            let schema_bundle = read_csdls(csdls, &[])?;
+
             let compiled = schema_bundle
                 .compile(
                     &[root_service],
@@ -245,24 +247,27 @@ fn process_command_inner(
 }
 
 fn read_csdls(root_csdls: &[String], resolve_csdls: &[String]) -> Result<SchemaBundle, Error> {
-    let csdls = root_csdls
-        .iter()
-        .chain(resolve_csdls.iter())
-        .collect::<Vec<_>>();
-    let edmx_docs = csdls
-        .iter()
-        .map(|fname| {
-            let mut file = File::open(fname).map_err(|err| Error::Io((*fname).clone(), err))?;
-            let mut content = String::new();
-            file.read_to_string(&mut content)
-                .map_err(|err| Error::Io((*fname).clone(), err))?;
-            Edmx::parse(&content).map_err(|e| Error::Edmx((*fname).clone(), e))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let parse_all = |fnames: &[String]| {
+        fnames
+            .iter()
+            .map(|fname| {
+                let mut file = File::open(fname).map_err(|err| Error::Io(fname.clone(), err))?;
+                let mut content = String::new();
+                file.read_to_string(&mut content)
+                    .map_err(|err| Error::Io(fname.clone(), err))?;
 
-    csdls
+                Edmx::parse(&content).map_err(|e| Error::Edmx(fname.clone(), e))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+
+    let root_docs = parse_all(root_csdls)?;
+    let resolve_docs = parse_all(resolve_csdls)?;
+
+    root_csdls
         .iter()
-        .zip(&edmx_docs)
+        .zip(&root_docs)
+        .chain(resolve_csdls.iter().zip(&resolve_docs))
         .flat_map(|(fname, edmx)| {
             edmx.data_services
                 .schemas
@@ -272,7 +277,7 @@ fn read_csdls(root_csdls: &[String], resolve_csdls: &[String]) -> Result<SchemaB
         .fold(
             BTreeMap::<String, Vec<String>>::new(),
             |mut map, (namespace, fname)| {
-                map.entry(namespace).or_default().push((*fname).clone());
+                map.entry(namespace).or_default().push(fname.clone());
                 map
             },
         )
@@ -282,12 +287,5 @@ fn read_csdls(root_csdls: &[String], resolve_csdls: &[String]) -> Result<SchemaB
             Err(Error::DuplicateNamespace(namespace, files))
         })?;
 
-    Ok(SchemaBundle {
-        edmx_docs,
-        root_set_threshold: if root_csdls.is_empty() {
-            None
-        } else {
-            Some(root_csdls.len())
-        },
-    })
+    Ok(SchemaBundle::new(root_docs, resolve_docs))
 }

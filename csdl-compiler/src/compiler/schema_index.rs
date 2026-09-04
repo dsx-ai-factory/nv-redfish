@@ -41,9 +41,10 @@ impl<'a> SchemaIndex<'a> {
     /// # Errors
     ///
     /// Returns an error if entity or complex type inheritance contains a cycle.
-    pub fn build(edmx_docs: &'a [Edmx]) -> Result<Self, Error<'a>> {
+    pub fn build(edmx_docs: impl IntoIterator<Item = &'a Edmx> + Clone) -> Result<Self, Error<'a>> {
         let index = edmx_docs
-            .iter()
+            .clone()
+            .into_iter()
             .flat_map(|v| {
                 v.data_services
                     .schemas
@@ -51,7 +52,8 @@ impl<'a> SchemaIndex<'a> {
                     .map(|s| (Namespace::new(&s.namespace), s))
             })
             .collect();
-        let (child_map, base_map) = edmx_docs.iter().fold(
+
+        let (child_map, base_map) = edmx_docs.into_iter().fold(
             (
                 HashMap::<QualifiedName<'a>, Vec<QualifiedName<'a>>>::new(),
                 HashMap::<QualifiedName<'a>, QualifiedName<'a>>::new(),
