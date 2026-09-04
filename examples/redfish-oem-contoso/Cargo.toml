@@ -5,6 +5,7 @@ license.workspace = true
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
