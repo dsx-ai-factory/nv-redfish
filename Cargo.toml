@@ -29,6 +29,7 @@ repository = "https://github.com/dsx-ai-factory/nv-redfish"
 description = "Rust implementation of Redfish API for BMC management"
 readme = "README.md"
 edition = "2018"
+rust-version = "1.95"
 keywords = ["rust", "redfish", "bmc"]
 categories = ["hardware-support"]
 

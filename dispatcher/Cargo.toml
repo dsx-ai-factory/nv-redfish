@@ -27,6 +27,7 @@ exclude = [
     "tests/**",
 ]
 edition.workspace = true
+rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
 documentation = "https://docs.rs/nv-redfish-dispatcher"
