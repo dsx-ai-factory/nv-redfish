@@ -21,6 +21,7 @@ use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::ModificationResponse;
+use serde::Deserialize as _;
 use std::sync::Arc;
 
 pub use crate::oem::nvidia::schema::nvidia_chassis::NvidiaChassisResetType;
@@ -35,8 +36,8 @@ pub struct NvidiaChassisActions<B: Bmc> {
 
 impl<B: Bmc> NvidiaChassisActions<B> {
     pub(crate) fn new(bmc: &NvBmc<B>, actions: &ChassisOemActionsSchema) -> Result<Self, Error<B>> {
-        let data =
-            serde_json::from_value(actions.additional_properties.clone()).map_err(Error::Json)?;
+        let data = NvidiaChassisActionsSchema::deserialize(&actions.additional_properties)
+            .map_err(Error::Json)?;
         Ok(Self {
             bmc: bmc.clone(),
             data: Arc::new(data),
