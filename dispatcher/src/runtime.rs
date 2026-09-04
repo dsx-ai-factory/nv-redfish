@@ -1018,7 +1018,7 @@ mod tests {
         let clock = ManualClock::new();
         let now = clock.now();
         let deadline = now + Duration::from_secs(1);
-        let interval = Duration::from_secs(60);
+        let interval = Duration::from_mins(1);
 
         let mut root = TestRoot::new();
 
@@ -1068,7 +1068,7 @@ mod tests {
         let clock = ManualClock::new();
         let now = clock.now();
         let deadline = now + Duration::from_secs(1);
-        let interval = Duration::from_secs(60);
+        let interval = Duration::from_mins(1);
         let mut root = TestRoot::new();
 
         root.add_child(PeriodicLeaf::new(now, interval, || {

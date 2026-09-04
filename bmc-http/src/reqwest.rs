@@ -466,12 +466,12 @@ impl Default for SseOptions {
 impl Default for ClientParams {
     fn default() -> Self {
         Self {
-            timeout: Some(Duration::from_secs(120)),
+            timeout: Some(Duration::from_mins(2)),
             connect_timeout: Some(Duration::from_secs(5)),
             user_agent: Some("nv-redfish/v1".to_string()),
             accept_invalid_certs: false,
             max_redirects: Some(10),
-            tcp_keepalive: Some(Duration::from_secs(60)),
+            tcp_keepalive: Some(Duration::from_mins(1)),
             pool_idle_timeout: Some(Duration::from_secs(90)),
             pool_max_idle_per_host: Some(1),
             default_headers: None,
