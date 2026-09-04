@@ -34,7 +34,6 @@ keywords = ["rust", "redfish", "bmc"]
 categories = ["hardware-support"]
 
 [workspace.dependencies]
-async-lock = { version = "3.4" }
 clap = { version = "4.5" }
 clap_derive = { version = "4.5" }
 sse-stream = { version = "0.2.4" }
@@ -70,7 +69,7 @@ nv-redfish-schema = { version = "0.1", path = "./schema" }
 toml = { version = "0.9", default-features = false }
 
 # Dev
-tokio = "1"
+tokio = "1.30"
 gungraun = "0.19.3"
 tokio-test = "0.4"
 # had to use 0.6.4 since it works with 2018 edition (2024 needs extra work) 

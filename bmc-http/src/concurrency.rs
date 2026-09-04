@@ -14,8 +14,9 @@ use nv_redfish_core::{
     MultipartUpdateRequest, ODataETag, ODataId, SessionCreateResponse, UploadReader,
 };
 
-use async_lock::Semaphore;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
+use tokio::sync::SemaphorePermit;
 
 /// Limits the number of concurrent operations entering an inner BMC.
 ///
@@ -26,8 +27,9 @@ use serde::{Deserialize, Serialize};
 /// A permit covers the complete inner [`Bmc`] operation, including transport
 /// retries. Stream operations release their permit after connection
 /// establishment, so the returned stream does not consume capacity.
-/// Capacity waits are asynchronous, and canceling a waiting operation does not
-/// consume a permit.
+/// Capacity waits are asynchronous and served in arrival order — a released
+/// permit goes to the longest waiter, so no operation starves under
+/// sustained load. Canceling a waiting operation does not consume a permit.
 ///
 /// # Examples
 ///
@@ -55,11 +57,28 @@ pub struct ConcurrencyLimitedBmc<B> {
 
 impl<B> ConcurrencyLimitedBmc<B> {
     pub(crate) const fn new(inner: B, limit: NonZeroUsize) -> Self {
+        // `const_new` asserts `permits <= MAX_PERMITS`; clamping keeps every
+        // `NonZeroUsize` valid, as it was with the previous semaphore.
+        let permits = if limit.get() > Semaphore::MAX_PERMITS {
+            Semaphore::MAX_PERMITS
+        } else {
+            limit.get()
+        };
         Self {
             inner,
-            semaphore: Semaphore::new(limit.get()),
+            semaphore: Semaphore::const_new(permits),
         }
     }
+}
+
+/// Waits for a permit. Acquisition is fair (FIFO) and only ever waits:
+/// the semaphore is never closed. A free function borrowing only the
+/// semaphore, so the future is `Send` without bounding the wrapped `B`.
+async fn permit(semaphore: &Semaphore) -> SemaphorePermit<'_> {
+    semaphore
+        .acquire()
+        .await
+        .expect("the semaphore is never closed")
 }
 
 impl<C: HttpClient> HttpBmc<C>
@@ -69,7 +88,8 @@ where
     /// Configures the maximum number of concurrent Redfish operations.
     ///
     /// The limit covers complete logical operations, including transport
-    /// retries. Without this method, the BMC remains unlimited.
+    /// retries. Without this method, the BMC remains unlimited. Limits above
+    /// `usize::MAX >> 3` are treated as that value.
     #[must_use]
     pub const fn with_request_concurrency_limit(
         self,
@@ -101,7 +121,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         id: &ODataId,
         query: ExpandQuery,
     ) -> Result<Arc<T>, Self::Error> {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.expand(id, query).await
     }
 
@@ -109,7 +129,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         &self,
         id: &ODataId,
     ) -> Result<Arc<T>, Self::Error> {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.get(id).await
     }
 
@@ -118,7 +138,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         id: &ODataId,
         query: FilterQuery,
     ) -> Result<Arc<T>, Self::Error> {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.filter(id, query).await
     }
 
@@ -131,7 +151,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         V: Send + Sync + Serialize,
         R: Send + Sync + for<'de> Deserialize<'de>,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.create(id, query).await
     }
 
@@ -144,7 +164,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         V: Send + Sync + Serialize,
         R: Send + Sync + for<'de> Deserialize<'de>,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.create_session(id, query).await
     }
 
@@ -158,7 +178,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         V: Sync + Send + Serialize,
         R: Send + Sync + Sized + for<'de> Deserialize<'de>,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.update(id, etag, update).await
     }
 
@@ -166,7 +186,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
     where
         R: EntityTypeRef + for<'de> Deserialize<'de>,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.delete(id).await
     }
 
@@ -179,7 +199,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         T: Send + Sync + Serialize,
         R: Send + Sync + Sized + for<'de> Deserialize<'de>,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.action(action, params).await
     }
 
@@ -193,7 +213,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         R: Send + Sync + for<'de> Deserialize<'de>,
         V: Send + Sync + Serialize,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.multipart_update(uri, request).await
     }
 
@@ -207,7 +227,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         U: UploadReader,
         R: Send + Sync + for<'de> Deserialize<'de>,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.http_push_uri_update(uri, request).await
     }
 
@@ -215,7 +235,7 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
     where
         T: Sized + for<'de> Deserialize<'de> + Send + 'static,
     {
-        let _permit = self.semaphore.acquire().await;
+        let _permit = permit(&self.semaphore).await;
         self.inner.stream(uri).await
     }
 }
