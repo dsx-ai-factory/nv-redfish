@@ -61,6 +61,7 @@ serde_json = { workspace = true }
 futures-util = { workspace = true, features = ["io"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 trybuild = { workspace = true }
+uuid = {workspace = true}
 
 [build-dependencies]
 nv-redfish-csdl-compiler = { workspace = true }

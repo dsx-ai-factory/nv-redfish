@@ -104,6 +104,9 @@ impl Config {
         if quirks.bug_empty_uuid_field() {
             patches.push(normalize_empty_uuid_field);
         }
+        if quirks.chassis_contains_arbitrary_string_in_uuid_fields() {
+            patches.push(arbitary_string_uuid_field);
+        }
         let read_patch_fn = (!patches.is_empty())
             .then(|| Arc::new(move |v| patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn);
         Self { read_patch_fn }
@@ -550,6 +553,20 @@ fn normalize_empty_uuid_field(mut v: JsonValue) -> JsonValue {
             let is_empty = uuid.as_str().is_some_and(str::is_empty);
             if is_empty {
                 *uuid = JsonValue::Null;
+            }
+        }
+    }
+    v
+}
+
+fn arbitary_string_uuid_field(mut v: JsonValue) -> JsonValue {
+    if let JsonValue::Object(ref mut obj) = v {
+        if let Some(id) = obj.get_mut("UUID") {
+            let is_wrong_format = id
+                .as_str()
+                .is_some_and(|ids| uuid::Uuid::parse_str(ids).is_err());
+            if is_wrong_format {
+                *id = JsonValue::Null;
             }
         }
     }

@@ -112,7 +112,7 @@ impl<B: Bmc> ServiceRoot<B> {
             .get(bmc.as_ref())
             .await
             .map_err(Error::Bmc)?;
-        let quirks = BmcQuirks::new(&root);
+        let quirks = BmcQuirks::new(&root, bmc.as_ref()).await?;
         let mut protocol_features = root
             .protocol_features_supported
             .as_ref()
