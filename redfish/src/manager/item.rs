@@ -148,7 +148,7 @@ impl<B: Bmc> Manager<B> {
         }
 
         actions
-            .reset_to_defaults(self.bmc.as_ref(), Some(reset_type))
+            .reset_to_defaults(self.bmc.as_ref(), reset_type)
             .await
             .map_err(Error::Bmc)
     }

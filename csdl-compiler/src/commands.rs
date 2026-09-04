@@ -27,6 +27,8 @@
 //! - Optimize the compiled set and run the Rust generator.
 //! - Pretty-print the resulting syntax and write it to the `output` path.
 
+use crate::compiler::ActionFilter;
+use crate::compiler::ActionFilterPattern;
 use crate::compiler::Config as CompilerConfig;
 use crate::compiler::EntityTypeFilter;
 use crate::compiler::EntityTypeFilterPattern;
@@ -116,6 +118,13 @@ pub enum Commands {
         /// `*.*.Entity1|Entity2` - `EntityType1` or `EntityType2` from any versions of any namespaces.
         #[arg(short = 'p', long = "pattern")]
         entity_type_patterns: Vec<EntityTypeFilterPattern>,
+        /// Patterns of actions to include in the OEM root set.
+        ///
+        /// Pattern is a wildcard over the action's defining namespace and name.
+        /// Example: `NvidiaChassis.*` selects every action in the
+        /// `NvidiaChassis` namespace. If empty, no actions are compiled.
+        #[arg(long = "action-pattern")]
+        action_patterns: Vec<ActionFilterPattern>,
         /// Patterns of properties that must be compiled with rigid array support
         ///
         /// Pattern is a wildcard over the qualified name.
@@ -174,6 +183,7 @@ fn process_command_inner(
                             entity_type_patterns.clone(),
                         ),
                         rigid_array_filter: PropertyFilter::new(rigid_array_patterns.clone()),
+                        ..CompilerConfig::default()
                     },
                 )
                 .map_err(Error::compile_error)?;
@@ -199,6 +209,7 @@ fn process_command_inner(
             resolve_csdls,
             output,
             entity_type_patterns,
+            action_patterns,
             rigid_array_patterns,
         } => {
             if root_csdls.is_empty() {
@@ -210,6 +221,7 @@ fn process_command_inner(
                     entity_type_filter: EntityTypeFilter::new_permissive(
                         entity_type_patterns.clone(),
                     ),
+                    action_filter: ActionFilter::new_restrictive(action_patterns.clone()),
                     rigid_array_filter: PropertyFilter::new(rigid_array_patterns.clone()),
                 })
                 .map_err(Error::compile_error)?;

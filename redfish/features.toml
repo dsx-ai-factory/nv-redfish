@@ -498,6 +498,7 @@ patterns = [
     "NvidiaCable.*.*",
     "NvidiaPCIeSlots.*.*",
 ]
+action_patterns = ["NvidiaChassis.*"]
 
 [[oem-features]]
 # NVIDIA manager, power-compliance manager and managed-entity inventory..
@@ -643,6 +644,7 @@ patterns = [
     "NvidiaFirmwarePackageCollection.*.*",
     "NvidiaPersistentStorage.*.*",
 ]
+action_patterns = ["NvidiaPersistentStorage.*"]
 
 [[oem-features]]
 # NVIDIA log service, log entries and conditions.
@@ -802,6 +804,15 @@ patterns = [
     "NvidiaPscStateCollection.*.*",
     "NvidiaErrorInjection.*.*",
 ]
+action_patterns = [
+    "NvidiaDebugToken.*",
+    "NvidiaDebugTokenManagement.*",
+    "NvidiaDOT.*",
+    "NvidiaDOTManagement.*",
+    "NvidiaDOTBackupData.*",
+    "NvidiaRoTProtectedComponent.*",
+    "NvidiaErrorInjection.*",
+]
 
 [[oem-features]]
 # Power smoothing, power/workload policies and power state groups.
@@ -834,6 +845,10 @@ patterns = [
     "NvidiaPolicy.*.*",
     "NvidiaPolicyCollection.*.*",
 ]
+action_patterns = [
+    "NvidiaPowerSmoothing.*",
+    "NvidiaWorkloadPower.*",
+]
 
 [[oem-features]]
 # System and system-configuration profiles.
@@ -853,6 +868,10 @@ patterns = [
     "NvidiaSystemProfileFile.*.*",
     "NvidiaSystemConfigProfile.*.*",
     "NvidiaSystemConfigProfileStatus.*.*",
+]
+action_patterns = [
+    "NvidiaSystemProfile.*",
+    "NvidiaSystemConfigProfile.*",
 ]
 
 [[oem-features]]

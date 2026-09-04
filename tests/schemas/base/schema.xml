@@ -208,9 +208,9 @@
         <Parameter Name="RequiredNullableCollection" Type="Collection(Edm.String)" Nullable="true">
           <Annotation Term="Redfish.Required"/>
         </Parameter>
-        <Parameter Name="OptionalValue" Type="Edm.String" Nullable="false"/>
+        <Parameter Name="OptionalValue" Type="Edm.String"/>
         <Parameter Name="OptionalNullableValue" Type="Edm.String" Nullable="true"/>
-        <Parameter Name="OptionalCollection" Type="Collection(Edm.String)" Nullable="false"/>
+        <Parameter Name="OptionalCollection" Type="Collection(Edm.String)"/>
         <Parameter Name="OptionalNullableCollection" Type="Collection(Edm.String)" Nullable="true"/>
         <Parameter Name="OptionalNullableEntity" Type="ServiceRoot.v1_0_0.TestRequiredService" Nullable="true"/>
       </Action>

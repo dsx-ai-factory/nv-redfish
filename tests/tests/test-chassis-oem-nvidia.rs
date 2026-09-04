@@ -12,11 +12,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//! Integration tests for NVIDIA CBC chassis OEM extension.
+//! Integration tests for NVIDIA chassis OEM extensions.
 
 use nv_redfish::chassis::Chassis;
+use nv_redfish::oem::nvidia::NvidiaChassisResetType;
 use nv_redfish::ServiceRoot;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
+use nv_redfish_tests::expect_redfish_reset_action;
 use nv_redfish_tests::json_merge;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Expect;
@@ -96,6 +99,71 @@ async fn oem_nvidia_cbc_wrong_odata_type_returns_not_available() -> Result<(), B
     let chassis = get_chassis(bmc.clone(), &ids, chassis).await?;
 
     assert!(chassis.oem_nvidia_cbc()?.is_none());
+
+    Ok(())
+}
+
+#[test]
+async fn oem_nvidia_reset_invokes_advertised_action() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = chassis_ids();
+    let action_target = format!("{}/Actions/Oem/NvidiaChassis.Reset", ids.chassis_id);
+    let chassis = chassis_member(
+        &ids,
+        json!({
+            "Actions": {
+                "Oem": {
+                    "#NvidiaChassis.Reset": {
+                        "target": &action_target
+                    }
+                }
+            }
+        }),
+    );
+    let chassis = get_chassis(bmc.clone(), &ids, chassis).await?;
+
+    expect_redfish_reset_action(&bmc, &action_target, Some("ForceDpuReset"));
+
+    let actions = chassis.oem_nvidia_actions()?.unwrap();
+    assert!(matches!(
+        actions.reset(NvidiaChassisResetType::ForceDpuReset).await?,
+        ModificationResponse::Entity(())
+    ));
+
+    Ok(())
+}
+
+#[test]
+async fn oem_nvidia_actions_missing_oem_returns_not_available() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = chassis_ids();
+    let chassis = get_chassis(bmc, &ids, chassis_member(&ids, json!({}))).await?;
+
+    assert!(chassis.oem_nvidia_actions()?.is_none());
+
+    Ok(())
+}
+
+#[test]
+async fn oem_nvidia_reset_returns_action_not_available_when_reset_is_absent(
+) -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = chassis_ids();
+    let chassis = chassis_member(
+        &ids,
+        json!({
+            "Actions": {
+                "Oem": {}
+            }
+        }),
+    );
+    let chassis = get_chassis(bmc, &ids, chassis).await?;
+
+    let actions = chassis.oem_nvidia_actions()?.unwrap();
+    assert!(matches!(
+        actions.reset(NvidiaChassisResetType::ForceDpuReset).await,
+        Err(nv_redfish::Error::ActionNotAvailable)
+    ));
 
     Ok(())
 }

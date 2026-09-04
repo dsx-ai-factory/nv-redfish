@@ -102,6 +102,10 @@ pub use compiled::TypeActions;
 #[doc(inline)]
 pub use complex_type::ComplexType;
 #[doc(inline)]
+pub use context::ActionFilter;
+#[doc(inline)]
+pub use context::ActionFilterPattern;
+#[doc(inline)]
 pub use context::Config;
 #[doc(inline)]
 pub use context::Context;
@@ -158,6 +162,7 @@ pub use traits::PropertiesManipulation;
 
 use crate::compiler::odata::MustHaveId;
 use crate::compiler::odata::MustHaveType;
+use crate::edmx::Action as EdmxAction;
 use crate::edmx::Edmx;
 use crate::edmx::Schema;
 use crate::edmx::SimpleIdentifier;
@@ -237,13 +242,14 @@ impl SchemaBundle {
 
     /// Compile multiple schemas, resolving all type dependencies.
     ///
-    /// The root set includes all entity and complex types.
+    /// The root set includes all entity and complex types from root documents,
+    /// plus the binding types of selected actions.
     ///
     /// # Errors
     ///
     /// Returns a compile error if any type cannot be resolved.
     pub fn compile_all(&self, config: Config) -> Result<Compiled<'_>, Error<'_>> {
-        let root_set = self.root_set_all();
+        let root_set = self.root_set_all(&config.action_filter);
         let ctx = Context {
             schema_index: SchemaIndex::build(&self.edmx_docs)?,
             config,
@@ -338,7 +344,7 @@ impl SchemaBundle {
         })
     }
 
-    fn root_set_all(&self) -> RootSet<'_> {
+    fn root_set_all(&self, action_filter: &ActionFilter) -> RootSet<'_> {
         let mut entity_types: Vec<_> = self
             .edmx_docs
             .iter()
@@ -379,12 +385,36 @@ impl SchemaBundle {
                     .collect::<Vec<_>>()
             })
             .collect();
+
+        // A selected action is a compilation root, so its binding type is a
+        // root as well. This is primarily needed by OEM actions bound to a
+        // standard OemActions type supplied in a resolution-only document.
+        if let Some(root_set_threshold) = self.root_set_threshold {
+            complex_types.extend(
+                self.edmx_docs
+                    .iter()
+                    .take(root_set_threshold)
+                    .flat_map(|edmx| edmx.data_services.schemas.iter())
+                    .flat_map(|schema| {
+                        schema
+                            .actions
+                            .iter()
+                            .filter(move |action| {
+                                action.is_bound.into_inner()
+                                    && Self::action_matches_filter(schema, action, action_filter)
+                            })
+                            .filter_map(|action| action.parameters.first())
+                            .map(|binding| QualifiedName::from(binding.ptype.qualified_type_name()))
+                    }),
+            );
+        }
         // Schemas store types in hash maps, and iteration order must not
         // decide compile order: which member of a reference cycle sees
         // the provisional type info — and with it generated output —
         // would otherwise vary run to run.
         entity_types.sort_unstable();
         complex_types.sort_unstable();
+        complex_types.dedup();
         RootSet {
             entity_types,
             complex_types,
@@ -428,14 +458,15 @@ impl SchemaBundle {
         // Compile actions for all extracted types
         self.edmx_docs
             .iter()
-            .try_fold(stack, |stack, edmx| {
+            .enumerate()
+            .try_fold(stack, |stack, (document_index, edmx)| {
                 let cstack = stack.new_frame();
                 let compiled = edmx
                     .data_services
                     .schemas
                     .iter()
                     .try_fold(cstack, |stack, s| {
-                        Self::compile_schema_actions(s, ctx, stack.new_frame())
+                        self.compile_schema_actions(document_index, s, ctx, stack.new_frame())
                             .map(|v| stack.merge(v))
                     })?
                     .done();
@@ -450,12 +481,19 @@ impl SchemaBundle {
     }
 
     fn compile_schema_actions<'a>(
+        &'a self,
+        document_index: usize,
         s: &'a Schema,
         ctx: &Context<'a>,
         stack: Stack<'a, '_>,
     ) -> Result<Compiled<'a>, Error<'a>> {
         s.actions
             .iter()
+            .filter(|action| {
+                self.root_set_threshold
+                    .is_none_or(|threshold| document_index < threshold)
+                    && Self::action_matches_filter(s, action, &ctx.config.action_filter)
+            })
             .try_fold(stack, |stack, action| {
                 let compiled =
                     action::compile_action(action, Namespace::new(&s.namespace), ctx, &stack)
@@ -466,6 +504,14 @@ impl SchemaBundle {
             .map_err(Box::new)
             .map_err(|e| Error::Schema(&s.namespace, e))
             .map(Stack::done)
+    }
+
+    fn action_matches_filter(
+        schema: &Schema,
+        action: &EdmxAction,
+        action_filter: &ActionFilter,
+    ) -> bool {
+        action_filter.matches(&QualifiedName::new(&schema.namespace, action.name.inner()))
     }
 }
 

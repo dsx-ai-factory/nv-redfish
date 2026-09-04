@@ -236,9 +236,12 @@ impl<'a> RustGenerator<'a> {
 mod tests {
     use super::Config;
     use super::RustGenerator;
+    use crate::compiler::ActionFilter;
     use crate::compiler::Config as CompilerConfig;
     use crate::compiler::SchemaBundle;
     use crate::edmx::Edmx;
+    use crate::optimizer::optimize;
+    use crate::optimizer::Config as OptimizerConfig;
     use quote::quote;
 
     #[test]
@@ -286,6 +289,130 @@ mod tests {
 
             assert_eq!(generated.contains(&serialize_and_deserialize), enabled);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn root_oem_action_bound_to_resolve_only_type_respects_filter() -> Result<(), String> {
+        let oem_schema = r#"<edmx:Edmx Version="4.0">
+          <edmx:DataServices>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="NvidiaChassis">
+              <Action Name="Reset" IsBound="true">
+                <Parameter Name="Chassis" Type="Chassis.v1_0_0.OemActions"/>
+                <Parameter Name="ResetType" Type="NvidiaChassis.v1_0_0.NvidiaChassisResetType" Nullable="false"/>
+              </Action>
+              <Action Name="AuxPowerReset" IsBound="true">
+                <Parameter Name="Chassis" Type="Chassis.v1_0_0.OemActions"/>
+                <Parameter Name="Mode" Type="Edm.String"/>
+              </Action>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="OtherOem">
+              <Action Name="Ignored" IsBound="true">
+                <Parameter Name="Chassis" Type="Chassis.v1_0_0.OemActions"/>
+              </Action>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="NvidiaChassis.v1_0_0">
+              <EnumType Name="NvidiaChassisResetType">
+                <Member Name="ForceDpuReset"/>
+              </EnumType>
+            </Schema>
+          </edmx:DataServices>
+        </edmx:Edmx>"#;
+        let resolve_schema = r#"<edmx:Edmx Version="4.0">
+          <edmx:DataServices>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Chassis.v1_0_0">
+              <ComplexType Name="OemActions"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="ResolveOnly">
+              <ComplexType Name="OemActions"/>
+              <Action Name="Ignored" IsBound="true">
+                <Parameter Name="ResolveOnly" Type="ResolveOnly.OemActions"/>
+              </Action>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
+              <EntityType Name="Resource" Abstract="true"/>
+              <EntityType Name="ResourceCollection" Abstract="true"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
+              <ComplexType Name="Settings"/>
+              <ComplexType Name="PreferredApplyTime"/>
+            </Schema>
+          </edmx:DataServices>
+        </edmx:Edmx>"#;
+
+        let bundle = SchemaBundle {
+            edmx_docs: vec![
+                Edmx::parse(oem_schema).map_err(|error| error.to_string())?,
+                Edmx::parse(resolve_schema).map_err(|error| error.to_string())?,
+            ],
+            root_set_threshold: Some(1),
+        };
+        let compiled_without_action_patterns = bundle
+            .compile_all(CompilerConfig {
+                action_filter: ActionFilter::new_restrictive(Vec::new()),
+                ..CompilerConfig::default()
+            })
+            .map_err(|error| error.to_string())?;
+        let compiled_without_action_patterns = optimize(
+            compiled_without_action_patterns,
+            &OptimizerConfig::default(),
+        );
+        let generated_without_action_patterns =
+            RustGenerator::new(compiled_without_action_patterns, Config::default())
+                .map_err(|error| error.to_string())?
+                .generate()
+                .to_string();
+
+        assert!(!generated_without_action_patterns.contains("ChassisResetAction"));
+        assert!(!generated_without_action_patterns.contains("ChassisAuxPowerResetAction"));
+        assert!(!generated_without_action_patterns.contains("pub struct OemActions"));
+
+        let compiled = bundle
+            .compile_all(CompilerConfig {
+                action_filter: ActionFilter::new_restrictive(vec!["NvidiaChassis.*"
+                    .parse()
+                    .map_err(|error| format!("{error:?}"))?]),
+                ..CompilerConfig::default()
+            })
+            .map_err(|error| error.to_string())?;
+        let action = |name| {
+            compiled
+                .actions
+                .values()
+                .flat_map(|actions| actions.values())
+                .find(|action| action.name.inner().inner() == name)
+                .unwrap_or_else(|| panic!("{} action is compiled", name))
+        };
+        assert!(action("Reset").parameters[0].required.into_inner());
+        assert!(!action("AuxPowerReset").parameters[0].required.into_inner());
+        let compiled = optimize(compiled, &OptimizerConfig::default());
+        let generated = RustGenerator::new(compiled, Config::default())
+            .map_err(|error| error.to_string())?
+            .generate()
+            .to_string();
+        let reset_action = generated
+            .split_once("pub struct ChassisResetAction")
+            .map(|(_, rest)| rest)
+            .and_then(|rest| rest.split_once('}').map(|(body, _)| body))
+            .expect("the OEM action request type is generated");
+        let oem_actions = generated
+            .split_once("pub struct OemActions")
+            .map(|(_, rest)| rest)
+            .and_then(|rest| rest.split_once('}').map(|(body, _)| body))
+            .expect("the action binding type is generated");
+
+        assert!(generated.contains("pub enum NvidiaChassisResetType"));
+        assert!(generated.contains("pub struct ChassisAuxPowerResetAction"));
+        assert!(reset_action.contains("pub reset_type"));
+        assert!(reset_action.contains("NvidiaChassisResetType"));
+        assert!(!reset_action.contains("Option"));
+        assert!(oem_actions.contains("pub reset"));
+        assert!(oem_actions.contains("pub aux_power_reset"));
+        assert!(generated.contains("pub async fn reset"));
+        assert!(generated.contains("pub async fn aux_power_reset"));
+        assert!(!generated.contains("ChassisIgnoredAction"));
+        assert!(!generated.contains("ResolveOnlyIgnoredAction"));
 
         Ok(())
     }

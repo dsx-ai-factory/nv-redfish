@@ -48,6 +48,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
         root_csdls,
         resolve_csdls,
         entity_type_patterns: Vec::new(),
+        action_patterns: Vec::new(),
         rigid_array_patterns: Vec::new(),
     })?;
 
