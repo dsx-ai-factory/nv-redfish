@@ -18,13 +18,18 @@ limitations under the License.
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
     <!-- This is how LiteOn extended standard PowerSupply object with
-         PowerState field (it is absent in standard Redfish). -->
+         PowerState (absent in standard Redfish) and CapacityWatts (a
+         decimal string under a non-standard name, in place of the standard
+         numeric PowerCapacityWatts). Observed on PF-1333-7R firmware r1.3.8. -->
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LiteonPowerSupply">
       <EntityType Name="LiteonPowerSupply" BaseType="PowerSupply.v1_6_0.PowerSupply"/>
     </Schema>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LiteonPowerSupply.v1_0_0">
       <EntityType Name="LiteonPowerSupply" BaseType="LiteonPowerSupply.LiteonPowerSupply">
         <Property Name="PowerState" Type="Edm.Boolean" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
+        </Property>
+        <Property Name="CapacityWatts" Type="Edm.String">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
         </Property>
       </EntityType>
