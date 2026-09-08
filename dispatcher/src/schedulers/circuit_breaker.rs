@@ -18,10 +18,13 @@
 //! Maintains a bounded ring of recent outcomes; trips the breaker when
 //! the failure fraction exceeds the configured threshold. While open,
 //! `take_next` returns `None` and `update_ready` reports the open-until
-//! deadline. After `cool_down` elapses the breaker enters `HalfOpen`,
-//! admits up to `half_open_max_probes`, and on the first probe outcome
-//! either resets to Closed (success) or re-opens with a fresh cool-down
-//! (failure).
+//! deadline. After `cool_down` elapses the breaker enters `HalfOpen` and
+//! admits one probe; the probe's own outcome decides — success resets to
+//! Closed, failure re-opens with a fresh cool-down. Work dispatched before
+//! the breaker opened may still be in flight when the cool-down ends; the
+//! probe is admitted only once that work has drained, so while probing the
+//! probe is the only item outstanding and every completion observed is its
+//! verdict.
 
 use core::convert::TryFrom as _;
 use core::marker::PhantomData;
@@ -43,8 +46,6 @@ pub struct CircuitBreakerConfig {
     pub min_samples: u32,
     /// How long the breaker stays open before going `HalfOpen`.
     pub cool_down: Duration,
-    /// Concurrent probes allowed in `HalfOpen`.
-    pub half_open_max_probes: u32,
 }
 
 impl Default for CircuitBreakerConfig {
@@ -54,7 +55,6 @@ impl Default for CircuitBreakerConfig {
             sample_window: 32,
             min_samples: 5,
             cool_down: Duration::from_secs(10),
-            half_open_max_probes: 1,
         }
     }
 }
@@ -71,11 +71,10 @@ pub enum BreakerState {
         /// `HalfOpen`.
         until: Instant,
     },
-    /// `HalfOpen`: admitting up to `half_open_max_probes` outstanding
-    /// items.
+    /// `HalfOpen`: one probe decides recovery.
     HalfOpen {
-        /// Probes currently outstanding.
-        in_flight: u32,
+        /// Whether the probe is currently outstanding.
+        probing: bool,
     },
 }
 
@@ -86,6 +85,8 @@ pub struct CircuitBreaker<T, C: Scheduler<T>> {
     cfg: CircuitBreakerConfig,
     samples: VecDeque<CompletionOutcome>,
     last_now: Instant,
+    /// Items dispatched through this breaker and not yet completed.
+    in_flight: u32,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -99,6 +100,7 @@ impl<T, C: Scheduler<T>> CircuitBreaker<T, C> {
             cfg,
             samples: VecDeque::new(),
             last_now: Instant::now(),
+            in_flight: 0,
             _t: PhantomData,
         }
     }
@@ -139,13 +141,17 @@ impl<T, C: Scheduler<T>> CircuitBreaker<T, C> {
         Some(rate)
     }
 
+    fn open(&mut self) {
+        self.state = BreakerState::Open {
+            until: self.last_now + self.cfg.cool_down,
+        };
+        self.samples.clear();
+    }
+
     fn maybe_trip(&mut self) {
         if let Some(rate) = self.failure_rate() {
             if rate >= self.cfg.failure_threshold {
-                self.state = BreakerState::Open {
-                    until: self.last_now + self.cfg.cool_down,
-                };
-                self.samples.clear();
+                self.open();
             }
         }
     }
@@ -162,7 +168,7 @@ where
         self.last_now = now;
         if let BreakerState::Open { until } = self.state {
             if now >= until {
-                self.state = BreakerState::HalfOpen { in_flight: 0 };
+                self.state = BreakerState::HalfOpen { probing: false };
             } else {
                 return Readiness::not_ready(Some(until));
             }
@@ -170,8 +176,10 @@ where
         match self.state {
             BreakerState::Closed => self.inner.update_ready(now),
             BreakerState::Open { until } => Readiness::not_ready(Some(until)),
-            BreakerState::HalfOpen { in_flight } => {
-                if in_flight >= self.cfg.half_open_max_probes {
+            // The probe waits for the probe slot and for pre-open work to
+            // drain; either way the wake comes from a completion.
+            BreakerState::HalfOpen { probing } => {
+                if probing || self.in_flight > 0 {
                     Readiness::not_ready(None)
                 } else {
                     self.inner.update_ready(now)
@@ -181,44 +189,42 @@ where
     }
 
     fn take_next(&mut self) -> Option<ScheduledWork<T, C::Meta>> {
-        match &mut self.state {
-            BreakerState::Open { .. } => None,
-            BreakerState::Closed => self.inner.take_next(),
-            BreakerState::HalfOpen { in_flight } => {
-                if *in_flight >= self.cfg.half_open_max_probes {
+        let work = match &mut self.state {
+            BreakerState::Open { .. } => return None,
+            BreakerState::Closed => self.inner.take_next()?,
+            BreakerState::HalfOpen { probing } => {
+                if *probing || self.in_flight > 0 {
                     return None;
                 }
                 let work = self.inner.take_next()?;
-                *in_flight = in_flight.saturating_add(1);
-                Some(work)
+                *probing = true;
+                work
             }
-        }
+        };
+        self.in_flight += 1;
+        Some(work)
     }
 
     fn on_complete(&mut self, completion: Completion<C::Meta>) {
         let outcome = completion.outcome;
+        self.in_flight = self.in_flight.saturating_sub(1);
         match self.state {
             BreakerState::Closed => {
                 self.record_outcome(outcome);
                 self.maybe_trip();
             }
-            BreakerState::Open { .. } => {
-                // We do not change state here
-            }
-            BreakerState::HalfOpen { .. } => {
-                self.state = match outcome {
-                    CompletionOutcome::Succeeded => {
-                        self.samples.clear();
-                        BreakerState::Closed
-                    }
-                    CompletionOutcome::Failed => {
-                        self.samples.clear();
-                        BreakerState::Open {
-                            until: self.last_now + self.cfg.cool_down,
-                        }
-                    }
-                };
-            }
+            // While probing the probe is the only item in flight, so this
+            // is its verdict.
+            BreakerState::HalfOpen { probing: true } => match outcome {
+                CompletionOutcome::Succeeded => {
+                    self.samples.clear();
+                    self.state = BreakerState::Closed;
+                }
+                CompletionOutcome::Failed => self.open(),
+            },
+            // Open, or half-open with pre-open work still draining: the
+            // completion predates the trip and decides nothing.
+            BreakerState::Open { .. } | BreakerState::HalfOpen { probing: false } => {}
         }
         self.inner.on_complete(completion);
     }
@@ -246,7 +252,6 @@ mod tests {
             sample_window: 10,
             min_samples: 4,
             cool_down,
-            half_open_max_probes: 1,
         }
     }
 
@@ -268,6 +273,76 @@ mod tests {
             meta: work.meta,
             routing: work.routing,
         });
+    }
+
+    #[test]
+    fn completions_of_pre_trip_work_do_not_decide_the_probe() {
+        let leaf = MockLeaf::ready_firing(1);
+        let cool_down = Duration::from_millis(10);
+        let mut cb = CircuitBreaker::new(cfg(cool_down), leaf);
+        let t0 = Instant::now();
+
+        // Two items dispatched while Closed, still in flight when the
+        // breaker trips.
+        cb.update_ready(t0);
+        let early_a = cb.take_next().expect("closed forwards");
+        let early_b = cb.take_next().expect("closed forwards");
+        for _ in 0..4 {
+            drive_outcome(&mut cb, t0, CompletionOutcome::Failed);
+        }
+        assert!(matches!(cb.state(), BreakerState::Open { .. }));
+
+        // Cool-down over, but pre-trip work is still in flight: no probe
+        // until it drains, whatever those late completions say.
+        let t1 = t0 + cool_down + Duration::from_millis(1);
+        assert!(!cb.update_ready(t1).ready);
+        assert!(cb.take_next().is_none());
+        assert!(matches!(
+            cb.state(),
+            BreakerState::HalfOpen { probing: false }
+        ));
+
+        // A late failure must not re-open the breaker ...
+        cb.on_complete(Completion {
+            outcome: CompletionOutcome::Failed,
+            latency: Duration::ZERO,
+            meta: early_a.meta,
+            routing: early_a.routing,
+        });
+        assert!(matches!(
+            cb.state(),
+            BreakerState::HalfOpen { probing: false }
+        ));
+        assert!(cb.take_next().is_none());
+
+        // ... and a late success must not close it; it only finishes the
+        // drain.
+        cb.on_complete(Completion {
+            outcome: CompletionOutcome::Succeeded,
+            latency: Duration::ZERO,
+            meta: early_b.meta,
+            routing: early_b.routing,
+        });
+        assert!(matches!(
+            cb.state(),
+            BreakerState::HalfOpen { probing: false }
+        ));
+
+        // Drained: the probe is admitted, and only its verdict counts.
+        assert!(cb.update_ready(t1).ready);
+        let probe = cb.take_next().expect("one probe admitted");
+        assert!(matches!(
+            cb.state(),
+            BreakerState::HalfOpen { probing: true }
+        ));
+        assert!(cb.take_next().is_none());
+        cb.on_complete(Completion {
+            outcome: CompletionOutcome::Succeeded,
+            latency: Duration::ZERO,
+            meta: probe.meta,
+            routing: probe.routing,
+        });
+        assert!(matches!(cb.state(), BreakerState::Closed));
     }
 
     #[test]
@@ -346,9 +421,9 @@ mod tests {
     }
 
     #[test]
-    fn half_open_caps_concurrent_probes() {
-        // half_open_max_probes = 1: once a probe is in-flight, the
-        // breaker reports not-ready until that probe completes.
+    fn half_open_admits_one_probe_at_a_time() {
+        // One probe decides recovery: once it is in-flight, the breaker
+        // reports not-ready until that probe completes.
         let leaf = MockLeaf::ready_firing(1);
         let cool_down = Duration::from_millis(10);
         let mut cb = CircuitBreaker::new(cfg(cool_down), leaf);

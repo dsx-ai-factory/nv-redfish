@@ -123,7 +123,6 @@ pub fn breaker() -> CircuitBreakerConfig {
         sample_window: 8,
         min_samples: 4,
         cool_down: Duration::from_secs(30),
-        half_open_max_probes: 1,
     }
 }
 
