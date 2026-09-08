@@ -13,7 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use nv_redfish_core::Bmc;
+
 use crate::schema::service_root::ServiceRoot;
+use crate::Error;
 
 #[cfg(feature = "accounts")]
 use crate::account::SlotDefinedConfig as SlotDefinedUserAccountsConfig;
@@ -27,10 +30,11 @@ pub struct BmcQuirks {
 
 // Platform shouldn't be considered as vendor. Actually it is class of
 // devices that have the same set of quirks.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 enum Platform {
     Hpe,
     Dell,
+    DellPEXE9780,
     AmiViking,
     AmiGb300,
     VeraRubin,
@@ -42,8 +46,9 @@ enum Platform {
 }
 
 impl BmcQuirks {
-    pub fn new(root: &ServiceRoot) -> Self {
+    pub async fn new<B: Bmc>(root: &ServiceRoot, bmc: &B) -> Result<Self, Error<B>> {
         let vendor_str = root.vendor.as_ref().and_then(Option::as_deref);
+
         let redfish_version_str = root.redfish_version.as_deref();
         let product_str = root.product.as_ref().and_then(Option::as_deref);
         // The GB300 host BMC exposes an AMI OEM `RtpVersion` in the service
@@ -59,6 +64,9 @@ impl BmcQuirks {
             .and_then(|v| v.as_str());
         let platform = match vendor_str {
             Some("HPE") => Some(Platform::Hpe),
+            Some("Dell") if Self::check_if_dell_pe_x9780(root, bmc).await? => {
+                Some(Platform::DellPEXE9780)
+            }
             Some("Dell") => Some(Platform::Dell),
             Some("AMI") if redfish_version_str == Some("1.11.0") => Some(Platform::AmiViking),
             Some("AMI") if rtp_version == Some("13.09.1") => Some(Platform::AmiGb300),
@@ -75,7 +83,38 @@ impl BmcQuirks {
             None if redfish_version_str == Some("1.9.0") => Some(Platform::Anonymous1_9_0),
             _ => None,
         };
-        Self { platform }
+        Ok(Self { platform })
+    }
+
+    #[cfg(feature = "computer-systems")]
+    async fn check_if_dell_pe_x9780<B: Bmc>(root: &ServiceRoot, bmc: &B) -> Result<bool, Error<B>> {
+        if let Some(systems) = &root.systems {
+            if let Ok(systems) = systems.get(bmc).await {
+                for member in &systems.members {
+                    if let Ok(cs) = member.get(bmc).await {
+                        if cs
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| Some(String::new()))
+                            .unwrap_or_else(String::new)
+                            .to_ascii_lowercase()
+                            .contains("xe9780")
+                        {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    #[cfg(not(feature = "computer-systems"))]
+    async fn check_if_dell_pe_x9780<B: Bmc>(
+        _root: &ServiceRoot,
+        _bmc: &B,
+    ) -> Result<bool, Error<B>> {
+        Err(Error::MissingFeature("computer-systems".into()))
     }
 
     // Account type is required according to schema specification
@@ -95,11 +134,13 @@ impl BmcQuirks {
     #[cfg(feature = "accounts")]
     pub(crate) fn slot_defined_user_accounts(&self) -> Option<SlotDefinedUserAccountsConfig> {
         self.platform.as_ref().and_then(|platform| {
-            (platform == &Platform::Dell).then_some(SlotDefinedUserAccountsConfig {
-                min_slot: Some(3),
-                hide_disabled: true,
-                disable_account_on_delete: true,
-            })
+            (platform == &Platform::Dell || platform == &Platform::DellPEXE9780).then_some(
+                SlotDefinedUserAccountsConfig {
+                    min_slot: Some(3),
+                    hide_disabled: true,
+                    disable_account_on_delete: true,
+                },
+            )
         })
     }
 
@@ -108,7 +149,7 @@ impl BmcQuirks {
     // SoftwareInventoryCollection).
     #[cfg(feature = "update-service")]
     pub(crate) fn fw_inventory_wrong_release_date(&self) -> bool {
-        self.platform == Some(Platform::Dell)
+        self.platform == Some(Platform::Dell) || self.platform == (Some(Platform::DellPEXE9780))
     }
 
     /// In some cases there is addtional fields in Links.ContainedBy in
@@ -180,7 +221,7 @@ impl BmcQuirks {
     /// this is invalid Edm.DateTimeOffset.
     #[cfg(feature = "computer-systems")]
     pub(crate) fn computer_systems_wrong_last_reset_time(&self) -> bool {
-        self.platform == Some(Platform::Dell)
+        self.platform == Some(Platform::Dell) || self.platform == (Some(Platform::DellPEXE9780))
     }
 
     /// In some implementations, Event records in SSE payload do not include
@@ -194,7 +235,7 @@ impl BmcQuirks {
     /// timezone offsets in `EventTimestamp` (for example, `-0600`).
     #[cfg(feature = "event-service")]
     pub(crate) fn event_service_sse_wrong_timestamp_offset(&self) -> bool {
-        self.platform == Some(Platform::Dell)
+        self.platform == Some(Platform::Dell) || self.platform == (Some(Platform::DellPEXE9780))
     }
 
     /// In some implementations, Event records in SSE payload omit `EventType`.
@@ -253,8 +294,14 @@ impl BmcQuirks {
     pub(crate) const fn expand_is_not_working_properly(&self) -> bool {
         matches!(
             self.platform,
-            Some(Platform::AmiViking | Platform::AmiGb300)
+            Some(Platform::AmiViking | Platform::AmiGb300 | Platform::DellPEXE9780)
         )
+    }
+
+    /// In PE XE9780 some UUID type fields contain non-UUID formatted strings
+    #[cfg(feature = "chassis")]
+    pub(crate) fn chassis_contains_arbitrary_string_in_uuid_fields(&self) -> bool {
+        self.platform == Some(Platform::DellPEXE9780)
     }
 
     /// Some implementations return the `Members` field of
