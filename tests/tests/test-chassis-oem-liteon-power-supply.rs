@@ -61,6 +61,10 @@ async fn liteon_power_supply_links_happy_path() -> Result<(), Box<dyn StdError>>
     bmc.expect(Expect::get(&psu_id, psu_payload(&psu_id, "0", true)));
     let psu = links[0].fetch().await?;
     assert_eq!(psu.power_state, Some(true));
+    assert_eq!(
+        psu.capacity_watts.as_ref().map(|v| v.as_deref()),
+        Some(Some("5500"))
+    );
 
     Ok(())
 }
@@ -232,6 +236,7 @@ fn psu_payload(psu_id: &str, id: &str, power_state: bool) -> Value {
         "Manufacturer": "LITE-ON TECHNOLOGY CORP.",
         "Model": "SP-2552-1R",
         "PowerState": power_state,
+        "CapacityWatts": "5500",
         "Status": {
             "Health": "OK",
             "State": "Enabled"
