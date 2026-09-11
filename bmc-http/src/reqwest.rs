@@ -36,6 +36,7 @@ use bytes::Bytes;
 use futures_util::stream::unfold;
 use futures_util::Stream;
 use futures_util::StreamExt as _;
+use futures_util::TryStreamExt as _;
 use http::header;
 use http::HeaderMap;
 use nv_redfish_core::AsyncTask;
@@ -46,6 +47,7 @@ use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
 use nv_redfish_core::OemMultipartPart;
 use nv_redfish_core::SessionCreateResponse;
+use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::UploadStream;
@@ -293,18 +295,45 @@ fn cap_event_bytes(
     })
 }
 
-/// Decode one SSE record into a typed item, or `None` for records without data
-/// (e.g. comments) so they are filtered out of the stream.
-fn event_to_item<T: DeserializeOwned>(
-    event: Result<sse_stream::Sse, sse_stream::Error>,
+/// The header a client sends to resume a stream after the last event it saw.
+const LAST_EVENT_ID: header::HeaderName = header::HeaderName::from_static("last-event-id");
+
+/// Decodes one SSE frame's `data` into an item. A frame without `data` is no
+/// item; one whose data fails to decode is an error item.
+fn decode_frame<T: DeserializeOwned>(
+    frame: Result<sse_stream::Sse, BmcError>,
 ) -> Option<Result<T, BmcError>> {
-    match event {
-        Err(err) => Some(Err(map_sse_error(err))),
+    match frame {
+        Err(err) => Some(Err(err)),
         Ok(sse) => sse.data.map(|data| {
             serde_path_to_error::deserialize(&mut serde_json::Deserializer::from_str(&data))
                 .map_err(BmcError::JsonError)
         }),
     }
+}
+
+/// [`decode_frame`] with the last event id tracked across frames as the SSE
+/// processing model prescribes: a frame's `id` field sets it, an empty one
+/// clears it, one holding a NUL is ignored, and a frame without one leaves
+/// it, so the id on an item is the one to resume after it.
+fn event_to_item<T: DeserializeOwned>(
+    last_event_id: &mut Option<String>,
+    frame: Result<sse_stream::Sse, BmcError>,
+) -> Option<Result<StreamEvent<T>, BmcError>> {
+    if let Ok(sse) = &frame {
+        match &sse.id {
+            Some(id) if id.contains('\0') => {}
+            Some(id) if id.is_empty() => *last_event_id = None,
+            Some(id) => *last_event_id = Some(id.clone()),
+            None => {}
+        }
+    }
+    decode_frame::<T>(frame).map(|item| {
+        item.map(|data| StreamEvent {
+            last_event_id: last_event_id.clone(),
+            data,
+        })
+    })
 }
 
 /// Classifier deciding whether a response should be retried.
@@ -449,8 +478,10 @@ pub struct SseOptions {
     /// [`Client::sse`] aborts with [`BmcError::SseEventTooLarge`]. Guards against
     /// a server that never sends the SSE event terminator.
     pub max_event_bytes: usize,
-    /// Maximum idle time between SSE events before [`Client::sse`] aborts with
-    /// [`BmcError::SseIdleTimeout`]. `None` disables the check.
+    /// Maximum idle time between SSE frames before the stream aborts with
+    /// [`BmcError::SseIdleTimeout`]. A frame is an event, or one carrying
+    /// only an `id` or `event` field; comment heartbeats do not count.
+    /// `None` disables the check.
     pub idle_timeout: Option<Duration>,
 }
 
@@ -1258,20 +1289,75 @@ impl HttpClient for Client {
         self.handle_modification_response(response).await
     }
 
-    // The idle branch matches on `Option<Duration>` where both arms await
-    // distinct future types, which cannot be expressed as an `Option` combinator
-    // without boxing; `option_if_let_else`'s suggestion does not apply.
-    #[allow(clippy::option_if_let_else)]
     async fn sse<T: Send + Sized + for<'de> serde::Deserialize<'de>>(
         &self,
         url: Url,
         credentials: &BmcCredentials,
         custom_headers: &HeaderMap,
     ) -> Result<BoxTryStream<T, Self::Error>, Self::Error> {
-        let request = auth_headers(self.inner.get(url), credentials)
+        let frames = self
+            .sse_frames(url, credentials, custom_headers, None)
+            .await?;
+        // Decoded in an async block rather than `ready(..)`: the boxed
+        // stream's type must not mention `T`, which the trait leaves without
+        // a `'static` bound.
+        Ok(Box::pin(frames.filter_map(|frame| async move {
+            decode_frame::<T>(frame)
+        })))
+    }
+
+    async fn sse_events<T: Send + Sized + for<'de> serde::Deserialize<'de> + 'static>(
+        &self,
+        url: Url,
+        credentials: &BmcCredentials,
+        custom_headers: &HeaderMap,
+        last_event_id: Option<&str>,
+    ) -> Result<BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error> {
+        let frames = self
+            .sse_frames(url, credentials, custom_headers, last_event_id)
+            .await?;
+        let events = frames
+            .scan(None, |last_event_id, frame| {
+                ready(Some(event_to_item::<T>(last_event_id, frame)))
+            })
+            .filter_map(ready);
+        Ok(Box::pin(events))
+    }
+}
+
+impl Client {
+    /// Opens the SSE request, `Last-Event-ID` set when resuming, and returns
+    /// its frames: decoded from a body capped at
+    /// [`SseOptions::max_event_bytes`] per event, ended after a fatal error,
+    /// and, when [`SseOptions::idle_timeout`] is set, failed when no frame
+    /// arrives within that window. The window is keyed on frames the server
+    /// sends, so comment heartbeats (which the decoder discards) do NOT reset
+    /// it; a server relying solely on comment heartbeats should not enable
+    /// the idle timeout.
+    // The idle branch matches on `Option<Duration>` where both arms await
+    // distinct future types, which cannot be expressed as an `Option`
+    // combinator without boxing; `option_if_let_else`'s suggestion does not
+    // apply.
+    #[allow(clippy::option_if_let_else)]
+    async fn sse_frames(
+        &self,
+        url: Url,
+        credentials: &BmcCredentials,
+        custom_headers: &HeaderMap,
+        last_event_id: Option<&str>,
+    ) -> Result<BoxTryStream<sse_stream::Sse, BmcError>, BmcError> {
+        let mut request = auth_headers(self.inner.get(url), credentials)
             .headers(custom_headers.clone())
             .header(header::ACCEPT, "text/event-stream")
             .timeout(Duration::MAX);
+        if let Some(id) = last_event_id {
+            let value = header::HeaderValue::from_str(id).map_err(|_| {
+                BmcError::InvalidRequest(format!(
+                    "Last-Event-ID {id:?} cannot be sent as a header value"
+                ))
+            })?;
+            request = request.header(LAST_EVENT_ID, value);
+        }
 
         let response = self.send(request.build()?).await?;
 
@@ -1284,39 +1370,34 @@ impl HttpClient for Client {
         }
 
         let capped = cap_event_bytes(response.bytes_stream(), self.sse.max_event_bytes);
-        let events = sse_stream::SseStream::from_bytes_stream(capped)
-            .filter_map(|event| async move { event_to_item::<T>(event) });
+        let frames = sse_stream::SseStream::from_bytes_stream(capped).map_err(map_sse_error);
 
-        // Liveness bound: optionally abort if no event arrives within the idle
-        // window. It is keyed on decoded events, so comment heartbeats (which
-        // `sse_stream` discards) do NOT reset it; a server relying solely on
-        // comment heartbeats should not enable the idle timeout.
         let idle = self.sse.idle_timeout;
-        let guarded = unfold(
-            (Box::pin(events), false),
-            move |(mut events, done)| async move {
+        let bounded = unfold(
+            (Box::pin(frames), false),
+            move |(mut frames, done)| async move {
                 if done {
                     return None;
                 }
                 let next = match idle {
-                    Some(d) => match timeout(d, events.next()).await {
-                        Ok(item) => item,
+                    Some(d) => match timeout(d, frames.next()).await {
+                        Ok(frame) => frame,
                         Err(_) => Some(Err(BmcError::SseIdleTimeout { idle: d })),
                     },
-                    None => events.next().await,
+                    None => frames.next().await,
                 };
                 match next {
                     Some(Err(e)) => {
                         let terminal = e.is_stream_fatal();
-                        Some((Err(e), (events, terminal)))
+                        Some((Err(e), (frames, terminal)))
                     }
-                    Some(ok) => Some((ok, (events, false))),
+                    Some(ok) => Some((ok, (frames, false))),
                     None => None,
                 }
             },
         );
 
-        Ok(Box::pin(guarded))
+        Ok(Box::pin(bounded))
     }
 }
 
