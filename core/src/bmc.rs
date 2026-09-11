@@ -217,8 +217,9 @@ pub trait Bmc: Send + Sync {
     /// the event's `data` decoded into `T`, with the event id in effect.
     /// `last_event_id` is the id a consumer kept from an earlier stream of
     /// the same URI, sent as `Last-Event-ID` so a server that retains
-    /// history replays the events after it; `None` starts at the server's
-    /// live position.
+    /// history replays the events after it, and in effect on the new stream
+    /// until the server sets another; `None`, or an empty id, starts at the
+    /// server's live position.
     ///
     /// The default forwards to [`Bmc::stream`]: its events carry no id and
     /// nothing is sent to resume from, which cannot mislead a consumer, since

@@ -384,6 +384,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_resume_id_stays_in_effect_until_the_server_sets_another() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .and(header("last-event-id", "7"))
+            .respond_with(sse_response(
+                "data: {\"n\":1}\n\nid: 8\ndata: {\"n\":2}\n\n",
+            ))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, Some("7"))
+            .await
+            .expect("must open stream");
+        let events: Vec<_> = stream
+            .map(|event| event.expect("event parse"))
+            .collect()
+            .await;
+
+        let ids: Vec<Option<&str>> = events
+            .iter()
+            .map(|event| event.last_event_id.as_deref())
+            .collect();
+        assert_eq!(ids, [Some("7"), Some("8")]);
+    }
+
+    #[tokio::test]
+    async fn an_empty_resume_id_is_no_resume_id() {
+        struct WithoutHeader(&'static str);
+
+        impl Match for WithoutHeader {
+            fn matches(&self, request: &Request) -> bool {
+                !request.headers.contains_key(self.0)
+            }
+        }
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .and(WithoutHeader("last-event-id"))
+            .respond_with(sse_response("data: {}\n\n"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let mut stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, Some(""))
+            .await
+            .expect("must open stream");
+        let event = stream
+            .next()
+            .await
+            .expect("one event")
+            .expect("event parse");
+        assert_eq!(event.last_event_id, None);
+    }
+
+    #[tokio::test]
     async fn a_fresh_stream_sends_no_last_event_id() {
         struct WithoutHeader(&'static str);
 

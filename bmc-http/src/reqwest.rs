@@ -1313,11 +1313,16 @@ impl HttpClient for Client {
         custom_headers: &HeaderMap,
         last_event_id: Option<&str>,
     ) -> Result<BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error> {
+        // An empty id is no id, as the SSE processing model has it: none is
+        // sent, and none is in effect until the server sets one. Otherwise
+        // the resume id stays in effect across the reconnection, so events
+        // the server sends without an `id` field still carry it.
+        let last_event_id = last_event_id.filter(|id| !id.is_empty());
         let frames = self
             .sse_frames(url, credentials, custom_headers, last_event_id)
             .await?;
         let events = frames
-            .scan(None, |last_event_id, frame| {
+            .scan(last_event_id.map(str::to_owned), |last_event_id, frame| {
                 ready(Some(event_to_item::<T>(last_event_id, frame)))
             })
             .filter_map(ready);
