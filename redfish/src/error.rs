@@ -29,6 +29,9 @@ pub enum Error<B: Bmc> {
     /// `slot_defined_user_accounts` feature.
     #[cfg(feature = "accounts")]
     AccountSlotNotAvailable,
+    /// The requested preallocated account slot range is empty.
+    #[cfg(feature = "accounts")]
+    InvalidAccountSlotRange,
     /// Action not available for this resource
     ActionNotAvailable,
     /// Event service does not provide `ServerSentEventUri`
@@ -70,6 +73,10 @@ impl<B: Bmc> Display for Error<B> {
             #[cfg(feature = "accounts")]
             Self::AccountSlotNotAvailable => {
                 write!(f, "Free account slot is not found")
+            }
+            #[cfg(feature = "accounts")]
+            Self::InvalidAccountSlotRange => {
+                write!(f, "Account slot range is empty")
             }
             Self::ActionNotAvailable => {
                 write!(f, "Action is not available for this resource")

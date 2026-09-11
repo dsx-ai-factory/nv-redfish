@@ -89,16 +89,13 @@ impl<B: Bmc> AccountService<B> {
                 Arc::new(move |v| patches.iter().fold(v, |acc, f| f(acc)));
             Some(account_read_patch_fn)
         };
-        let slot_defined_user_accounts = bmc.quirks.slot_defined_user_accounts();
         Ok(Some(Self {
             collection_config: collection::Config {
                 account: AccountConfig {
                     read_patch_fn: account_read_patch_fn,
-                    disable_account_on_delete: slot_defined_user_accounts
-                        .as_ref()
-                        .is_some_and(|cfg| cfg.disable_account_on_delete),
+                    disable_account_on_delete: false,
                 },
-                slot_defined_user_accounts,
+                slot_defined_user_accounts: None,
             },
             service,
             bmc: bmc.clone(),
@@ -122,14 +119,44 @@ impl<B: Bmc> AccountService<B> {
     ///
     /// Returns an error if expanding the collection fails.
     pub async fn accounts(&self) -> Result<Option<AccountCollection<B>>, Error<B>> {
-        if let Some(collection_ref) = self.service.accounts.as_ref() {
-            AccountCollection::new(
-                self.bmc.clone(),
-                collection_ref,
-                self.collection_config.clone(),
-            )
+        self.accounts_with_config(self.collection_config.clone())
             .await
-            .map(Some)
+    }
+
+    /// Get a collection backed by preallocated numeric account slots.
+    ///
+    /// Creation enables the lowest disabled slot in `slots`, listing hides
+    /// disabled slots, and deletion disables the selected slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `slots` is empty or collection expansion fails.
+    pub async fn accounts_in_slots(
+        &self,
+        minimum_slot: u32,
+        maximum_slot: u32,
+    ) -> Result<Option<AccountCollection<B>>, Error<B>> {
+        if minimum_slot > maximum_slot {
+            return Err(Error::InvalidAccountSlotRange);
+        }
+        let mut config = self.collection_config.clone();
+        config.account.disable_account_on_delete = true;
+        config.slot_defined_user_accounts = Some(SlotDefinedConfig {
+            min_slot: Some(minimum_slot),
+            max_slot: Some(maximum_slot),
+            hide_disabled: true,
+        });
+        self.accounts_with_config(config).await
+    }
+
+    async fn accounts_with_config(
+        &self,
+        config: collection::Config,
+    ) -> Result<Option<AccountCollection<B>>, Error<B>> {
+        if let Some(collection_ref) = self.service.accounts.as_ref() {
+            AccountCollection::new(self.bmc.clone(), collection_ref, config)
+                .await
+                .map(Some)
         } else {
             Ok(None)
         }

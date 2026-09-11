@@ -16,10 +16,32 @@
 //! Support of Dell OEM extensions to Redfish.
 
 /// Support of Dell iDRAC.
-#[cfg(feature = "oem-dell-attributes")]
+#[cfg(feature = "managers")]
 pub mod attributes;
 
+#[cfg(feature = "managers")]
+mod job_service;
+#[cfg(any(feature = "job-service", feature = "managers"))]
+mod jobs;
+#[cfg(feature = "managers")]
+mod manager;
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+mod storage_actions;
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+mod volumes;
+
 mod compiled_schema;
+
+#[cfg(feature = "managers")]
+pub use job_service::{DellJobService, DellJobServiceSchema};
+#[cfg(any(feature = "job-service", feature = "managers"))]
+pub use jobs::{DellJob, DellJobSchema, DellJobs};
+#[cfg(feature = "managers")]
+pub use manager::DellManager;
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+pub use storage_actions::DellStorageActions;
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+pub use volumes::{DellVolumeCreate, DellVolumes};
 
 /// Dell OEM Schema.
 pub use compiled_schema::redfish as schema;

@@ -198,6 +198,24 @@ root_patterns = [
 ]
 
 [[features]]
+name = "job-service"
+csdl_files = [
+    "JobService_v1.xml",
+    "JobCollection_v1.xml",
+    "Job_v1.xml",
+    "JobDocument_v1.xml",
+    "JobDocumentCollection_v1.xml",
+    "JobExecutor_v1.xml",
+    "JobExecutorCollection_v1.xml",
+    "Schedule_v1.xml",
+]
+patterns = [
+    "JobService.*",
+    "JobCollection.*",
+    "Job.*",
+]
+
+[[features]]
 name = "task-service"
 csdl_files = [
     "TaskService_v1.xml",
@@ -876,7 +894,7 @@ action_patterns = [
 
 [[oem-features]]
 vendor = "dell"
-name = "oem-dell-attributes"
+name = "managers"
 oem_csdl_files = [
     "DellAttributes_v1.xml",
 ]

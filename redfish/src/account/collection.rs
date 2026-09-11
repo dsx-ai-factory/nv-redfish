@@ -29,8 +29,8 @@
 //! - `account`: controls read patching via `read_patch_fn`.
 //! - `slot_defined_user_accounts`:
 //!   - `min_slot`: minimum numeric slot id considered.
+//!   - `max_slot`: maximum numeric slot id considered.
 //!   - `hide_disabled`: omit disabled accounts from `all_accounts_data`.
-//!   - `disable_account_on_delete`: prefer disabling over deletion.
 //!
 //! Other:
 //! - `odata_id()` returns the collection `@odata.id` (typically
@@ -60,17 +60,18 @@ use std::sync::Arc;
 /// Configuration for slot-defined user accounts.
 ///
 /// In slot-defined mode, accounts are pre-provisioned as numeric-id "slots".
-/// Creation reuses the first eligible disabled slot (respecting `min_slot`),
-/// listing may hide disabled slots, and deletion can disable instead of remove.
+/// Creation reuses the lowest eligible disabled slot (respecting `min_slot`
+/// and `max_slot`), listing may hide disabled slots, and deletion can disable
+/// instead of remove.
 #[derive(Clone)]
 pub struct SlotDefinedConfig {
     /// Minimum slot number (the slot is identified by an `Id`
     /// containing a numeric string).
     pub min_slot: Option<u32>,
+    /// Maximum slot number, inclusive.
+    pub max_slot: Option<u32>,
     /// Hide disabled accounts when listing all accounts.
     pub hide_disabled: bool,
-    /// Disable the account instead of deleting it.
-    pub disable_account_on_delete: bool,
 }
 
 /// Configuration for account collection behavior.
@@ -164,42 +165,39 @@ impl<B: Bmc> AccountCollection<B> {
         create: ManagerAccountCreate,
     ) -> Result<ModificationResponse<Account<B>>, Error<B>> {
         if let Some(cfg) = &self.config.slot_defined_user_accounts {
-            // For slot-defined configuration, find the first account
-            // that is disabled (and whose id is >= `min_slot`, if defined)
-            // and apply an update to it.
+            // Collection order is not a stable allocation policy. Fetch every
+            // member first, then consider disabled numeric slots in ascending
+            // order within the configured bounds.
+            let mut candidates = Vec::new();
             for nav in &self.collection.members {
-                let Ok(account) = Account::new(&self.bmc, nav, &self.config.account).await else {
+                let account = Account::new(&self.bmc, nav, &self.config.account).await?;
+                let Ok(id) = account.raw().base.id.parse::<u32>() else {
                     continue;
                 };
-                if let Some(min) = cfg.min_slot {
-                    // If the minimum id is configured and this slot id is below
-                    // the threshold, look for another slot.
-                    let Ok(id) = account.raw().base.id.parse::<u32>() else {
-                        continue;
-                    };
-                    if id < min {
-                        continue;
-                    }
-                }
-                if account.is_enabled() {
-                    // Slot is already explicitly enabled. Find another slot.
+                if cfg.min_slot.is_some_and(|minimum| id < minimum)
+                    || cfg.max_slot.is_some_and(|maximum| id > maximum)
+                    || account.is_enabled()
+                {
                     continue;
                 }
+                candidates.push((id, account));
+            }
+            candidates.sort_unstable_by_key(|(id, _)| *id);
 
+            for (_, account) in candidates {
                 // Expanded collection members are a snapshot. Re-fetch the
                 // candidate immediately before updating it so concurrent
                 // account creation cannot reuse stale slot state. Require a
                 // fresh ETag so the HTTP BMC cannot fall back to `If-Match: *`.
-                let Some(account) = Account::new(
+                let account = Account::new(
                     &self.bmc,
                     &NavProperty::new_reference(account.raw().odata_id().clone()),
                     &self.config.account,
                 )
-                .await
-                .ok()
-                .filter(|a| !a.is_enabled() && a.raw().etag().is_some()) else {
+                .await?;
+                if account.is_enabled() || account.raw().etag().is_none() {
                     continue;
-                };
+                }
 
                 // Build an update based on the create request:
                 let update = ManagerAccountUpdate {

@@ -20,13 +20,22 @@ use crate::patch_support::CollectionWithPatch;
 use crate::schema::resource::ResourceCollection;
 use crate::schema::storage::Storage as StorageSchema;
 use crate::schema::storage_collection::StorageCollection as StorageCollectionSchema;
+use crate::schema::volume::Volume as VolumeSchema;
+use crate::schema::volume::VolumeCreate;
+use crate::schema::volume_collection::VolumeCollection as VolumeCollectionSchema;
 use crate::Error;
 use crate::NvBmc;
 use crate::Resource;
 use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
+use nv_redfish_core::ODataId;
+use std::marker::PhantomData;
 use std::sync::Arc;
+
+#[cfg(feature = "oem-dell")]
+use crate::oem::dell::{DellStorageActions, DellVolumes};
 
 /// Represents a storage controller in a computer system.
 ///
@@ -81,11 +90,130 @@ impl<B: Bmc> Storage<B> {
             Ok(None)
         }
     }
+
+    /// Get the advertised volume collection.
+    #[must_use]
+    pub fn volumes(&self) -> Option<VolumeCollection<B>> {
+        self.data
+            .volumes
+            .as_ref()
+            .map(|volumes| VolumeCollection::new(&self.bmc, volumes))
+    }
+
+    /// Get Dell OEM actions advertised by this storage controller.
+    ///
+    /// Returns `Ok(None)` when the resource has no OEM actions object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Dell OEM actions cannot be parsed.
+    #[cfg(feature = "oem-dell")]
+    pub fn oem_dell_actions(&self) -> Result<Option<DellStorageActions<B>>, Error<B>> {
+        self.data
+            .actions
+            .as_ref()
+            .and_then(|actions| actions.oem.as_ref())
+            .map(|actions| DellStorageActions::new(&self.bmc, actions))
+            .transpose()
+    }
 }
 
 impl<B: Bmc> Resource for Storage<B> {
     fn resource_ref(&self) -> &ResourceSchema {
         &self.data.as_ref().base
+    }
+}
+
+/// A standard Redfish Volume resource.
+pub struct Volume<B: Bmc> {
+    data: Arc<VolumeSchema>,
+    _marker: PhantomData<B>,
+}
+
+impl<B: Bmc> Volume<B> {
+    pub(crate) fn from_data(data: VolumeSchema) -> Self {
+        Self {
+            data: Arc::new(data),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Get the raw Volume schema.
+    #[must_use]
+    pub fn raw(&self) -> Arc<VolumeSchema> {
+        self.data.clone()
+    }
+}
+
+impl<B: Bmc> Resource for Volume<B> {
+    fn resource_ref(&self) -> &ResourceSchema {
+        &self.data.as_ref().base
+    }
+}
+
+/// A standard Redfish Volume collection.
+pub struct VolumeCollection<B: Bmc> {
+    bmc: NvBmc<B>,
+    id: ODataId,
+}
+
+impl<B: Bmc> VolumeCollection<B> {
+    fn new(bmc: &NvBmc<B>, collection: &NavProperty<VolumeCollectionSchema>) -> Self {
+        Self {
+            bmc: bmc.clone(),
+            id: collection.id().clone(),
+        }
+    }
+
+    /// Advertised collection identifier.
+    #[must_use]
+    pub const fn odata_id(&self) -> &ODataId {
+        &self.id
+    }
+
+    /// Fetch every Volume in the collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the collection or a member cannot be fetched.
+    pub async fn members(&self) -> Result<Vec<Volume<B>>, Error<B>> {
+        let collection = NavProperty::<VolumeCollectionSchema>::new_reference(self.id.clone())
+            .get(self.bmc.as_ref())
+            .await
+            .map_err(Error::Bmc)?;
+        let mut volumes = Vec::with_capacity(collection.members.len());
+        for member in &collection.members {
+            let data = member.get(self.bmc.as_ref()).await.map_err(Error::Bmc)?;
+            volumes.push(Volume {
+                data,
+                _marker: PhantomData,
+            });
+        }
+        Ok(volumes)
+    }
+
+    /// Create a standard Redfish Volume.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the BMC rejects the request.
+    pub async fn create(
+        &self,
+        request: &VolumeCreate,
+    ) -> Result<ModificationResponse<Volume<B>>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .create::<_, VolumeSchema>(&self.id, request)
+            .await
+            .map(|response| response.map_entity(Volume::from_data))
+            .map_err(Error::Bmc)
+    }
+
+    /// Use Dell's typed RAID volume creation payload with this collection.
+    #[cfg(feature = "oem-dell")]
+    #[must_use]
+    pub fn oem_dell(&self) -> DellVolumes<B> {
+        DellVolumes::new(&self.bmc, self.id.clone())
     }
 }
 
