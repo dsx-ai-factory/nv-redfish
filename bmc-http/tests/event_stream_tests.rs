@@ -36,6 +36,14 @@ mod tests {
         severity: String,
     }
 
+    struct WithoutHeader(&'static str);
+
+    impl Match for WithoutHeader {
+        fn matches(&self, request: &Request) -> bool {
+            !request.headers.contains_key(self.0)
+        }
+    }
+
     #[tokio::test]
     async fn test_event_stream_reads_typed_json() {
         let mock_server = MockServer::start().await;
@@ -416,14 +424,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_resume_id_is_no_resume_id() {
-        struct WithoutHeader(&'static str);
-
-        impl Match for WithoutHeader {
-            fn matches(&self, request: &Request) -> bool {
-                !request.headers.contains_key(self.0)
-            }
-        }
-
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
@@ -449,14 +449,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_fresh_stream_sends_no_last_event_id() {
-        struct WithoutHeader(&'static str);
-
-        impl Match for WithoutHeader {
-            fn matches(&self, request: &Request) -> bool {
-                !request.headers.contains_key(self.0)
-            }
-        }
-
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
