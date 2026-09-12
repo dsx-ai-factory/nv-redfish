@@ -28,6 +28,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 
+use futures_util::TryStreamExt as _;
 use nv_redfish_core::action::ActionTarget;
 use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::ActionError;
@@ -41,6 +42,7 @@ use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
 use nv_redfish_core::SessionCreateResponse;
+use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
 use serde::Serialize;
 use serde_json::from_value;
@@ -502,6 +504,15 @@ where
         &self,
         in_uri: &str,
     ) -> Result<nv_redfish_core::BoxTryStream<T, Self::Error>, Self::Error> {
+        let events = self.stream_events::<T>(in_uri, None).await?;
+        Ok(Box::pin(events.map_ok(|event| event.data)))
+    }
+
+    async fn stream_events<T: Sized + for<'de> serde::Deserialize<'de> + Send + 'static>(
+        &self,
+        in_uri: &str,
+        last_event_id: Option<&str>,
+    ) -> Result<nv_redfish_core::BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error> {
         let expect = self
             .expect
             .lock()
@@ -512,16 +523,48 @@ where
             Expect {
                 request: ExpectedRequest::Stream { uri },
                 response,
-            } if uri == *in_uri => {
+            } if uri == *in_uri && last_event_id.is_none() => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: Vec<T> = from_value(response).map_err(Error::BadResponseJson)?;
-                Ok(Box::pin(futures_util::stream::iter(
-                    result.into_iter().map(Ok),
-                )))
+                let payloads: Vec<T> = from_value(response).map_err(Error::BadResponseJson)?;
+                let events = payloads.into_iter().map(|data| StreamEvent {
+                    last_event_id: None,
+                    data,
+                });
+                Ok(Box::pin(futures_util::stream::iter(events.map(Ok))))
             }
-            _ => Err(Error::UnexpectedStream(in_uri.to_string(), expect.request)),
+            Expect {
+                request:
+                    ExpectedRequest::StreamEvents {
+                        uri,
+                        last_event_id: expected,
+                    },
+                response,
+            } if uri == *in_uri && expected.as_deref() == last_event_id => {
+                let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
+                let events: Vec<ScriptedEvent<T>> =
+                    from_value(response).map_err(Error::BadResponseJson)?;
+                let events = events.into_iter().map(|event| StreamEvent {
+                    last_event_id: event.last_event_id,
+                    data: event.data,
+                });
+                Ok(Box::pin(futures_util::stream::iter(events.map(Ok))))
+            }
+            _ => {
+                let request = match last_event_id {
+                    Some(id) => format!("{in_uri} resumed after {id:?}"),
+                    None => in_uri.to_string(),
+                };
+                Err(Error::UnexpectedStream(request, expect.request))
+            }
         }
     }
+}
+
+/// One event as [`Expect::stream_events`] scripts it.
+#[derive(serde::Deserialize)]
+struct ScriptedEvent<T> {
+    last_event_id: Option<String>,
+    data: T,
 }
 
 impl ActionError for Error {

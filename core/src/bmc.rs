@@ -66,7 +66,12 @@ use crate::ODataId;
 use crate::SessionCreateResponse;
 use std::error::Error as StdError;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
+
+use futures_core::Stream;
 
 use crate::MultipartUpdateRequest;
 use crate::UploadReader;
@@ -204,4 +209,118 @@ pub trait Bmc: Send + Sync {
         &self,
         uri: &str,
     ) -> impl Future<Output = Result<BoxTryStream<T, Self::Error>, Self::Error>> + Send;
+
+    /// Stream server-sent events from the URI with the id each carries,
+    /// resuming after `last_event_id`.
+    ///
+    /// Same URI rules as [`Bmc::stream`]. Every item is a [`StreamEvent`]:
+    /// the event's `data` decoded into `T`, with the event id in effect.
+    /// `last_event_id` is the id a consumer kept from an earlier stream of
+    /// the same URI, sent as `Last-Event-ID` so a server that retains
+    /// history replays the events after it, and in effect on the new stream
+    /// until the server sets another; `None`, or an empty id, starts at the
+    /// server's live position.
+    ///
+    /// The default forwards to [`Bmc::stream`]: its events carry no id and
+    /// nothing is sent to resume from, which cannot mislead a consumer, since
+    /// it only ever holds an id this method gave it. A transport that
+    /// surfaces SSE ids overrides it.
+    fn stream_events<T: Sized + for<'de> Deserialize<'de> + Send + 'static>(
+        &self,
+        uri: &str,
+        last_event_id: Option<&str>,
+    ) -> impl Future<Output = Result<BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error>> + Send
+    where
+        Self::Error: 'static,
+    {
+        let _ = last_event_id;
+        async move { self.stream::<T>(uri).await.map(without_event_ids) }
+    }
+}
+
+/// One event a server-sent event stream delivered.
+///
+/// `data` is the event's payload, decoded into the type the stream was
+/// opened with. `last_event_id` is the SSE `id` in effect when the event was
+/// dispatched: a server sets it per event, it persists over later events
+/// that carry none, and an `id` field with an empty value clears it, as the
+/// SSE processing model prescribes. A consumer that reopens the stream hands
+/// it back through [`Bmc::stream_events`] to resume after this event. A
+/// server that never sets one, or a transport that does not surface ids,
+/// leaves it `None` throughout.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StreamEvent<T> {
+    /// The id to resume after this event, if the server set one.
+    pub last_event_id: Option<String>,
+    /// The event's decoded payload.
+    pub data: T,
+}
+
+/// `stream` as a stream of [`StreamEvent`]s that carry no id: the view a
+/// transport that does not surface SSE ids gives through
+/// [`Bmc::stream_events`].
+#[must_use]
+pub fn without_event_ids<T, E>(stream: BoxTryStream<T, E>) -> BoxTryStream<StreamEvent<T>, E>
+where
+    T: 'static,
+    E: 'static,
+{
+    Box::pin(WithoutEventIds(stream))
+}
+
+struct WithoutEventIds<T, E>(BoxTryStream<T, E>);
+
+impl<T, E> Stream for WithoutEventIds<T, E> {
+    type Item = Result<StreamEvent<T>, E>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.0.as_mut().poll_next(cx).map(|item| {
+            item.map(|result| {
+                result.map(|data| StreamEvent {
+                    last_event_id: None,
+                    data,
+                })
+            })
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::task::Waker;
+    use std::vec::IntoIter;
+
+    use super::*;
+
+    /// A stream over a fixed list of items.
+    struct Items(IntoIter<Result<u8, &'static str>>);
+
+    impl Stream for Items {
+        type Item = Result<u8, &'static str>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.0.next())
+        }
+    }
+
+    #[test]
+    fn without_ids_keeps_items_and_errors_and_attaches_no_id() {
+        let items = Items(vec![Ok(1), Err("lost"), Ok(2)].into_iter());
+        let mut events = without_event_ids(Box::pin(items));
+        let mut cx = Context::from_waker(Waker::noop());
+        let event = |data| {
+            Poll::Ready(Some(Ok(StreamEvent {
+                last_event_id: None,
+                data,
+            })))
+        };
+
+        assert_eq!(events.as_mut().poll_next(&mut cx), event(1));
+        assert_eq!(
+            events.as_mut().poll_next(&mut cx),
+            Poll::Ready(Some(Err("lost")))
+        );
+        assert_eq!(events.as_mut().poll_next(&mut cx), event(2));
+        assert_eq!(events.as_mut().poll_next(&mut cx), Poll::Ready(None));
+    }
 }
