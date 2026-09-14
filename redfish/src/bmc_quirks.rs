@@ -15,9 +15,6 @@
 
 use crate::schema::service_root::ServiceRoot;
 
-#[cfg(feature = "accounts")]
-use crate::account::SlotDefinedConfig as SlotDefinedUserAccountsConfig;
-
 /// Object that provides quirks of individual platforms. On first root
 /// retrieval we classify platform and then apply specific workarounds
 /// for each individual platform class.
@@ -85,22 +82,6 @@ impl BmcQuirks {
     #[cfg(feature = "accounts")]
     pub(crate) fn bug_no_account_type_in_accounts(&self) -> bool {
         self.platform == Some(Platform::Hpe)
-    }
-
-    // In some implementations BMC cannot create / delete Redfish
-    // accounts but have pre-created accounts (slots). Workflow is as
-    // following: to "create" new account user should update
-    // precreated account with new parameters and enable it. To delete
-    // account user should just disable it.
-    #[cfg(feature = "accounts")]
-    pub(crate) fn slot_defined_user_accounts(&self) -> Option<SlotDefinedUserAccountsConfig> {
-        self.platform.as_ref().and_then(|platform| {
-            (platform == &Platform::Dell).then_some(SlotDefinedUserAccountsConfig {
-                min_slot: Some(3),
-                hide_disabled: true,
-                disable_account_on_delete: true,
-            })
-        })
     }
 
     // In some implementations BMC ReleaseDate is incorrectly set to
