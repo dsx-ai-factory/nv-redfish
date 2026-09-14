@@ -28,9 +28,6 @@ pub enum Error<B: Bmc> {
     /// No available preallocated account slot was found.
     #[cfg(feature = "accounts")]
     AccountSlotNotAvailable,
-    /// The requested preallocated account slot range is invalid.
-    #[cfg(feature = "accounts")]
-    InvalidAccountSlotRange,
     /// A preallocated account slot cannot be safely modified because its
     /// identity changed or its refreshed representation has no ETag.
     #[cfg(feature = "accounts")]
@@ -76,10 +73,6 @@ impl<B: Bmc> Display for Error<B> {
             #[cfg(feature = "accounts")]
             Self::AccountSlotNotAvailable => {
                 write!(f, "Free account slot is not found")
-            }
-            #[cfg(feature = "accounts")]
-            Self::InvalidAccountSlotRange => {
-                write!(f, "Account slot minimum exceeds maximum")
             }
             #[cfg(feature = "accounts")]
             Self::AccountSlotChanged => {

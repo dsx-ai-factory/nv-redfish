@@ -48,8 +48,9 @@ use std::convert::identity;
 use std::sync::Arc;
 
 #[derive(Clone, Copy)]
-pub(crate) enum DeletionStrategy {
+pub enum DeletionStrategy {
     DeleteResource,
+    #[cfg(feature = "oem-dell")]
     DisableSlot,
 }
 
@@ -223,6 +224,7 @@ impl<B: Bmc> Account<B> {
                     })
                     .await
             }
+            #[cfg(feature = "oem-dell")]
             DeletionStrategy::DisableSlot => {
                 let original_odata_id = self.data.odata_id();
                 let refreshed = Self::new(

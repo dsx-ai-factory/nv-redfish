@@ -17,6 +17,7 @@
 use std::error::Error as StdError;
 use std::sync::Arc;
 
+use nv_redfish::account::AccountServiceConfig;
 use nv_redfish::computer_system::BootOptionReference;
 use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::computer_system::SystemCollection;
@@ -319,7 +320,11 @@ async fn null_collection_member_test() -> Result<(), Box<dyn StdError>> {
 
     assert_eq!(members.len(), 0);
 
-    let _account_service = service_root.account_service().await?.unwrap().raw();
+    let _account_service = service_root
+        .account_service(AccountServiceConfig::standard())
+        .await?
+        .unwrap()
+        .raw();
 
     let storage = systems[0].storage_controllers().await?.unwrap();
     assert_eq!(storage.len(), 0);
