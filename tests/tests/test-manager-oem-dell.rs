@@ -9,7 +9,7 @@ use std::sync::Arc;
 use nv_redfish::manager::Manager;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::{ModificationResponse, ODataId};
-use nv_redfish_tests::{assert_empty, assert_task, async_task, Bmc, Expect, ODATA_ID, ODATA_TYPE};
+use nv_redfish_tests::{assert_empty, Bmc, Expect, ODATA_ID, ODATA_TYPE};
 use serde_json::{json, Value};
 
 const SERVICE_ROOT_TYPE: &str = "#ServiceRoot.v1_13_0.ServiceRoot";
@@ -147,17 +147,18 @@ async fn manager_exposes_resource_oem_jobs_as_legacy_fallback() -> Result<(), Bo
     assert_eq!(jobs.odata_id().to_string(), jobs_id);
 
     let settings_id = ODataId::from("/redfish/v1/Systems/1/Bios/Settings".to_string());
-    let task_id = "/redfish/v1/JobService/Jobs/JID_43";
-    bmc.expect(Expect::create_task(
+    let task_id = "/redfish/v1/Managers/1/Oem/Dell/Jobs/JID_43";
+    bmc.expect(Expect::create(
         jobs_id,
         json!({ "TargetSettingsURI": settings_id }),
-        async_task(task_id, 5),
+        json!({ ODATA_ID: task_id }),
     ));
-    assert_task(
-        jobs.create_configuration_job(&settings_id).await?,
-        task_id,
-        5,
-    );
+    let ModificationResponse::Task(task) = jobs.create_configuration_job(&settings_id).await?
+    else {
+        panic!("expected asynchronous Dell job");
+    };
+    assert_eq!(task.location.0.to_string(), task_id);
+    assert_eq!(task.retry_after, None);
 
     Ok(())
 }

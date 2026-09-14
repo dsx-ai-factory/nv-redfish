@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::{Bmc, EntityTypeRef, ModificationResponse, NavProperty, ODataETag, ODataId};
+use crate::core::{
+    AsyncTask, Bmc, EntityTypeRef, ModificationResponse, NavProperty, ODataETag, ODataId,
+};
 use crate::{Error, NvBmc};
 
 /// Minimal schema for the legacy Dell OEM Jobs collection link.
@@ -97,11 +99,19 @@ impl<B: Bmc> DellJobs<B> {
                 },
             )
             .await
-            .map(|response| {
-                response.map_entity(|data| DellJob {
-                    data: Arc::new(data),
-                    _marker: PhantomData,
-                })
+            .map(|response| match response {
+                ModificationResponse::Entity(data) => {
+                    // iDRAC reports a scheduled configuration job as 200 with
+                    // a success envelope and the OEM job URI in Location. The
+                    // HTTP transport preserves that URI as this minimal entity
+                    // reference; expose it as asynchronous work to callers.
+                    ModificationResponse::Task(AsyncTask {
+                        location: data.odata_id.into(),
+                        retry_after: None,
+                    })
+                }
+                ModificationResponse::Task(task) => ModificationResponse::Task(task),
+                ModificationResponse::Empty => ModificationResponse::Empty,
             })
             .map_err(Error::Bmc)
     }
