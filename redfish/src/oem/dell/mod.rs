@@ -27,7 +27,7 @@ mod volumes;
 mod compiled_schema;
 
 #[cfg(all(feature = "computer-systems", feature = "storages"))]
-pub use storage_actions::DellStorageActions;
+pub use storage_actions::{DellOperationApplyTime, DellStorageActions};
 #[cfg(all(feature = "computer-systems", feature = "storages"))]
 pub use volumes::{DellVolumeCreate, DellVolumes};
 

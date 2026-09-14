@@ -2,17 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Mock-based integration tests for standard Volume and Dell storage operations.
-//!
-//! Hardware captures were used only as read-only evidence while designing these
-//! cases.  No hardware mutation was performed, and this file contains no
-//! machine-specific capture data.
 
 use std::error::Error as StdError;
 use std::sync::Arc;
 
 use nv_redfish::computer_system::Storage;
-use nv_redfish::oem::dell::DellVolumeCreate;
-use nv_redfish::schema::settings::ApplyTime;
+use nv_redfish::oem::dell::{DellOperationApplyTime, DellVolumeCreate};
 use nv_redfish::schema::volume::{RaidType, VolumeCreate};
 use nv_redfish::{Error, Resource, ServiceRoot};
 use nv_redfish_core::{ModificationResponse, ODataId};
@@ -233,7 +228,7 @@ async fn standard_create_uses_embedded_volume_without_get() -> Result<(), Box<dy
 }
 
 #[tokio::test]
-async fn standard_create_resolves_location_only_volume() -> Result<(), Box<dyn StdError>> {
+async fn standard_create_resolves_reference_response() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let volumes = volumes(bmc.clone()).await?;
     bmc.expect(Expect::create(
@@ -298,7 +293,7 @@ async fn dell_create_posts_raid_payload_and_uses_embedded_volume_without_get(
 }
 
 #[tokio::test]
-async fn dell_create_resolves_location_only_volume() -> Result<(), Box<dyn StdError>> {
+async fn dell_create_resolves_reference_response() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let volumes = volumes(bmc.clone()).await?;
     bmc.expect(Expect::create(
@@ -345,24 +340,29 @@ async fn dell_create_preserves_empty() -> Result<(), Box<dyn StdError>> {
 }
 
 #[tokio::test]
-async fn decommission_serializes_requested_apply_time() -> Result<(), Box<dyn StdError>> {
-    let bmc = Arc::new(Bmc::default());
-    let storage = storage(bmc.clone(), Some(advertised_decommission_action())).await?;
-    bmc.expect(Expect::action(
-        DECOMMISSION_TARGET,
-        json!({ "@Redfish.OperationApplyTime": "Immediate" }),
-        json!(null),
-    ));
+async fn decommission_serializes_supported_apply_times() -> Result<(), Box<dyn StdError>> {
+    for (apply_time, expected) in [
+        (DellOperationApplyTime::Immediate, "Immediate"),
+        (DellOperationApplyTime::OnReset, "OnReset"),
+    ] {
+        let bmc = Arc::new(Bmc::default());
+        let storage = storage(bmc.clone(), Some(advertised_decommission_action())).await?;
+        bmc.expect(Expect::action(
+            DECOMMISSION_TARGET,
+            json!({ "@Redfish.OperationApplyTime": expected }),
+            json!(null),
+        ));
 
-    let actions = storage
-        .oem_dell_actions()?
-        .expect("Dell OEM actions are advertised");
-    assert!(matches!(
-        actions
-            .decommission_controller_drives(Some(ApplyTime::Immediate))
-            .await?,
-        ModificationResponse::Entity(())
-    ));
+        let actions = storage
+            .oem_dell_actions()?
+            .expect("Dell OEM actions are advertised");
+        assert!(matches!(
+            actions
+                .decommission_controller_drives(Some(apply_time))
+                .await?,
+            ModificationResponse::Entity(())
+        ));
+    }
     Ok(())
 }
 
