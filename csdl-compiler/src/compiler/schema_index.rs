@@ -226,6 +226,17 @@ impl<'a> SchemaIndex<'a> {
         self.find_child_complex_type(qtype)
     }
 
+    /// Find the `Settings.OperationApplyTime` enum corresponding to the
+    /// `@Redfish.OperationApplyTime` annotation when the schema defines it.
+    #[must_use]
+    pub fn redfish_operation_apply_time_type(&self) -> Option<QualifiedName<'a>> {
+        let ns: EdmxNamespace = "Settings".parse().ok()?;
+        let id: SimpleIdentifier = "OperationApplyTime".parse().ok()?;
+        let schema = self.get(&Namespace::new(&ns))?;
+        let (name, r#type) = schema.types.get_key_value(&id)?;
+        matches!(r#type, Type::EnumType(_)).then(|| QualifiedName::new(&schema.namespace, name))
+    }
+
     /// Find the `Resource.Resource` type corresponding that is base
     /// type for all Redfish resources
     ///

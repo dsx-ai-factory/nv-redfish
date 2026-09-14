@@ -7,7 +7,8 @@ use std::error::Error as StdError;
 use std::sync::Arc;
 
 use nv_redfish::computer_system::Storage;
-use nv_redfish::oem::dell::{DellOperationApplyTime, DellVolumeCreate};
+use nv_redfish::oem::dell::DellVolumeCreate;
+use nv_redfish::schema::settings::OperationApplyTime;
 use nv_redfish::schema::volume::{RaidType, VolumeCreate};
 use nv_redfish::{Error, Resource, ServiceRoot};
 use nv_redfish_core::{ModificationResponse, ODataId};
@@ -342,8 +343,8 @@ async fn dell_create_preserves_empty() -> Result<(), Box<dyn StdError>> {
 #[tokio::test]
 async fn decommission_serializes_supported_apply_times() -> Result<(), Box<dyn StdError>> {
     for (apply_time, expected) in [
-        (DellOperationApplyTime::Immediate, "Immediate"),
-        (DellOperationApplyTime::OnReset, "OnReset"),
+        (OperationApplyTime::Immediate, "Immediate"),
+        (OperationApplyTime::OnReset, "OnReset"),
     ] {
         let bmc = Arc::new(Bmc::default());
         let storage = storage(bmc.clone(), Some(advertised_decommission_action())).await?;

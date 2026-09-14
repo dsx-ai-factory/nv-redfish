@@ -8,17 +8,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::core::{Action, Bmc, ModificationResponse};
+use crate::schema::settings::OperationApplyTime;
 use crate::schema::storage::OemActions as StorageOemActions;
 use crate::{Error, NvBmc};
-
-/// Apply times advertised for Dell drive decommission operations.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub enum DellOperationApplyTime {
-    /// Apply the operation immediately.
-    Immediate,
-    /// Apply the operation when the system or service is reset.
-    OnReset,
-}
 
 #[derive(Debug, Deserialize)]
 struct DellStorageOemActions {
@@ -32,7 +24,7 @@ struct DecommissionRequest {
         rename = "@Redfish.OperationApplyTime",
         skip_serializing_if = "Option::is_none"
     )]
-    operation_apply_time: Option<DellOperationApplyTime>,
+    operation_apply_time: Option<OperationApplyTime>,
 }
 
 /// Dell actions advertised by a Storage resource.
@@ -59,7 +51,7 @@ impl<B: Bmc> DellStorageActions<B> {
     /// not advertise this action, or a BMC error if invocation fails.
     pub async fn decommission_controller_drives(
         &self,
-        apply_time: Option<DellOperationApplyTime>,
+        apply_time: Option<OperationApplyTime>,
     ) -> Result<ModificationResponse<()>, Error<B>> {
         let action = self
             .data
