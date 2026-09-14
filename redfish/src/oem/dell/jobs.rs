@@ -8,14 +8,10 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::{Bmc, EntityTypeRef, ModificationResponse, ODataETag, ODataId};
+use crate::core::{Bmc, EntityTypeRef, ModificationResponse, NavProperty, ODataETag, ODataId};
 use crate::{Error, NvBmc};
 
-#[cfg(feature = "managers")]
-use crate::core::NavProperty;
-
 /// Minimal schema for the legacy Dell OEM Jobs collection link.
-#[cfg(feature = "managers")]
 #[derive(Debug, Deserialize)]
 pub(super) struct DellJobCollectionSchema {
     #[serde(rename = "@odata.id")]
@@ -24,7 +20,6 @@ pub(super) struct DellJobCollectionSchema {
     etag: Option<ODataETag>,
 }
 
-#[cfg(feature = "managers")]
 impl EntityTypeRef for DellJobCollectionSchema {
     fn odata_id(&self) -> &ODataId {
         &self.odata_id
@@ -77,7 +72,7 @@ impl<B: Bmc> DellJobs<B> {
         Self::from_id(bmc, collection.id().clone())
     }
 
-    pub(crate) fn from_id(bmc: &NvBmc<B>, collection_id: ODataId) -> Self {
+    fn from_id(bmc: &NvBmc<B>, collection_id: ODataId) -> Self {
         Self {
             bmc: bmc.clone(),
             collection_id,

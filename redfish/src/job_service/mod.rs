@@ -12,9 +12,6 @@ use crate::schema::job_collection::JobCollection as JobCollectionSchema;
 use crate::schema::job_service::JobService as JobServiceSchema;
 use crate::{Error, NvBmc, Resource, ResourceSchema, ServiceRoot};
 
-#[cfg(feature = "oem-dell")]
-use crate::oem::dell::DellJobs;
-
 /// Link to a standard Redfish Job resource.
 pub type JobLink<B> = EntityLink<B, JobSchema>;
 
@@ -101,12 +98,5 @@ impl<B: Bmc> JobCollection<B> {
             .iter()
             .map(|job| EntityLink::new(&self.bmc, NavProperty::new_reference(job.id().clone())))
             .collect())
-    }
-
-    /// Treat this advertised collection as Dell's job-creation endpoint.
-    #[cfg(feature = "oem-dell")]
-    #[must_use]
-    pub fn oem_dell(&self) -> DellJobs<B> {
-        DellJobs::from_id(&self.bmc, self.id.clone())
     }
 }

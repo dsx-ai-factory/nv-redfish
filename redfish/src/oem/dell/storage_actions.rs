@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::{Action, ActionError, Bmc, ModificationResponse};
+use crate::core::{Action, Bmc, ModificationResponse};
 use crate::schema::settings::ApplyTime;
 use crate::schema::storage::OemActions as StorageOemActions;
 use crate::{Error, NvBmc};
@@ -49,10 +49,7 @@ impl<B: Bmc> DellStorageActions<B> {
     pub async fn decommission_controller_drives(
         &self,
         apply_time: ApplyTime,
-    ) -> Result<ModificationResponse<()>, Error<B>>
-    where
-        B::Error: ActionError,
-    {
+    ) -> Result<ModificationResponse<()>, Error<B>> {
         let action = self
             .data
             .controller_drives_decommission

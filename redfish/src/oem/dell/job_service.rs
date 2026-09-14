@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::core::{
-    Action, ActionError, Bmc, EntityTypeRef, ModificationResponse, NavProperty, ODataETag, ODataId,
+    Action, Bmc, EntityTypeRef, ModificationResponse, NavProperty, ODataETag, ODataId,
 };
 use crate::{Error, NvBmc};
 
@@ -74,10 +74,7 @@ impl<B: Bmc> DellJobService<B> {
     pub async fn delete_job_queue(
         &self,
         job_id: impl Into<String>,
-    ) -> Result<ModificationResponse<()>, Error<B>>
-    where
-        B::Error: ActionError,
-    {
+    ) -> Result<ModificationResponse<()>, Error<B>> {
         let action = self
             .data
             .actions

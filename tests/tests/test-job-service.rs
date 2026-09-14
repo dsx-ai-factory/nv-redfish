@@ -9,7 +9,7 @@ use std::sync::Arc;
 use nv_redfish::schema::job::JobState;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ODataId;
-use nv_redfish_tests::{assert_task, async_task, Bmc, Expect, ODATA_ID, ODATA_TYPE};
+use nv_redfish_tests::{Bmc, Expect, ODATA_ID, ODATA_TYPE};
 use serde_json::json;
 
 #[tokio::test]
@@ -78,21 +78,6 @@ async fn job_service_follows_advertised_collection_and_job_links() -> Result<(),
     assert_eq!(
         members[0].fetch().await?.job_state,
         Some(JobState::Completed)
-    );
-
-    let task_id = "/redfish/v1/JobService/Jobs/JID_43";
-    let settings_id = ODataId::from("/redfish/v1/Systems/1/Bios/Settings".to_string());
-    bmc.expect(Expect::create_task(
-        jobs_id,
-        json!({ "TargetSettingsURI": settings_id }),
-        async_task(task_id, 5),
-    ));
-    assert_task(
-        jobs.oem_dell()
-            .create_configuration_job(&settings_id)
-            .await?,
-        task_id,
-        5,
     );
 
     Ok(())
