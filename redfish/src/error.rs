@@ -28,10 +28,6 @@ pub enum Error<B: Bmc> {
     /// No available preallocated account slot was found.
     #[cfg(feature = "accounts")]
     AccountSlotNotAvailable,
-    /// A preallocated account slot cannot be safely modified because its
-    /// identity changed or its refreshed representation has no ETag.
-    #[cfg(feature = "accounts")]
-    AccountSlotChanged,
     /// Action not available for this resource
     ActionNotAvailable,
     /// Event service does not provide `ServerSentEventUri`
@@ -73,10 +69,6 @@ impl<B: Bmc> Display for Error<B> {
             #[cfg(feature = "accounts")]
             Self::AccountSlotNotAvailable => {
                 write!(f, "Free account slot is not found")
-            }
-            #[cfg(feature = "accounts")]
-            Self::AccountSlotChanged => {
-                write!(f, "Account slot changed before it could be safely modified")
             }
             Self::ActionNotAvailable => {
                 write!(f, "Action is not available for this resource")

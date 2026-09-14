@@ -208,9 +208,7 @@ impl<B: Bmc> Account<B> {
     ///
     /// # Errors
     ///
-    /// Returns an error if deletion fails. For preallocated slots, returns
-    /// [`Error::AccountSlotChanged`] if the refreshed slot no longer has the
-    /// same identity or does not provide a current ETag.
+    /// Returns an error if deletion fails.
     pub async fn delete(&self) -> Result<ModificationResponse<Self>, Error<B>> {
         match self.config.deletion_strategy {
             DeletionStrategy::DeleteResource => {
@@ -226,29 +224,7 @@ impl<B: Bmc> Account<B> {
             }
             #[cfg(feature = "oem-dell")]
             DeletionStrategy::DisableSlot => {
-                let original_odata_id = self.data.odata_id();
-                let refreshed = Self::new(
-                    &self.bmc,
-                    &NavProperty::new_reference(original_odata_id.clone()),
-                    &self.config,
-                )
-                .await?;
-
-                let original_user_name = self.data.user_name.as_deref();
-                let refreshed_user_name = refreshed.data.user_name.as_deref();
-                let identity_matches = original_odata_id.last_segment().is_some()
-                    && refreshed.data.odata_id() == original_odata_id
-                    && !self.data.base.id.is_empty()
-                    && refreshed.data.base.id == self.data.base.id
-                    && original_user_name.is_some_and(|user_name| !user_name.is_empty())
-                    && original_user_name == refreshed_user_name
-                    && refreshed.data.etag().is_some();
-                if !identity_matches {
-                    return Err(Error::AccountSlotChanged);
-                }
-
-                refreshed
-                    .update(&ManagerAccountUpdate::builder().with_enabled(false).build())
+                self.update(&ManagerAccountUpdate::builder().with_enabled(false).build())
                     .await
             }
         }
