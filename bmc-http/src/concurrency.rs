@@ -9,6 +9,7 @@ use crate::{BmcCredentials, CacheableError, HttpBmc, HttpClient};
 use nv_redfish_core::query::ExpandQuery;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
+use nv_redfish_core::StreamEvent;
 use nv_redfish_core::{
     Action, Bmc, BoxTryStream, EntityTypeRef, Expandable, FilterQuery, ModificationResponse,
     MultipartUpdateRequest, ODataETag, ODataId, SessionCreateResponse, UploadReader,
@@ -237,5 +238,18 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
     {
         let _permit = permit(&self.semaphore).await;
         self.inner.stream(uri).await
+    }
+
+    async fn stream_events<T>(
+        &self,
+        uri: &str,
+        last_event_id: Option<&str>,
+    ) -> Result<BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error>
+    where
+        T: Sized + for<'de> Deserialize<'de> + Send + 'static,
+        B::Error: 'static,
+    {
+        let _permit = permit(&self.semaphore).await;
+        self.inner.stream_events(uri, last_event_id).await
     }
 }

@@ -99,7 +99,11 @@ pub use action::Action;
 #[doc(inline)]
 pub use action::ActionError;
 #[doc(inline)]
+pub use bmc::without_event_ids;
+#[doc(inline)]
 pub use bmc::Bmc;
+#[doc(inline)]
+pub use bmc::StreamEvent;
 #[doc(inline)]
 pub use deserialize::de_optional_nullable;
 #[doc(inline)]

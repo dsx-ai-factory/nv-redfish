@@ -59,6 +59,7 @@ use crate::cache::TypeErasedCarCache;
 
 use http::HeaderMap;
 use nv_redfish_core::query::ExpandQuery;
+use nv_redfish_core::without_event_ids;
 use nv_redfish_core::Action;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::BoxTryStream;
@@ -69,6 +70,7 @@ use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
 use nv_redfish_core::SessionCreateResponse;
+use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
@@ -194,6 +196,30 @@ pub trait HttpClient: Send + Sync {
         credentials: &BmcCredentials,
         custom_headers: &HeaderMap,
     ) -> impl Future<Output = Result<BoxTryStream<T, Self::Error>, Self::Error>> + Send;
+
+    /// Open an SSE stream whose events carry their ids, resuming after
+    /// `last_event_id` when one is given.
+    ///
+    /// The default forwards to [`HttpClient::sse`]: its events carry no id
+    /// and nothing is sent to resume from. A client that surfaces SSE ids
+    /// overrides it.
+    fn sse_events<T: Sized + for<'de> Deserialize<'de> + Send + 'static>(
+        &self,
+        url: Url,
+        credentials: &BmcCredentials,
+        custom_headers: &HeaderMap,
+        last_event_id: Option<&str>,
+    ) -> impl Future<Output = Result<BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error>> + Send
+    where
+        Self::Error: 'static,
+    {
+        let _ = last_event_id;
+        async move {
+            self.sse::<T>(url, credentials, custom_headers)
+                .await
+                .map(without_event_ids)
+        }
+    }
 }
 
 /// HTTP-based BMC implementation that wraps an [`HttpClient`].
@@ -823,6 +849,30 @@ where
         let credentials = self.read_credentials();
         self.client
             .sse(endpoint_url, credentials.as_ref(), &self.custom_headers)
+            .await
+    }
+
+    async fn stream_events<T: Send + Sized + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        uri: &str,
+        last_event_id: Option<&str>,
+    ) -> Result<BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error>
+    where
+        C::Error: 'static,
+    {
+        let endpoint_url = self
+            .redfish_endpoint
+            .with_same_origin_uri_reference(UriReference(uri))
+            .map_err(C::Error::rejected_uri_reference)?;
+
+        let credentials = self.read_credentials();
+        self.client
+            .sse_events(
+                endpoint_url,
+                credentials.as_ref(),
+                &self.custom_headers,
+                last_event_id,
+            )
             .await
     }
 }

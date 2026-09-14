@@ -190,6 +190,8 @@ pub use error::Error;
 #[doc(inline)]
 pub use nv_redfish_core::Bmc;
 #[doc(inline)]
+pub use nv_redfish_core::StreamEvent;
+#[doc(inline)]
 pub use protocol_features::ProtocolFeatures;
 #[doc(inline)]
 pub use resource::Resource;

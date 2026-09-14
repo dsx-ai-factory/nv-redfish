@@ -22,6 +22,7 @@ use nv_redfish_core::AsyncTask;
 use nv_redfish_core::ODataId;
 
 use serde_json::from_str;
+use serde_json::json;
 use serde_json::Value as JsonValue;
 
 pub type Response<E> = Result<JsonValue, E>;
@@ -95,6 +96,13 @@ pub enum ExpectedRequest {
 
     /// Expected Stream.
     Stream { uri: String },
+
+    /// Expected stream opened with this `Last-Event-ID`, answered with
+    /// events that carry ids.
+    StreamEvents {
+        uri: String,
+        last_event_id: Option<String>,
+    },
 }
 
 /// Expectation for the tests.
@@ -278,12 +286,36 @@ impl<E> Expect<E> {
         }
     }
 
+    /// A stream of `response`, a JSON array of payloads. It serves `stream`,
+    /// and `stream_events` opened without a `Last-Event-ID`, whose events
+    /// then carry no id.
     pub fn stream(uri: impl Display, response: impl Display) -> Self {
         Expect {
             request: ExpectedRequest::Stream {
                 uri: uri.to_string(),
             },
             response: Ok(from_str(&response.to_string()).expect("invalid json")),
+        }
+    }
+
+    /// A stream opened with `last_event_id`, delivering `events` as pairs of
+    /// the id the client sees on the event and the payload. It serves
+    /// `stream_events` asked for that id, and `stream` when the id is `None`.
+    pub fn stream_events<'a>(
+        uri: impl Display,
+        last_event_id: Option<&str>,
+        events: impl IntoIterator<Item = (Option<&'a str>, JsonValue)>,
+    ) -> Self {
+        let events = events
+            .into_iter()
+            .map(|(id, data)| json!({ "last_event_id": id, "data": data }))
+            .collect();
+        Expect {
+            request: ExpectedRequest::StreamEvents {
+                uri: uri.to_string(),
+                last_event_id: last_event_id.map(str::to_owned),
+            },
+            response: Ok(JsonValue::Array(events)),
         }
     }
 }

@@ -25,7 +25,7 @@ mod tests {
     use serde_json::Value as JsonValue;
     use wiremock::{
         matchers::{header, method, path},
-        Mock, MockServer, ResponseTemplate,
+        Match, Mock, MockServer, Request, ResponseTemplate,
     };
 
     const SSE_URI: &str = "/redfish/v1/EventService/SSE";
@@ -34,6 +34,14 @@ mod tests {
     struct StreamPayload {
         event_id: String,
         severity: String,
+    }
+
+    struct WithoutHeader(&'static str);
+
+    impl Match for WithoutHeader {
+        fn matches(&self, request: &Request) -> bool {
+            !request.headers.contains_key(self.0)
+        }
     }
 
     #[tokio::test]
@@ -269,6 +277,213 @@ mod tests {
         let result = bmc
             .stream::<JsonValue>("https://bmc.example.evil/redfish/v1/EventService/SSE")
             .await;
+
+        assert!(matches!(result, Err(BmcError::InvalidRequest(_))));
+    }
+
+    fn sse_response(body: &str) -> ResponseTemplate {
+        ResponseTemplate::new(200)
+            .insert_header("content-type", "text/event-stream")
+            .set_body_string(body)
+    }
+
+    #[tokio::test]
+    async fn event_ids_are_carried_and_persist_until_the_server_changes_them() {
+        let mock_server = MockServer::start().await;
+        // The SSE processing model: an `id` field sets the last event id, a
+        // frame without one keeps it, an id-only frame moves it without
+        // dispatching an event, an `id` holding a NUL is ignored, and an
+        // empty `id` clears it.
+        let sse_body = concat!(
+            "id: 7\n",
+            "data: {\"n\":1}\n\n",
+            "data: {\"n\":2}\n\n",
+            "id: 9\n\n",
+            "data: {\"n\":3}\n\n",
+            "id: 9\u{0}x\n",
+            "data: {\"n\":4}\n\n",
+            "id: \n",
+            "data: {\"n\":5}\n\n"
+        );
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .respond_with(sse_response(sse_body))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, None)
+            .await
+            .expect("must open stream");
+        let events: Vec<_> = stream
+            .map(|event| event.expect("event parse"))
+            .collect()
+            .await;
+
+        let ids: Vec<Option<&str>> = events
+            .iter()
+            .map(|event| event.last_event_id.as_deref())
+            .collect();
+        assert_eq!(ids, [Some("7"), Some("7"), Some("9"), Some("9"), None]);
+        let payloads: Vec<u64> = events
+            .iter()
+            .map(|event| event.data["n"].as_u64().expect("a number"))
+            .collect();
+        assert_eq!(payloads, [1, 2, 3, 4, 5]);
+    }
+
+    #[tokio::test]
+    async fn the_plain_stream_is_the_same_events_without_their_ids() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .respond_with(sse_response(
+                "id: 7\ndata: {\"n\":1}\n\ndata: {\"n\":2}\n\n",
+            ))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let stream = bmc
+            .stream::<JsonValue>(SSE_URI)
+            .await
+            .expect("must open stream");
+        let payloads: Vec<JsonValue> = stream
+            .map(|payload| payload.expect("event parse"))
+            .collect()
+            .await;
+
+        assert_eq!(
+            payloads,
+            [serde_json::json!({"n": 1}), serde_json::json!({"n": 2})]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_resumed_stream_sends_the_last_event_id() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .and(header("last-event-id", "7"))
+            .respond_with(sse_response("id: 8\ndata: {}\n\n"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let mut stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, Some("7"))
+            .await
+            .expect("must open stream");
+
+        let event = stream
+            .next()
+            .await
+            .expect("one event")
+            .expect("event parse");
+        assert_eq!(event.last_event_id.as_deref(), Some("8"));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn the_resume_id_stays_in_effect_until_the_server_sets_another() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .and(header("last-event-id", "7"))
+            .respond_with(sse_response(
+                "data: {\"n\":1}\n\nid: 8\ndata: {\"n\":2}\n\n",
+            ))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, Some("7"))
+            .await
+            .expect("must open stream");
+        let events: Vec<_> = stream
+            .map(|event| event.expect("event parse"))
+            .collect()
+            .await;
+
+        let ids: Vec<Option<&str>> = events
+            .iter()
+            .map(|event| event.last_event_id.as_deref())
+            .collect();
+        assert_eq!(ids, [Some("7"), Some("8")]);
+    }
+
+    #[tokio::test]
+    async fn an_empty_resume_id_is_no_resume_id() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .and(WithoutHeader("last-event-id"))
+            .respond_with(sse_response("data: {}\n\n"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let mut stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, Some(""))
+            .await
+            .expect("must open stream");
+        let event = stream
+            .next()
+            .await
+            .expect("one event")
+            .expect("event parse");
+        assert_eq!(event.last_event_id, None);
+    }
+
+    #[tokio::test]
+    async fn a_fresh_stream_sends_no_last_event_id() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .and(WithoutHeader("last-event-id"))
+            .respond_with(sse_response("data: {}\n\n"))
+            .expect(2)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let mut stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, None)
+            .await
+            .expect("must open stream");
+        let event = stream
+            .next()
+            .await
+            .expect("one event")
+            .expect("event parse");
+        assert_eq!(event.last_event_id, None);
+
+        let mut stream = bmc
+            .stream::<JsonValue>(SSE_URI)
+            .await
+            .expect("must open stream");
+        assert!(stream.next().await.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_last_event_id_that_is_not_a_header_value_is_rejected_before_transport() {
+        let mock_server = MockServer::start().await;
+        let bmc = create_test_bmc(&mock_server);
+
+        let result = bmc.stream_events::<JsonValue>(SSE_URI, Some("7\n8")).await;
 
         assert!(matches!(result, Err(BmcError::InvalidRequest(_))));
     }

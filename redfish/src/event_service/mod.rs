@@ -31,6 +31,7 @@ use futures_util::TryStreamExt as _;
 use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::BoxTryStream;
+use nv_redfish_core::StreamEvent;
 use serde::de;
 use serde::Deserialize;
 use serde::Deserializer;
@@ -154,6 +155,31 @@ impl<B: Bmc> EventService<B> {
         B: 'static,
         B::Error: 'static,
     {
+        let events = self.events_from(None).await?;
+        Ok(Box::pin(events.map_ok(|event| event.data)))
+    }
+
+    /// Open an SSE stream of Redfish event payloads with the id each carries,
+    /// resuming after `last_event_id`.
+    ///
+    /// Payloads are decoded as by [`EventService::events`]. Each item is a
+    /// [`StreamEvent`] with the event id in effect, which a consumer that lost
+    /// the stream passes back here to resume after the last payload it
+    /// handled; `None` starts at the device's live position. A transport that
+    /// does not surface event ids yields `None` for every id and cannot
+    /// resume.
+    ///
+    /// # Errors
+    ///
+    /// As [`EventService::events`].
+    pub async fn events_from(
+        &self,
+        last_event_id: Option<&str>,
+    ) -> Result<BoxTryStream<StreamEvent<EventStreamPayload>, Error<B>>, Error<B>>
+    where
+        B: 'static,
+        B::Error: 'static,
+    {
         let stream_uri = self
             .data
             .server_sent_event_uri
@@ -163,18 +189,25 @@ impl<B: Bmc> EventService<B> {
         let stream = self
             .bmc
             .as_ref()
-            .stream::<JsonValue>(stream_uri)
+            .stream_events::<JsonValue>(stream_uri, last_event_id)
             .await
             .map_err(Error::Bmc)?;
 
         let sse_read_patches = self.sse_read_patches.clone();
-        let stream = stream.map_err(Error::Bmc).and_then(move |payload| {
-            let patched = sse_read_patches
-                .iter()
-                .fold(payload, |acc, patch| patch(acc));
+        let stream = stream.map_err(Error::Bmc).and_then(move |event| {
+            let StreamEvent {
+                last_event_id,
+                data,
+            } = event;
+            let patched = sse_read_patches.iter().fold(data, |acc, patch| patch(acc));
 
             future::ready(
-                serde_json::from_value::<EventStreamPayload>(patched).map_err(Error::Json),
+                serde_json::from_value::<EventStreamPayload>(patched)
+                    .map(|data| StreamEvent {
+                        last_event_id,
+                        data,
+                    })
+                    .map_err(Error::Json),
             )
         });
 
