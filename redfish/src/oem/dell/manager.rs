@@ -63,6 +63,9 @@ impl<B: Bmc> DellManager<B> {
             .transpose()
             .map_err(Error::Json)?
             .unwrap_or_default();
+        // Observed iDRAC9 payloads advertise Jobs in Links.Oem.Dell, while
+        // iDRAC10 advertises it in Oem.Dell. Follow the payload rather than a
+        // generation mapping, preferring the Links value if both are present.
         links.jobs = links.jobs.or(resources.jobs);
         if links.attributes.is_empty() && links.job_service.is_none() && links.jobs.is_none() {
             return Ok(None);
