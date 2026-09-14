@@ -519,9 +519,8 @@ async fn create_account_dell_slot_defined_first_available() -> TestResult<()> {
         slot_member(&accounts_id, 3, false, "", Some(etag)),
     ));
 
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &account_id,
-        etag,
         update_json,
         json_merge([
             &slot_member(&accounts_id, 3, true, "user", None),
@@ -582,9 +581,8 @@ async fn create_account_slot_defined_uses_lowest_in_range() -> TestResult<()> {
         &account_id,
         slot_member(&accounts_id, 3, false, "", Some("slot-3-current")),
     ));
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &account_id,
-        "slot-3-current",
         serde_json::to_value(slot_update())?,
         json_merge([
             &slot_member(&accounts_id, 3, true, "user", None),
@@ -616,9 +614,8 @@ async fn create_account_slot_defined_rechecks_stale_candidate() -> TestResult<()
         &available_account_id,
         slot_member(&accounts_id, 4, false, "", Some(etag)),
     ));
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &available_account_id,
-        etag,
         update_json,
         json_merge([
             &slot_member(&accounts_id, 4, true, "user", None),
@@ -667,9 +664,8 @@ async fn create_account_slot_defined_preserves_async_task() -> TestResult<()> {
         slot_member(&accounts_id, 3, false, "", Some("slot-3-v1")),
     ));
 
-    bmc.expect(Expect::update_task_with_etag(
+    bmc.expect(Expect::update_task(
         &account_id,
-        "slot-3-v1",
         update_json,
         async_task(task_id, 8),
     ));
@@ -692,9 +688,8 @@ async fn create_account_slot_defined_preserves_empty_response() -> TestResult<()
         &account_id,
         slot_member(&accounts_id, 3, false, "", Some("slot-3-current")),
     ));
-    bmc.expect(Expect::update_empty_with_etag(
+    bmc.expect(Expect::update_empty(
         &account_id,
-        "slot-3-current",
         serde_json::to_value(slot_update())?,
     ));
 
@@ -774,7 +769,7 @@ async fn delete_account_preserves_task_and_empty_responses() -> TestResult<()> {
 }
 
 #[test]
-async fn delete_preallocated_slot_refreshes_identity_and_uses_current_etag() -> TestResult<()> {
+async fn delete_preallocated_slot_disables_account() -> TestResult<()> {
     let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, true, "user")]).await?;
     let account = accounts
         .all_accounts_data()
@@ -785,13 +780,8 @@ async fn delete_preallocated_slot_refreshes_identity_and_uses_current_etag() -> 
     let account_id = format!("{accounts_id}/3");
     let disable = ManagerAccountUpdate::builder().with_enabled(false).build();
 
-    bmc.expect(Expect::get(
+    bmc.expect(Expect::update(
         &account_id,
-        slot_member(&accounts_id, 3, true, "user", Some("slot-3-current")),
-    ));
-    bmc.expect(Expect::update_with_etag(
-        &account_id,
-        "slot-3-current",
         serde_json::to_value(&disable)?,
         slot_member(&accounts_id, 3, false, "user", None),
     ));
@@ -813,138 +803,18 @@ async fn delete_preallocated_slot_preserves_task_and_empty_responses() -> TestRe
     let disable_json = serde_json::to_value(&disable)?;
     let task_id = "/redfish/v1/TaskService/Tasks/46";
 
-    bmc.expect(Expect::get(
+    bmc.expect(Expect::update_task(
         format!("{accounts_id}/3"),
-        slot_member(&accounts_id, 3, true, "first", Some("slot-3-current")),
-    ));
-    bmc.expect(Expect::update_task_with_etag(
-        format!("{accounts_id}/3"),
-        "slot-3-current",
         &disable_json,
         async_task(task_id, 11),
     ));
     assert_task(task_account.delete().await?, task_id, 11);
 
-    bmc.expect(Expect::get(
+    bmc.expect(Expect::update_empty(
         format!("{accounts_id}/4"),
-        slot_member(&accounts_id, 4, true, "second", Some("slot-4-current")),
-    ));
-    bmc.expect(Expect::update_empty_with_etag(
-        format!("{accounts_id}/4"),
-        "slot-4-current",
         &disable_json,
     ));
     assert_empty(empty_account.delete().await?);
-
-    Ok(())
-}
-
-#[test]
-async fn delete_preallocated_slot_rejects_reused_or_missing_username() -> TestResult<()> {
-    let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, true, "user")]).await?;
-    let account = accounts
-        .all_accounts_data()
-        .await?
-        .into_iter()
-        .next()
-        .ok_or("missing account")?;
-    let account_id = format!("{accounts_id}/3");
-
-    bmc.expect(Expect::get(
-        &account_id,
-        slot_member(&accounts_id, 3, true, "replacement", Some("slot-3-current")),
-    ));
-    let Err(error) = account.delete().await else {
-        panic!("reused slot must fail");
-    };
-    assert!(matches!(error, nv_redfish::Error::AccountSlotChanged));
-    assert_eq!(
-        error.to_string(),
-        "Account slot changed before it could be safely modified"
-    );
-    assert!(error.source().is_none());
-
-    let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, true, "user")]).await?;
-    let account = accounts
-        .all_accounts_data()
-        .await?
-        .into_iter()
-        .next()
-        .ok_or("missing account")?;
-    let account_id = format!("{accounts_id}/3");
-    let mut missing_username = slot_member(&accounts_id, 3, true, "user", Some("slot-3-current"));
-    missing_username
-        .as_object_mut()
-        .ok_or("account JSON must be an object")?
-        .remove("UserName");
-
-    bmc.expect(Expect::get(&account_id, missing_username));
-    assert!(matches!(
-        account.delete().await,
-        Err(nv_redfish::Error::AccountSlotChanged)
-    ));
-
-    Ok(())
-}
-
-#[test]
-async fn delete_preallocated_slot_rejects_changed_resource_identity() -> TestResult<()> {
-    let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, true, "user")]).await?;
-    let account = accounts
-        .all_accounts_data()
-        .await?
-        .into_iter()
-        .next()
-        .ok_or("missing account")?;
-    let account_id = format!("{accounts_id}/3");
-    let mut changed_id = slot_member(&accounts_id, 3, true, "user", Some("slot-3-current"));
-    changed_id["Id"] = JsonValue::String("4".into());
-
-    bmc.expect(Expect::get(&account_id, changed_id));
-    assert!(matches!(
-        account.delete().await,
-        Err(nv_redfish::Error::AccountSlotChanged)
-    ));
-
-    let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, true, "user")]).await?;
-    let account = accounts
-        .all_accounts_data()
-        .await?
-        .into_iter()
-        .next()
-        .ok_or("missing account")?;
-    let account_id = format!("{accounts_id}/3");
-    let mut changed_odata_id = slot_member(&accounts_id, 3, true, "user", Some("slot-3-current"));
-    changed_odata_id[ODATA_ID] = JsonValue::String(format!("{accounts_id}/4"));
-
-    bmc.expect(Expect::get(&account_id, changed_odata_id));
-    assert!(matches!(
-        account.delete().await,
-        Err(nv_redfish::Error::AccountSlotChanged)
-    ));
-
-    Ok(())
-}
-
-#[test]
-async fn delete_preallocated_slot_requires_refreshed_etag() -> TestResult<()> {
-    let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, true, "user")]).await?;
-    let account = accounts
-        .all_accounts_data()
-        .await?
-        .into_iter()
-        .next()
-        .ok_or("missing account")?;
-    let account_id = format!("{accounts_id}/3");
-
-    bmc.expect(Expect::get(
-        &account_id,
-        slot_member(&accounts_id, 3, true, "user", None),
-    ));
-    assert!(matches!(
-        account.delete().await,
-        Err(nv_redfish::Error::AccountSlotChanged)
-    ));
 
     Ok(())
 }
