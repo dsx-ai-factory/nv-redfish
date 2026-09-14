@@ -19,14 +19,13 @@
 //! - Read raw data with `raw()`
 //! - Update fields via `update()`, or use helpers `update_password()` and
 //!   `update_user_name()`
-//! - Delete the account with `delete()`; optionally disable instead of deleting
-//!   when configured
+//! - Delete the account with `delete()`
 //!
 //! Configuration:
 //! - `Config::read_patch_fn`: apply read-time JSON patches for vendor
 //!   compatibility
-//! - `Config::disable_account_on_delete`: make `delete()` disable the account
-//!   rather than remove it
+//! - `Config::deletion_strategy`: delete a normal resource or safely disable a
+//!   preallocated slot
 //!
 //! Note: `Account` objects are created by higher-level APIs (e.g.
 //! `AccountCollection`) and do not create accounts on the BMC by themselves.
@@ -48,12 +47,18 @@ use nv_redfish_core::NavProperty;
 use std::convert::identity;
 use std::sync::Arc;
 
+#[derive(Clone, Copy)]
+pub(crate) enum DeletionStrategy {
+    DeleteResource,
+    DisableSlot,
+}
+
 #[derive(Clone)]
 pub struct Config {
     /// Function to patch input JSON when reading account structures.
     pub read_patch_fn: Option<ReadPatchFn>,
-    /// If true, deletion disables the account instead of removing it.
-    pub disable_account_on_delete: bool,
+    /// How account deletion is performed.
+    pub deletion_strategy: DeletionStrategy,
 }
 
 /// Represents a Redfish `ManagerAccount`.
@@ -202,21 +207,48 @@ impl<B: Bmc> Account<B> {
     ///
     /// # Errors
     ///
-    /// Returns an error if deletion fails.
+    /// Returns an error if deletion fails. For preallocated slots, returns
+    /// [`Error::AccountSlotChanged`] if the refreshed slot no longer has the
+    /// same identity or does not provide a current ETag.
     pub async fn delete(&self) -> Result<ModificationResponse<Self>, Error<B>> {
-        if self.config.disable_account_on_delete {
-            self.update(&ManagerAccountUpdate::builder().with_enabled(false).build())
-                .await
-        } else {
-            self.bmc
-                .as_ref()
-                .delete::<NavProperty<ManagerAccount>>(self.data.odata_id())
-                .await
-                .map_err(Error::Bmc)?
-                .try_map_entity_async(|nav| async move {
-                    Self::new(&self.bmc, &nav, &self.config).await
-                })
-                .await
+        match self.config.deletion_strategy {
+            DeletionStrategy::DeleteResource => {
+                self.bmc
+                    .as_ref()
+                    .delete::<NavProperty<ManagerAccount>>(self.data.odata_id())
+                    .await
+                    .map_err(Error::Bmc)?
+                    .try_map_entity_async(|nav| async move {
+                        Self::new(&self.bmc, &nav, &self.config).await
+                    })
+                    .await
+            }
+            DeletionStrategy::DisableSlot => {
+                let original_odata_id = self.data.odata_id();
+                let refreshed = Self::new(
+                    &self.bmc,
+                    &NavProperty::new_reference(original_odata_id.clone()),
+                    &self.config,
+                )
+                .await?;
+
+                let original_user_name = self.data.user_name.as_deref();
+                let refreshed_user_name = refreshed.data.user_name.as_deref();
+                let identity_matches = original_odata_id.last_segment().is_some()
+                    && refreshed.data.odata_id() == original_odata_id
+                    && !self.data.base.id.is_empty()
+                    && refreshed.data.base.id == self.data.base.id
+                    && original_user_name.is_some_and(|user_name| !user_name.is_empty())
+                    && original_user_name == refreshed_user_name
+                    && refreshed.data.etag().is_some();
+                if !identity_matches {
+                    return Err(Error::AccountSlotChanged);
+                }
+
+                refreshed
+                    .update(&ManagerAccountUpdate::builder().with_enabled(false).build())
+                    .await
+            }
         }
     }
 }

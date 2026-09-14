@@ -225,7 +225,7 @@ where
     >(
         &self,
         in_id: &ODataId,
-        _etag: Option<&ODataETag>,
+        etag: Option<&ODataETag>,
         update: &V,
     ) -> Result<ModificationResponse<R>, Self::Error> {
         let expect = self
@@ -247,13 +247,58 @@ where
                 Ok(ModificationResponse::Entity(result))
             }
             Expect {
+                request:
+                    ExpectedRequest::UpdateWithEtag {
+                        id,
+                        etag: expected_etag,
+                        request,
+                    },
+                response,
+            } if id == *in_id
+                && request == in_request
+                && etag.is_some_and(|actual| actual.to_string() == expected_etag) =>
+            {
+                let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
+                let result: R = from_value(response).map_err(Error::BadResponseJson)?;
+                Ok(ModificationResponse::Entity(result))
+            }
+            Expect {
                 request: ExpectedRequest::UpdateTask { id, request, task },
                 ..
             } if id == *in_id && request == in_request => Ok(ModificationResponse::Task(task)),
             Expect {
+                request:
+                    ExpectedRequest::UpdateTaskWithEtag {
+                        id,
+                        etag: expected_etag,
+                        request,
+                        task,
+                    },
+                ..
+            } if id == *in_id
+                && request == in_request
+                && etag.is_some_and(|actual| actual.to_string() == expected_etag) =>
+            {
+                Ok(ModificationResponse::Task(task))
+            }
+            Expect {
                 request: ExpectedRequest::UpdateEmpty { id, request },
                 ..
             } if id == *in_id && request == in_request => Ok(ModificationResponse::Empty),
+            Expect {
+                request:
+                    ExpectedRequest::UpdateEmptyWithEtag {
+                        id,
+                        etag: expected_etag,
+                        request,
+                    },
+                ..
+            } if id == *in_id
+                && request == in_request
+                && etag.is_some_and(|actual| actual.to_string() == expected_etag) =>
+            {
+                Ok(ModificationResponse::Empty)
+            }
             _ => Err(Error::UnexpectedUpdate(
                 in_id.clone(),
                 in_request.to_string(),

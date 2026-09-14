@@ -39,6 +39,13 @@ pub enum ExpectedRequest {
     /// Expected Update.
     Update { id: ODataId, request: JsonValue },
 
+    /// Expected Update with a specific ETag.
+    UpdateWithEtag {
+        id: ODataId,
+        etag: String,
+        request: JsonValue,
+    },
+
     /// Expected asynchronous update.
     UpdateTask {
         id: ODataId,
@@ -46,8 +53,23 @@ pub enum ExpectedRequest {
         task: AsyncTask,
     },
 
+    /// Expected asynchronous update with a specific ETag.
+    UpdateTaskWithEtag {
+        id: ODataId,
+        etag: String,
+        request: JsonValue,
+        task: AsyncTask,
+    },
+
     /// Expected update with no response body.
     UpdateEmpty { id: ODataId, request: JsonValue },
+
+    /// Expected update with a specific ETag and no response body.
+    UpdateEmptyWithEtag {
+        id: ODataId,
+        etag: String,
+        request: JsonValue,
+    },
 
     /// Expected Create.
     Create { id: ODataId, request: JsonValue },
@@ -139,6 +161,22 @@ impl<E> Expect<E> {
         }
     }
 
+    pub fn update_with_etag(
+        uri: impl Display,
+        etag: impl Display,
+        request: impl Display,
+        response: impl Display,
+    ) -> Self {
+        Expect {
+            request: ExpectedRequest::UpdateWithEtag {
+                id: uri.to_string().into(),
+                etag: etag.to_string(),
+                request: from_str(&request.to_string()).expect("invalid json"),
+            },
+            response: Ok(from_str(&response.to_string()).expect("invalid json")),
+        }
+    }
+
     pub fn update_task(uri: impl Display, request: impl Display, task: AsyncTask) -> Self {
         Expect {
             request: ExpectedRequest::UpdateTask {
@@ -150,10 +188,42 @@ impl<E> Expect<E> {
         }
     }
 
+    pub fn update_task_with_etag(
+        uri: impl Display,
+        etag: impl Display,
+        request: impl Display,
+        task: AsyncTask,
+    ) -> Self {
+        Expect {
+            request: ExpectedRequest::UpdateTaskWithEtag {
+                id: uri.to_string().into(),
+                etag: etag.to_string(),
+                request: from_str(&request.to_string()).expect("invalid json"),
+                task,
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
     pub fn update_empty(uri: impl Display, request: impl Display) -> Self {
         Expect {
             request: ExpectedRequest::UpdateEmpty {
                 id: uri.to_string().into(),
+                request: from_str(&request.to_string()).expect("invalid json"),
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    pub fn update_empty_with_etag(
+        uri: impl Display,
+        etag: impl Display,
+        request: impl Display,
+    ) -> Self {
+        Expect {
+            request: ExpectedRequest::UpdateEmptyWithEtag {
+                id: uri.to_string().into(),
+                etag: etag.to_string(),
                 request: from_str(&request.to_string()).expect("invalid json"),
             },
             response: Ok(JsonValue::Null),
