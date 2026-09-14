@@ -126,6 +126,9 @@ pub mod event_service;
 /// Host interfaces.
 #[cfg(feature = "host-interfaces")]
 pub mod host_interface;
+/// Job Service.
+#[cfg(feature = "job-service")]
+pub mod job_service;
 /// Log Service.
 #[cfg(feature = "log-services")]
 pub mod log_service;

@@ -23,6 +23,7 @@ all-std-features = accounts \
                    chassis \
                    computer-systems \
                    ethernet-interfaces \
+                   job-service \
                    log-services \
                    managers \
                    manager-network-protocol \
@@ -92,6 +93,7 @@ compile-only-feature-sets = computer-systems,processors,controls \
              oem-ami \
              accounts,oem-dell \
              accounts,managers,oem-dell \
+             managers,oem-dell \
              managers,oem-dell-attributes \
              computer-systems,storages,oem-dell \
              $(std-standalone-features) \

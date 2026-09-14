@@ -41,6 +41,7 @@ std-redfish = [
     "ethernet-interfaces",
     "event-service",
     "host-interfaces",
+    "job-service",
     "log-services",
     "managers",
     "manager-network-protocol",
@@ -73,6 +74,7 @@ controls = ["environment-metrics"]
 ethernet-interfaces = []
 environment-metrics = []
 host-interfaces = []
+job-service = ["impl-entity-link"]
 network-adapters = []
 network-device-functions = []
 event-service = ["patch"]
@@ -123,7 +125,7 @@ oem-nvidia-profiles = ["oem-nvidia"]
 oem-nvidia-security = ["oem-nvidia"]
 
 # OEM product features support
-oem-dell-attributes = ["oem-dell"]
+oem-dell-attributes = ["oem-dell", "managers"]
 
 # Patches
 patch = []
