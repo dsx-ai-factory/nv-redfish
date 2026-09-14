@@ -21,9 +21,11 @@ use std::time::Duration;
 
 use nv_redfish::account::AccountCollection;
 use nv_redfish::account::AccountService;
+use nv_redfish::account::AccountServiceConfig;
 use nv_redfish::account::AccountTypes;
 use nv_redfish::account::ManagerAccountCreate;
 use nv_redfish::account::ManagerAccountUpdate;
+use nv_redfish::oem::dell::IdracVersion;
 use nv_redfish::schema::account_service::MfaBypassCreate;
 use nv_redfish::schema::manager_account::SnmpUserInfoCreate;
 use nv_redfish::ServiceRoot;
@@ -183,6 +185,15 @@ async fn get_account_service(
     root_id: &ODataId,
     vendor: &str,
 ) -> Result<AccountService<Bmc>, Box<dyn StdError>> {
+    get_account_service_with_config(bmc, root_id, vendor, AccountServiceConfig::standard()).await
+}
+
+async fn get_account_service_with_config(
+    bmc: Arc<Bmc>,
+    root_id: &ODataId,
+    vendor: &str,
+    config: AccountServiceConfig,
+) -> Result<AccountService<Bmc>, Box<dyn StdError>> {
     let account_service_id = format!("{root_id}/AccountService");
     let data_type = "#ServiceRoot.v1_13_0.ServiceRoot";
 
@@ -224,7 +235,7 @@ async fn get_account_service(
             },
         }),
     ));
-    Ok(service_root.account_service().await?.unwrap())
+    Ok(service_root.account_service(config).await?.unwrap())
 }
 
 async fn get_account_collection(
@@ -271,23 +282,34 @@ async fn account_fixture(
     vendor: &str,
     slots: &[(u32, bool, &str)],
 ) -> TestResult<(Arc<Bmc>, String, AccountCollection<Bmc>)> {
-    account_fixture_with_mode(vendor, slots, false).await
+    account_fixture_with_config(vendor, slots, AccountServiceConfig::standard()).await
 }
 
 async fn slot_account_fixture(
     slots: &[(u32, bool, &str)],
 ) -> TestResult<(Arc<Bmc>, String, AccountCollection<Bmc>)> {
-    account_fixture_with_mode("Dell", slots, true).await
+    idrac_account_fixture(IdracVersion::Idrac9, slots).await
 }
 
-async fn account_fixture_with_mode(
+async fn idrac_account_fixture(
+    version: IdracVersion,
+    slots: &[(u32, bool, &str)],
+) -> TestResult<(Arc<Bmc>, String, AccountCollection<Bmc>)> {
+    let config = version
+        .account_service_config()
+        .ok_or("unknown iDRAC version has no account configuration")?;
+    account_fixture_with_config("Dell", slots, config).await
+}
+
+async fn account_fixture_with_config(
     vendor: &str,
     slots: &[(u32, bool, &str)],
-    preallocated_slots: bool,
+    config: AccountServiceConfig,
 ) -> TestResult<(Arc<Bmc>, String, AccountCollection<Bmc>)> {
     let bmc = Arc::new(Bmc::default());
     let root_id = ODataId::service_root();
-    let account_service = get_account_service(bmc.clone(), &root_id, vendor).await?;
+    let account_service =
+        get_account_service_with_config(bmc.clone(), &root_id, vendor, config).await?;
     let accounts_id = format!("{}/Accounts", account_service.raw().odata_id());
 
     let members = JsonValue::Array(
@@ -308,12 +330,10 @@ async fn account_fixture_with_mode(
             "Members": members,
         }),
     ));
-    let accounts = if preallocated_slots {
-        account_service.accounts_in_slots(3, 16).await?
-    } else {
-        account_service.accounts().await?
-    }
-    .ok_or("accounts collection missing")?;
+    let accounts = account_service
+        .accounts()
+        .await?
+        .ok_or("accounts collection missing")?;
 
     Ok((bmc, accounts_id, accounts))
 }
@@ -418,7 +438,7 @@ async fn create_account_standard_preserves_all_response_variants() -> TestResult
 
 #[test]
 async fn dell_standard_collection_uses_post_and_resource_delete() -> TestResult<()> {
-    let (bmc, accounts_id, accounts) = account_fixture("Dell", &[]).await?;
+    let (bmc, accounts_id, accounts) = idrac_account_fixture(IdracVersion::Idrac10, &[]).await?;
     let account_id = format!("{accounts_id}/3");
     let create = create_request("user");
 
@@ -445,19 +465,8 @@ async fn dell_standard_collection_uses_post_and_resource_delete() -> TestResult<
 }
 
 #[test]
-async fn preallocated_account_collection_rejects_invalid_slot_range() -> TestResult<()> {
-    let bmc = Arc::new(Bmc::default());
-    let root_id = ODataId::service_root();
-    let account_service = get_account_service(bmc, &root_id, "Dell").await?;
-
-    let Err(error) = account_service.accounts_in_slots(16, 3).await else {
-        panic!("reversed range must fail");
-    };
-    assert!(matches!(error, nv_redfish::Error::InvalidAccountSlotRange));
-    assert_eq!(error.to_string(), "Account slot minimum exceeds maximum");
-    assert!(error.source().is_none());
-
-    Ok(())
+async fn unknown_idrac_version_has_no_account_configuration() {
+    assert!(IdracVersion::Unknown.account_service_config().is_none());
 }
 
 // Create account (HPE-like vendor): response omits `AccountTypes`, expect
