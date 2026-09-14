@@ -16,10 +16,24 @@
 //! Support of Dell OEM extensions to Redfish.
 
 /// Support of Dell iDRAC.
-#[cfg(feature = "oem-dell-attributes")]
+#[cfg(feature = "managers")]
 pub mod attributes;
 
+#[cfg(feature = "managers")]
+mod job_service;
+#[cfg(feature = "managers")]
+mod jobs;
+#[cfg(feature = "managers")]
+mod manager;
+
 mod compiled_schema;
+
+#[cfg(feature = "managers")]
+pub use job_service::DellJobService;
+#[cfg(feature = "managers")]
+pub use jobs::DellJobs;
+#[cfg(feature = "managers")]
+pub use manager::DellManager;
 
 /// Dell OEM Schema.
 pub use compiled_schema::redfish as schema;

@@ -37,9 +37,9 @@ mod reqwest_client_tests {
     use nv_redfish_core::UploadStream;
     use nv_redfish_core::{
         query::{ExpandQuery, FilterQuery},
-        Bmc, DataStream, ModificationResponse, MultipartUpdateRequest,
+        Bmc, DataStream, ModificationResponse, MultipartUpdateRequest, ODataId,
     };
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
     use url::Url;
     #[cfg(feature = "update-service-deprecated")]
     use wiremock::Request;
@@ -51,6 +51,12 @@ mod reqwest_client_tests {
     use crate::common::test_utils::*;
 
     struct FailingUpdateParameters;
+
+    #[derive(Deserialize)]
+    struct LocationResource {
+        #[serde(rename = "@odata.id")]
+        odata_id: ODataId,
+    }
 
     impl Serialize for FailingUpdateParameters {
         fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
@@ -1081,10 +1087,11 @@ mod reqwest_client_tests {
     }
 
     #[tokio::test]
-    async fn test_action_success_message_without_response_type_returns_empty(
+    async fn test_action_success_message_with_location_and_unit_output_returns_empty(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;
         let action_path = "/redfish/v1/systems/1/Actions/ComputerSystem.Reset";
+        let task_path = "/redfish/v1/TaskService/Tasks/42";
 
         let action_request = ActionRequest {
             parameter: "ForceRestart".to_string(),
@@ -1101,7 +1108,11 @@ mod reqwest_client_tests {
             .and(path(action_path))
             .and(body_json(&action_request))
             .and(header("authorization", "Basic cm9vdDpwYXNzd29yZA=="))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&success_body))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("Location", task_path)
+                    .set_body_json(&success_body),
+            )
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -1113,6 +1124,53 @@ mod reqwest_client_tests {
         let response = bmc.action(&action, &action_request).await?;
 
         assert!(matches!(response, ModificationResponse::Empty));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_success_message_with_location_returns_entity_reference(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let collection_path = "/redfish/v1/Managers/1/Oem/Dell/Jobs";
+        let job_path = "/redfish/v1/Managers/1/Oem/Dell/Jobs/JID_42";
+        let create_request = CreateRequest {
+            name: names::TEST_SYSTEM.to_string(),
+            value: 999,
+        };
+        let success_body = serde_json::json!({
+            "@Message.ExtendedInfo": [{
+                "Message": "The request completed successfully.",
+                "MessageArgs": [],
+                "MessageId": "Base.1.12.Success",
+                "Resolution": "None",
+                "Severity": "OK"
+            }]
+        });
+
+        Mock::given(method("POST"))
+            .and(path(collection_path))
+            .and(body_json(&create_request))
+            .and(header("authorization", "Basic cm9vdDpwYXNzd29yZA=="))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("Location", job_path)
+                    .set_body_json(&success_body),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let collection_id = create_odata_id(collection_path);
+        let response = bmc
+            .create::<CreateRequest, LocationResource>(&collection_id, &create_request)
+            .await?;
+
+        let ModificationResponse::Entity(entity) = response else {
+            return Err(String::from("expected entity reference response").into());
+        };
+        assert_eq!(entity.odata_id.to_string(), job_path);
 
         Ok(())
     }

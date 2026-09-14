@@ -15,31 +15,44 @@
 
 use crate::core::Bmc;
 use crate::core::EdmPrimitiveType;
+use crate::core::ModificationResponse;
 use crate::oem::dell::schema::dell_attributes::DellAttributes as DellAttributesSchema;
 use crate::oem::oem_value;
+use crate::Error;
+use crate::NvBmc;
+use serde::Serialize;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-#[cfg(feature = "managers")]
 use crate::core::EntityTypeRef as _;
-#[cfg(feature = "managers")]
 use crate::core::NavProperty;
 #[cfg(feature = "managers")]
 use crate::core::ODataId;
 #[cfg(feature = "managers")]
 use crate::schema::manager::Manager as ManagerSchema;
-#[cfg(feature = "managers")]
-use crate::Error;
-#[cfg(feature = "managers")]
-use crate::NvBmc;
 
 /// Dell OEM Attributes.
 pub struct DellAttributes<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<DellAttributesSchema>,
     _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> DellAttributes<B> {
+    pub(crate) async fn new(
+        bmc: &NvBmc<B>,
+        nav: &NavProperty<DellAttributesSchema>,
+    ) -> Result<Self, Error<B>> {
+        nav.get(bmc.as_ref())
+            .await
+            .map_err(Error::Bmc)
+            .map(|data| Self {
+                bmc: bmc.clone(),
+                data,
+                _marker: PhantomData,
+            })
+    }
+
     /// Create Dell OEM Manager attributes.
     ///
     /// Returns `Ok(None)` when the manager does not include `Oem.Dell`.
@@ -70,6 +83,7 @@ impl<B: Bmc> DellAttributes<B> {
             bmc.expand_property(&NavProperty::new_reference(odata_id))
                 .await
                 .map(|data| Self {
+                    bmc: bmc.clone(),
                     data,
                     _marker: PhantomData,
                 })
@@ -87,6 +101,39 @@ impl<B: Bmc> DellAttributes<B> {
             .as_ref()
             .and_then(|attributes| attributes.dynamic_properties.get(name))
             .map(|v| DellAttributeRef::new(v.as_ref()))
+    }
+
+    /// Update dynamic Dell attributes on this resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serializing or applying the update fails.
+    pub async fn update<T>(&self, attributes: &T) -> Result<ModificationResponse<Self>, Error<B>>
+    where
+        T: Serialize + Send + Sync,
+    {
+        #[derive(Serialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct Update<'a, T> {
+            attributes: &'a T,
+        }
+
+        self.bmc
+            .as_ref()
+            .update(
+                self.data.odata_id(),
+                self.data.etag(),
+                &Update { attributes },
+            )
+            .await
+            .map(|response| {
+                response.map_entity(|data| Self {
+                    bmc: self.bmc.clone(),
+                    data: Arc::new(data),
+                    _marker: PhantomData,
+                })
+            })
+            .map_err(Error::Bmc)
     }
 }
 

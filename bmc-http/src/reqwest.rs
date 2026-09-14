@@ -769,7 +769,7 @@ impl Client {
 
         // Resolve the header once, but defer propagating its error until a
         // status branch actually uses Location. A malformed, irrelevant
-        // Location must not turn a valid 204 or body-bearing 200/201 into an
+        // Location must not turn a valid 204 or entity-bearing 200/201 into an
         // error.
         let location = location_from_headers(&headers, &url, status);
 
@@ -813,7 +813,17 @@ impl Client {
                         Ok(entity) => Ok(ModificationResponse::Entity(entity)),
                         Err(err) => {
                             if is_redfish_success_response(&value) {
-                                // No-response action returned a Redfish success envelope.
+                                // A success envelope is not the requested
+                                // representation. Preserve an accompanying
+                                // resource Location in the same way as an
+                                // empty 200/201 response.
+                                if let Some(location) = location? {
+                                    let value = serde_json::json!({ "@odata.id": location });
+                                    return Ok(serde_path_to_error::deserialize(value)
+                                        .map_or(ModificationResponse::Empty, |entity| {
+                                            ModificationResponse::Entity(entity)
+                                        }));
+                                }
                                 Ok(ModificationResponse::Empty)
                             } else {
                                 // The response was successful JSON, but it did

@@ -38,6 +38,8 @@ use crate::chassis::ChassisLink;
 use crate::computer_system::SystemCollection;
 #[cfg(feature = "event-service")]
 use crate::event_service::EventService;
+#[cfg(feature = "job-service")]
+use crate::job_service::JobService;
 #[cfg(feature = "managers")]
 use crate::manager::ManagerCollection;
 #[cfg(feature = "oem-ami")]
@@ -246,6 +248,18 @@ impl<B: Bmc> ServiceRoot<B> {
     #[cfg(feature = "update-service")]
     pub async fn update_service(&self) -> Result<Option<UpdateService<B>>, Error<B>> {
         UpdateService::new(&self.bmc, self).await
+    }
+
+    /// Get JobService in BMC.
+    ///
+    /// Returns `Ok(None)` when the BMC does not expose JobService.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if retrieving JobService data fails.
+    #[cfg(feature = "job-service")]
+    pub async fn job_service(&self) -> Result<Option<JobService<B>>, Error<B>> {
+        JobService::new(&self.bmc, self).await
     }
 
     /// Get task service in BMC
