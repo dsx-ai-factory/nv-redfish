@@ -32,6 +32,7 @@ use nv_redfish_tests::assert_task;
 use nv_redfish_tests::async_task;
 use nv_redfish_tests::expect_redfish_reset_action;
 use nv_redfish_tests::json_merge;
+use nv_redfish_tests::liteon_powershelf_service_root;
 use nv_redfish_tests::redfish_action_payload;
 use nv_redfish_tests::redfish_empty_actions_payload;
 use nv_redfish_tests::Bmc;
@@ -184,8 +185,35 @@ async fn ami_viking_missing_root_systems_nav_workaround() -> Result<(), Box<dyn 
 }
 
 #[test]
+async fn liteon_f16_missing_root_systems_nav_workaround() -> Result<(), Box<dyn StdError>> {
+    // Platform under test: Lite-On F16 power shelf (`Vendor=LITE-ON TECHNOLOGY CORP.`).
+    // Quirk under test: missing root Systems navigation property; `/Systems` is fetched directly.
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let computer_system = computer_system(&ids, json!({}));
+    let service_root =
+        expect_liteon_powershelf_service_root_without_systems(bmc.clone(), &ids).await?;
+    bmc.expect(Expect::get(
+        &ids.systems_id,
+        json!({
+            ODATA_ID: &ids.systems_id,
+            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
+            "Id": resource_name(&ids.systems_id),
+            "Name": "Computer System Collection",
+            "Members": [computer_system]
+        }),
+    ));
+
+    let systems = service_root.systems().await?.unwrap();
+    let members = systems.members().await?;
+    assert_eq!(members.len(), 1);
+
+    Ok(())
+}
+
+#[test]
 async fn anonymous_1_9_0_missing_root_systems_nav_workaround() -> Result<(), Box<dyn StdError>> {
-    // Platform under test: Liteon powershelf class (anonymous Redfish 1.9.0 root).
+    // Platform under test: anonymous Redfish 1.9.0 root (no vendor).
     // Quirk under test: missing root Systems navigation property.
     let bmc = Arc::new(Bmc::default());
     let ids = computer_system_ids();
@@ -500,6 +528,17 @@ async fn expect_anonymous_1_9_service_root_without_systems(
     bmc.expect(Expect::get(
         &ids.root_id,
         anonymous_1_9_service_root(&ids.root_id, json!({})),
+    ));
+    ServiceRoot::new(bmc).await.map_err(Into::into)
+}
+
+async fn expect_liteon_powershelf_service_root_without_systems(
+    bmc: Arc<Bmc>,
+    ids: &ComputerSystemIds,
+) -> Result<ServiceRoot<Bmc>, Box<dyn StdError>> {
+    bmc.expect(Expect::get(
+        &ids.root_id,
+        liteon_powershelf_service_root(&ids.root_id, json!({})),
     ));
     ServiceRoot::new(bmc).await.map_err(Into::into)
 }
