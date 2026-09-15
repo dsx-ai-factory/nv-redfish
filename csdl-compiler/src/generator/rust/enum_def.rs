@@ -32,7 +32,7 @@ use quote::TokenStreamExt as _;
 #[derive(Debug)]
 pub struct EnumDef<'a> {
     pub name: TypeName<'a>,
-    pub compiled: EnumType<'a>,
+    pub compiled: &'a EnumType<'a>,
 }
 
 impl EnumDef<'_> {
@@ -43,7 +43,7 @@ impl EnumDef<'_> {
         let mut members_content = TokenStream::new();
         let mut snake_case_match_arms = TokenStream::new();
 
-        for m in self.compiled.members {
+        for m in &self.compiled.members {
             let rename = Literal::string(m.name.inner().inner());
             let member_name = EnumMemberName::new(m.name.inner());
 

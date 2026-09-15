@@ -13,7 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::compiler::NavProperty;
 use crate::compiler::Properties;
+use crate::compiler::Property;
+use crate::compiler::TypeClass;
 use crate::generator::rust::Config;
 use crate::generator::rust::FullTypeName;
 use crate::generator::rust::StructFieldName;
@@ -24,6 +27,7 @@ use proc_macro2::Literal;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::quote;
+use quote::ToTokens;
 
 /// A compiled property that can be emitted in a create or update request structure.
 struct SerializableProperty<'a> {
@@ -59,7 +63,7 @@ impl<'a> SerializableProperties<'a> {
     /// according to their Redfish and `OData` annotations, and
     /// computes their generated Rust names and types.
     #[must_use]
-    pub fn new(properties: &Properties<'a>, config: &Config) -> Self {
+    pub fn for_update(properties: &Properties<'a>, config: &Config) -> Self {
         Self(
             properties
                 .properties
@@ -74,26 +78,90 @@ impl<'a> SerializableProperties<'a> {
                     }
 
                     let full_type = FullTypeName::new(*v, config).for_update(Some(typeinfo.class));
-                    let prop_type = match p.ptype {
-                        OneOrCollection::One(_) => quote! { #full_type },
-                        OneOrCollection::Collection(_) => {
-                            if p.rigid_array_support.into_inner() {
-                                quote! { Vec<Option<#full_type>> }
-                            } else {
-                                quote! { Vec<#full_type> }
-                            }
-                        }
-                    };
-                    Some(SerializableProperty {
-                        rename: Literal::string(p.name.inner().inner()),
-                        name: StructFieldName::new_property(p.name),
-                        prop_type,
-                        required_on_create: p.redfish.is_required_on_create.into_inner(),
-                        write_only: p.odata.permissions_is_write_only(),
-                    })
+                    Some(Self::structural_property(p, full_type))
                 })
                 .collect(),
         )
+    }
+
+    /// Selects all properties, including inherited and read-only properties, for creation.
+    /// Nested complex values use their own create shapes; navigation values are references.
+    #[must_use]
+    pub fn for_create(properties: &[&Properties<'a>], config: &Config) -> Self {
+        let top = &config.top_module_alias;
+        Self(
+            properties
+                .iter()
+                .flat_map(|properties| {
+                    let structural = properties.properties.iter().map(|p| {
+                        let (typeinfo, name) = p.ptype.inner();
+                        let full_type = FullTypeName::new(*name, config);
+                        let full_type = if typeinfo.class == TypeClass::ComplexType {
+                            full_type.for_create().to_token_stream()
+                        } else {
+                            full_type.to_token_stream()
+                        };
+                        Self::structural_property(p, full_type)
+                    });
+                    let navigation = properties
+                        .nav_properties
+                        .iter()
+                        .map(|p| Self::navigation_property(p, quote! { #top::Reference }));
+                    structural.chain(navigation)
+                })
+                .collect(),
+        )
+    }
+
+    fn structural_property(p: &Property<'a>, full_type: impl ToTokens) -> SerializableProperty<'a> {
+        let prop_type = match p.ptype {
+            OneOrCollection::One(_) => quote! { #full_type },
+            OneOrCollection::Collection(_) => {
+                if p.rigid_array_support.into_inner() {
+                    quote! { Vec<Option<#full_type>> }
+                } else {
+                    quote! { Vec<#full_type> }
+                }
+            }
+        };
+        SerializableProperty {
+            rename: Literal::string(p.name.inner().inner()),
+            name: StructFieldName::new_property(p.name),
+            prop_type,
+            required_on_create: p.redfish.is_required_on_create.into_inner(),
+            write_only: p.odata.permissions_is_write_only(),
+        }
+    }
+
+    fn navigation_property(
+        p: &NavProperty<'a>,
+        full_type: impl ToTokens,
+    ) -> SerializableProperty<'a> {
+        let (cardinality, name, odata, redfish) = match p {
+            NavProperty::Expandable(p) => {
+                (p.ptype.as_ref().map(|_| ()), p.name, &p.odata, &p.redfish)
+            }
+            NavProperty::Reference {
+                cardinality,
+                odata,
+                redfish,
+            } => (
+                cardinality.as_ref().map(|_| ()),
+                *cardinality.inner(),
+                odata,
+                redfish,
+            ),
+        };
+        SerializableProperty {
+            rename: Literal::string(name.inner().inner()),
+            name: StructFieldName::new_property(name),
+            prop_type: match cardinality {
+                OneOrCollection::One(()) => quote! { #full_type },
+                OneOrCollection::Collection(()) => quote! { Vec<#full_type> },
+            },
+            required_on_create: redfish.is_required_on_create.into_inner(),
+            write_only: odata.permissions_is_write_only(),
+        }
     }
 
     /// Generates the field declarations for an update request structure.

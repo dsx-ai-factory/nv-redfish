@@ -49,11 +49,11 @@ use quote::ToTokens;
 use std::iter;
 
 #[derive(Debug)]
-pub enum GenerateType {
+pub enum GenerateType<'a> {
     Read,
-    Excerpt(ExcerptCopy),
+    Excerpt(&'a ExcerptCopy),
     Update,
-    Create,
+    Create(Vec<&'a Properties<'a>>),
     Action,
 }
 
@@ -62,11 +62,11 @@ pub enum GenerateType {
 pub struct StructDef<'a> {
     pub name: TypeName<'a>,
     base: Option<QualifiedName<'a>>,
-    properties: Properties<'a>,
-    parameters: Vec<Parameter<'a>>,
-    actions: ActionsMap<'a>,
+    properties: &'a Properties<'a>,
+    parameters: &'a [Parameter<'a>],
+    actions: Option<&'a ActionsMap<'a>>,
     odata: OData<'a>,
-    generate: Vec<GenerateType>,
+    generate: Vec<GenerateType<'a>>,
     create_type: Option<QualifiedName<'a>>,
     // Today we implement settings resource using the same EntityType
     // as we use for active resource (see DSP0266 9.10 Settings
@@ -110,7 +110,9 @@ impl<'a> StructDef<'a> {
     pub fn generate(self, tokens: &mut TokenStream, config: &Config) {
         for t in &self.generate {
             match t {
-                GenerateType::Create => self.generate_create(tokens, config),
+                GenerateType::Create(properties) => {
+                    self.generate_create(tokens, properties, config);
+                }
                 GenerateType::Read => self.generate_read(tokens, config),
                 GenerateType::Excerpt(v) => self.generate_excerpt(tokens, config, v),
                 GenerateType::Update => self.generate_update(tokens, config),
@@ -143,7 +145,7 @@ impl<'a> StructDef<'a> {
             .map(|p| Self::generate_nav_property(p, config));
 
         // Action properties token streams:
-        let mut actions = self.actions.values().collect::<Vec<_>>();
+        let mut actions = self.actions.map_or_else(Vec::new, |a| a.values().collect());
         actions.sort_by_key(|a| a.name);
         let action_iter = actions
             .iter()
@@ -371,7 +373,7 @@ impl<'a> StructDef<'a> {
             },
         );
 
-        let properties = SerializableProperties::new(&self.properties, config);
+        let properties = SerializableProperties::for_update(self.properties, config);
 
         let has_additional_properties =
             self.odata.additional_properties.is_some_and(|v| *v.inner());
@@ -425,9 +427,27 @@ impl<'a> StructDef<'a> {
         });
     }
 
-    fn generate_create(&self, tokens: &mut TokenStream, config: &Config) {
-        let properties = SerializableProperties::new(&self.properties, config);
-
+    fn generate_create(
+        &self,
+        tokens: &mut TokenStream,
+        schema_properties: &[&Properties<'a>],
+        config: &Config,
+    ) {
+        let properties = SerializableProperties::for_create(schema_properties, config);
+        let has_additional_properties =
+            self.odata.additional_properties.is_some_and(|v| *v.inner());
+        let top = &config.top_module_alias;
+        let additional_properties = has_additional_properties.then(|| {
+            quote! {
+                #[serde(flatten)]
+                pub additional_properties: #top::AdditionalProperties,
+            }
+        });
+        let additional_properties_init = has_additional_properties.then(|| {
+            quote! {
+                additional_properties: #top::AdditionalProperties::default(),
+            }
+        });
         let content = properties.struct_content_for_create();
         let comment = format!(" Create struct corresponding to `{}`", self.name);
         let name = self.name.for_create();
@@ -436,13 +456,13 @@ impl<'a> StructDef<'a> {
             &properties,
             SerializableStructKind::Create,
             false,
-            false,
+            has_additional_properties,
         );
         tokens.extend([quote! {
             #[doc = #comment]
             #[derive(Serialize)]
             #debug_derive
-            pub struct #name { #content }
+            pub struct #name { #content #additional_properties }
         }]);
 
         let prop_fn_content = properties.optional_property_setter_for_create();
@@ -456,6 +476,7 @@ impl<'a> StructDef<'a> {
                 pub fn builder(#builder_fn_arglist) -> Self {
                     Self {
                         #builder_fn_content
+                        #additional_properties_init
                     }
                 }
                 #[must_use]
@@ -965,12 +986,17 @@ pub struct StructDefBuilder<'a>(StructDef<'a>);
 impl<'a> StructDefBuilder<'a> {
     #[must_use]
     fn new(name: TypeName<'a>, odata: OData<'a>) -> Self {
+        // Action requests have parameters instead of resource properties.
+        static EMPTY_PROPERTIES: Properties<'static> = Properties {
+            properties: Vec::new(),
+            nav_properties: Vec::new(),
+        };
         Self(StructDef {
             name,
             base: None,
-            properties: Properties::default(),
-            parameters: Vec::default(),
-            actions: ActionsMap::default(),
+            properties: &EMPTY_PROPERTIES,
+            parameters: &[],
+            actions: None,
             odata,
             generate: vec![GenerateType::Read],
             create_type: None,
@@ -988,21 +1014,21 @@ impl<'a> StructDefBuilder<'a> {
 
     /// Setup action proprties for the struct.
     #[must_use]
-    pub fn with_actions(mut self, actions: ActionsMap<'a>) -> Self {
+    pub const fn with_actions(mut self, actions: Option<&'a ActionsMap<'a>>) -> Self {
         self.0.actions = actions;
         self
     }
 
     /// Setup structural and navigation proprties for the struct.
     #[must_use]
-    pub fn with_properties(mut self, properties: Properties<'a>) -> Self {
+    pub const fn with_properties(mut self, properties: &'a Properties<'a>) -> Self {
         self.0.properties = properties;
         self
     }
 
     /// Setup parameters for the struct (for action structs).
     #[must_use]
-    pub fn with_parameters(mut self, parameters: Vec<Parameter<'a>>) -> Self {
+    pub const fn with_parameters(mut self, parameters: &'a [Parameter<'a>]) -> Self {
         self.0.parameters = parameters;
         self
     }
@@ -1016,7 +1042,7 @@ impl<'a> StructDefBuilder<'a> {
 
     /// Setup generation types for the struct.
     #[must_use]
-    pub fn with_generate_type(mut self, generate: Vec<GenerateType>) -> Self {
+    pub fn with_generate_type(mut self, generate: Vec<GenerateType<'a>>) -> Self {
         self.0.generate = generate;
         self
     }

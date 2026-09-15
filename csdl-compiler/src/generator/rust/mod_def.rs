@@ -19,8 +19,8 @@ use crate::compiler::ComplexType;
 use crate::compiler::EntityType;
 use crate::compiler::EnumType;
 use crate::compiler::ForcedUpdate;
-use crate::compiler::IsCreatable;
 use crate::compiler::Namespace;
+use crate::compiler::Properties;
 use crate::compiler::TypeDefinition;
 use crate::generator::rust::doc;
 use crate::generator::rust::struct_def::GenerateType;
@@ -82,20 +82,22 @@ impl<'a> ModDef<'a> {
     /// of case conversion.
     pub fn add_complex_type(
         self,
-        ct: ComplexType<'a>,
-        actions: ActionsMap<'a>,
+        ct: &'a ComplexType<'a>,
+        actions: Option<&'a ActionsMap<'a>>,
         forced_update: ForcedUpdate,
+        create_properties: Option<Vec<&'a Properties<'a>>>,
         config: &Config,
     ) -> Result<Self, Error<'a>> {
-        self.inner_add_complex_type(ct, 0, actions, forced_update, config)
+        self.inner_add_complex_type(ct, 0, actions, forced_update, create_properties, config)
     }
 
     fn inner_add_complex_type(
         mut self,
-        ct: ComplexType<'a>,
+        ct: &'a ComplexType<'a>,
         depth: usize,
-        actions: ActionsMap<'a>,
+        actions: Option<&'a ActionsMap<'a>>,
         forced_update: ForcedUpdate,
+        create_properties: Option<Vec<&'a Properties<'a>>>,
         config: &Config,
     ) -> Result<Self, Error<'a>> {
         if let Some(id) = ct.name.namespace.get_id(depth) {
@@ -103,7 +105,14 @@ impl<'a> ModDef<'a> {
             self.sub_mods
                 .remove(&mod_name)
                 .unwrap_or_else(|| ModDef::new(mod_name, ct.name.namespace, depth))
-                .inner_add_complex_type(ct, depth + 1, actions, forced_update, config)
+                .inner_add_complex_type(
+                    ct,
+                    depth + 1,
+                    actions,
+                    forced_update,
+                    create_properties,
+                    config,
+                )
                 .map(|submod| {
                     self.sub_mods.insert(mod_name, submod);
                     self
@@ -123,13 +132,16 @@ impl<'a> ModDef<'a> {
             };
             // If complex type cannot be used for updates then skip
             // generation of Update structures.
-            let builder = if ct.generates_update() || forced_update.into_inner() {
-                builder.with_generate_type(vec![GenerateType::Read, GenerateType::Update])
-            } else {
-                builder.with_generate_type(vec![GenerateType::Read])
-            };
+            let mut gen_types = vec![GenerateType::Read];
+            if ct.generates_update() || forced_update.into_inner() {
+                gen_types.push(GenerateType::Update);
+            }
+            if let Some(properties) = create_properties {
+                gen_types.push(GenerateType::Create(properties));
+            }
+            let builder = builder.with_generate_type(gen_types);
             let struct_def = builder
-                .with_properties(ct.properties)
+                .with_properties(&ct.properties)
                 .with_actions(actions)
                 .build(config)?;
             self.add_struct_def(struct_def)
@@ -143,11 +155,11 @@ impl<'a> ModDef<'a> {
     /// # Errors
     ///
     /// TODO
-    pub fn add_enum_type(self, t: EnumType<'a>) -> Result<Self, Error<'a>> {
+    pub fn add_enum_type(self, t: &'a EnumType<'a>) -> Result<Self, Error<'a>> {
         self.inner_add_enum_type(t, 0)
     }
 
-    fn inner_add_enum_type(mut self, t: EnumType<'a>, depth: usize) -> Result<Self, Error<'a>> {
+    fn inner_add_enum_type(mut self, t: &'a EnumType<'a>, depth: usize) -> Result<Self, Error<'a>> {
         if let Some(id) = t.name.namespace.get_id(depth) {
             let mod_name = ModName::new(id);
             self.sub_mods
@@ -181,13 +193,13 @@ impl<'a> ModDef<'a> {
     /// # Errors
     ///
     ///
-    pub fn add_type_definition(self, t: TypeDefinition<'a>) -> Result<Self, Error<'a>> {
+    pub fn add_type_definition(self, t: &'a TypeDefinition<'a>) -> Result<Self, Error<'a>> {
         self.inner_add_type_definition(t, 0)
     }
 
     fn inner_add_type_definition(
         mut self,
-        t: TypeDefinition<'a>,
+        t: &'a TypeDefinition<'a>,
         depth: usize,
     ) -> Result<Self, Error<'a>> {
         if let Some(id) = t.name.namespace.get_id(depth) {
@@ -227,20 +239,27 @@ impl<'a> ModDef<'a> {
     /// of case conversion.
     pub fn add_entity_type(
         self,
-        t: EntityType<'a>,
-        creatable: IsCreatable,
-        excerpt_copies: Vec<ExcerptCopy>,
+        t: &'a EntityType<'a>,
+        create_properties: Option<Vec<&'a Properties<'a>>>,
+        excerpt_copies: Vec<&'a ExcerptCopy>,
         forced_update: ForcedUpdate,
         config: &Config,
     ) -> Result<Self, Error<'a>> {
-        self.inner_add_entity_type(t, creatable, excerpt_copies, forced_update, 0, config)
+        self.inner_add_entity_type(
+            t,
+            create_properties,
+            excerpt_copies,
+            forced_update,
+            0,
+            config,
+        )
     }
 
     fn inner_add_entity_type(
         mut self,
-        t: EntityType<'a>,
-        creatable: IsCreatable,
-        excerpt_copies: Vec<ExcerptCopy>,
+        t: &'a EntityType<'a>,
+        create_properties: Option<Vec<&'a Properties<'a>>>,
+        excerpt_copies: Vec<&'a ExcerptCopy>,
         forced_update: ForcedUpdate,
         depth: usize,
         config: &Config,
@@ -252,7 +271,7 @@ impl<'a> ModDef<'a> {
                 .unwrap_or_else(|| ModDef::new(mod_name, t.name.namespace, depth))
                 .inner_add_entity_type(
                     t,
-                    creatable,
+                    create_properties,
                     excerpt_copies,
                     forced_update,
                     depth + 1,
@@ -275,8 +294,8 @@ impl<'a> ModDef<'a> {
             if need_redfish_settings || forced_update.into_inner() {
                 gen_types.push(GenerateType::Update);
             }
-            if creatable.into_inner() {
-                gen_types.push(GenerateType::Create);
+            if let Some(properties) = create_properties {
+                gen_types.push(GenerateType::Create(properties));
             }
             for excerpt_copy in excerpt_copies {
                 gen_types.push(GenerateType::Excerpt(excerpt_copy));
@@ -294,7 +313,7 @@ impl<'a> ModDef<'a> {
                 builder
             };
             let builder = builder
-                .with_properties(t.properties)
+                .with_properties(&t.properties)
                 .with_generate_type(gen_types);
             self.add_struct_def(builder.build(config)?)
                 .map_err(Box::new)
@@ -309,13 +328,13 @@ impl<'a> ModDef<'a> {
     /// Returns `CreateStruct` error if failed to add new struct to the
     /// module.  it may only happen in case of name conflicts because
     /// of case conversion.
-    pub fn add_action_type(self, t: &Action<'a>, config: &Config) -> Result<Self, Error<'a>> {
+    pub fn add_action_type(self, t: &'a Action<'a>, config: &Config) -> Result<Self, Error<'a>> {
         self.inner_add_action_type(t, 0, config)
     }
 
     fn inner_add_action_type(
         mut self,
-        t: &Action<'a>,
+        t: &'a Action<'a>,
         depth: usize,
         config: &Config,
     ) -> Result<Self, Error<'a>> {
@@ -332,7 +351,7 @@ impl<'a> ModDef<'a> {
         } else {
             let struct_name = TypeName::new_action(t.binding_name, t.name);
             let struct_def = StructDef::builder(struct_name, t.odata)
-                .with_parameters(t.parameters.clone())
+                .with_parameters(&t.parameters)
                 .with_generate_type(vec![GenerateType::Action])
                 .build(config)?;
 

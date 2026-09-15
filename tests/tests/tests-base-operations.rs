@@ -27,7 +27,8 @@ use nv_redfish_tests::base::expect_root_srv;
 use nv_redfish_tests::base::get_service_root;
 use nv_redfish_tests::base::nav_service_root;
 use nv_redfish_tests::base::redfish::service_root::ActionType;
-use nv_redfish_tests::base::redfish::service_root::ReadOnlyComplexTypeUpdate;
+use nv_redfish_tests::base::redfish::service_root::ComplexTypeLevel2Create;
+use nv_redfish_tests::base::redfish::service_root::ReadOnlyComplexTypeCreate;
 use nv_redfish_tests::base::redfish::service_root::RootSetOnlyComplexType;
 use nv_redfish_tests::base::redfish::service_root::ServiceRootUpdate;
 use nv_redfish_tests::base::redfish::service_root::TestActionsServiceOemActions;
@@ -535,9 +536,7 @@ async fn create_collection_member_test() -> Result<(), Error> {
             &bmc,
             &TestCollectionMemberCreate::builder(
                 "required value".into(),
-                ReadOnlyComplexTypeUpdate::builder()
-                    .with_required("nested required value".into())
-                    .build(),
+                ReadOnlyComplexTypeCreate::builder("nested required value".into()).build(),
             )
             .build(),
         )
@@ -555,9 +554,7 @@ async fn create_collection_member_test() -> Result<(), Error> {
 async fn create_struct_required_on_create_and_writable_fields_test() -> Result<(), Error> {
     let create = TestCollectionMemberCreate::builder(
         "required value".into(),
-        ReadOnlyComplexTypeUpdate::builder()
-            .with_required("nested required value".into())
-            .build(),
+        ReadOnlyComplexTypeCreate::builder("nested required value".into()).build(),
     )
     .with_optional_writable("optional value".into())
     .build();
@@ -573,6 +570,41 @@ async fn create_struct_required_on_create_and_writable_fields_test() -> Result<(
         })
     );
     Ok(())
+}
+
+#[test]
+async fn create_serializes_read_only_and_write_only_fields() {
+    let create = TestCollectionMemberCreate::builder(
+        "required value".into(),
+        ReadOnlyComplexTypeCreate::builder("nested required value".into())
+            .with_level2(
+                ComplexTypeLevel2Create::builder()
+                    .with_required("nested read-only value".into())
+                    .build(),
+            )
+            .build(),
+    )
+    .with_read_only("initial value".into())
+    .with_write_only("create-secret-sentinel".into())
+    .with_optional_writable("writable value".into())
+    .build();
+
+    assert_eq!(
+        serde_json::to_value(&create).expect("create request must serialize"),
+        json!({
+            "RequiredOnCreate": "required value",
+            "ReadOnly": "initial value",
+            "WriteOnly": "create-secret-sentinel",
+            "OptionalWritable": "writable value",
+            "ReadOnlyComplex": {
+                "Required": "nested required value",
+                "Level2": { "Required": "nested read-only value" },
+            },
+        }),
+    );
+    let debug = format!("{create:?}");
+    assert!(!debug.contains("create-secret-sentinel"));
+    assert!(debug.contains("write_only: Some(\"<redacted>\")"));
 }
 
 // A vendor schema binds its own `TestAction` to the OEM extension

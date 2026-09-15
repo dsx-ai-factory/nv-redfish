@@ -24,7 +24,7 @@ use quote::quote;
 #[derive(Debug)]
 pub struct TypeDef<'a> {
     pub name: TypeName<'a>,
-    pub compiled: TypeDefinition<'a>,
+    pub compiled: &'a TypeDefinition<'a>,
 }
 
 impl TypeDef<'_> {

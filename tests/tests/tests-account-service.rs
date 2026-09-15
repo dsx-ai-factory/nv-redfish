@@ -24,6 +24,8 @@ use nv_redfish::account::AccountService;
 use nv_redfish::account::AccountTypes;
 use nv_redfish::account::ManagerAccountCreate;
 use nv_redfish::account::ManagerAccountUpdate;
+use nv_redfish::schema::account_service::MfaBypassCreate;
+use nv_redfish::schema::manager_account::SnmpUserInfoCreate;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::AsyncTask;
 use nv_redfish_core::EntityTypeRef;
@@ -455,6 +457,38 @@ async fn create_account_dell_slot_defined_first_available() -> TestResult<()> {
     assert_eq!(account.role_id, Some("Operator".into()));
     assert_eq!(account.enabled, Some(true));
 
+    Ok(())
+}
+
+#[test]
+async fn create_account_slot_defined_preserves_nested_writable_values() -> TestResult<()> {
+    let (bmc, accounts_id, accounts) = account_fixture("Dell", &[(3, false, "")]).await?;
+    let account_id = format!("{accounts_id}/3");
+    bmc.expect(Expect::get(
+        &account_id,
+        slot_member(&accounts_id, 3, false, "", Some("slot-3-v1")),
+    ));
+    bmc.expect(Expect::update_empty(
+        &account_id,
+        json!({
+            "UserName": "user",
+            "Password": "password",
+            "RoleId": "Operator",
+            "Enabled": true,
+            "SNMP": { "AuthenticationKey": "auth-key", "EncryptionKey": "encryption-key" },
+            "MFABypass": { "BypassTypes": [] },
+        }),
+    ));
+    let create = create_request("user")
+        .with_snmp(
+            SnmpUserInfoCreate::builder()
+                .with_authentication_key("auth-key".into())
+                .with_encryption_key("encryption-key".into())
+                .with_authentication_key_set(true)
+                .build(),
+        )
+        .with_mfa_bypass(MfaBypassCreate::builder().with_bypass_types(vec![]).build());
+    assert_empty(accounts.create_account(create).await?);
     Ok(())
 }
 

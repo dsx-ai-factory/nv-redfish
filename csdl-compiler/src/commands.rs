@@ -191,7 +191,7 @@ fn process_command_inner(
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());
             let generator = RustGenerator::new(
-                compiled,
+                &compiled,
                 GeneratorConfig {
                     serialize_read_models,
                     ..GeneratorConfig::default()
@@ -229,7 +229,7 @@ fn process_command_inner(
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());
             let generator = RustGenerator::new(
-                compiled,
+                &compiled,
                 GeneratorConfig {
                     serialize_read_models,
                     ..GeneratorConfig::default()
