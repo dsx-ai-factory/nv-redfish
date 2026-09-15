@@ -45,7 +45,9 @@ use crate::account::ManagerAccountUpdate;
 use crate::patch_support::CollectionWithPatch;
 use crate::patch_support::CreateWithPatch;
 use crate::patch_support::ReadPatchFn;
+use crate::schema::account_service::MfaBypassUpdate;
 use crate::schema::manager_account::ManagerAccount;
+use crate::schema::manager_account::SnmpUserInfoUpdate;
 use crate::schema::manager_account_collection::ManagerAccountCollection;
 use crate::schema::resource::ResourceCollection;
 use crate::Error;
@@ -217,9 +219,16 @@ impl<B: Bmc> AccountCollection<B> {
                     password_change_required: create.password_change_required,
                     password_expiration: create.password_expiration,
                     phone_number: create.phone_number,
-                    snmp: create.snmp,
+                    snmp: create.snmp.map(|snmp| SnmpUserInfoUpdate {
+                        authentication_key: snmp.authentication_key,
+                        authentication_protocol: snmp.authentication_protocol,
+                        encryption_key: snmp.encryption_key,
+                        encryption_protocol: snmp.encryption_protocol,
+                    }),
                     strict_account_types: create.strict_account_types,
-                    mfa_bypass: create.mfa_bypass,
+                    mfa_bypass: create.mfa_bypass.map(|mfa| MfaBypassUpdate {
+                        bypass_types: mfa.bypass_types,
+                    }),
                     links: None,
                 };
 
