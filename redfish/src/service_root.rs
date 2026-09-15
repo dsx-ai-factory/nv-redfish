@@ -29,7 +29,7 @@ use crate::ResourceSchema;
 use tagged_types::TaggedType;
 
 #[cfg(feature = "accounts")]
-use crate::account::AccountService;
+use crate::account::{AccountService, AccountServiceConfig};
 #[cfg(feature = "chassis")]
 use crate::chassis::ChassisCollection;
 #[cfg(feature = "chassis")]
@@ -172,7 +172,7 @@ impl<B: Bmc> ServiceRoot<B> {
             .map(RedfishVersion::new)
     }
 
-    /// Get the account service belonging to the BMC.
+    /// Get the account service belonging to the BMC with immutable behavior.
     ///
     /// Returns `Ok(None)` when the BMC does not expose AccountService.
     ///
@@ -180,8 +180,11 @@ impl<B: Bmc> ServiceRoot<B> {
     ///
     /// Returns error if retrieving account service data fails.
     #[cfg(feature = "accounts")]
-    pub async fn account_service(&self) -> Result<Option<AccountService<B>>, Error<B>> {
-        AccountService::new(&self.bmc, self).await
+    pub async fn account_service(
+        &self,
+        config: AccountServiceConfig,
+    ) -> Result<Option<AccountService<B>>, Error<B>> {
+        AccountService::new(&self.bmc, self, config).await
     }
 
     /// Get chassis collection in BMC

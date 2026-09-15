@@ -15,11 +15,17 @@
 
 //! Support of Dell OEM extensions to Redfish.
 
+#[cfg(feature = "accounts")]
+mod account;
+
 /// Support of Dell iDRAC.
 #[cfg(feature = "oem-dell-attributes")]
 pub mod attributes;
 
 mod compiled_schema;
+
+#[cfg(feature = "accounts")]
+pub use account::IdracVersion;
 
 /// Dell OEM Schema.
 pub use compiled_schema::redfish as schema;
