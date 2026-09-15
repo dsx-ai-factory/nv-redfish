@@ -38,6 +38,7 @@ enum Platform {
     NvidiaDpu,
     Wiwynn,
     Anonymous1_9_0,
+    LiteonPowershelf,
     NvSwitch,
 }
 
@@ -72,6 +73,7 @@ impl BmcQuirks {
             // Wiwynn ODM GB200 NVL trays report their own vendor rather than
             // `NVIDIA`
             Some("WIWYNN") => Some(Platform::Wiwynn),
+            Some(vendor) if vendor.starts_with("LITE-ON") => Some(Platform::LiteonPowershelf),
             None if redfish_version_str == Some("1.9.0") => Some(Platform::Anonymous1_9_0),
             _ => None,
         };
@@ -129,8 +131,11 @@ impl BmcQuirks {
         match self.platform {
             // 1. There are situations when Viking doesn't provide any
             //    navigation properties in root before BMC reset.
-            // 2. LiteonPowershelf doesn't provide Systems
-            Some(Platform::AmiViking | Platform::Anonymous1_9_0) => true,
+            // 2. Lite-On power shelves omit Systems on the service root while
+            //    `/Systems` is still available via direct GET.
+            Some(Platform::AmiViking | Platform::Anonymous1_9_0 | Platform::LiteonPowershelf) => {
+                true
+            }
             _ => false,
         }
     }
