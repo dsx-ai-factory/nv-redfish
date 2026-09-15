@@ -22,6 +22,7 @@ use crate::edmx::EntityType;
 use crate::edmx::Namespace as EdmxNamespace;
 use crate::edmx::Schema;
 use crate::edmx::SimpleIdentifier;
+use crate::edmx::Term;
 use crate::edmx::Type;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -151,6 +152,13 @@ impl<'a> SchemaIndex<'a> {
             .and_then(|ns| ns.types.get(qtype.name))
     }
 
+    /// Find a vocabulary term by its qualified name.
+    #[must_use]
+    pub fn find_term(&self, name: QualifiedName<'_>) -> Option<&'a Term> {
+        self.get(&name.namespace)
+            .and_then(|schema| schema.terms.get(name.name))
+    }
+
     /// Find a child type by qualified name. For complex/entity types,
     /// returns the most distant unique descendant; otherwise returns
     /// the input type unchanged.
@@ -172,58 +180,6 @@ impl<'a> SchemaIndex<'a> {
             }
         }
         qtype
-    }
-
-    /// Find the `Settings.Settings` type corresponding to the
-    /// `@Redfish.Settings` annotation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the settings type is not found.
-    ///
-    /// # Panics
-    ///
-    /// Should never panic unless the EDMX `SimpleIdentifier` parser is broken.
-    #[allow(clippy::unwrap_in_result)]
-    pub fn redfish_settings_type(&self) -> Result<(QualifiedName<'a>, &'a ComplexType), Error<'a>> {
-        let ns: EdmxNamespace = "Settings".parse().expect("must be parsed");
-        let id: SimpleIdentifier = "Settings".parse().expect("must be parsed");
-        let schema = self
-            .get(&Namespace::new(&ns))
-            .ok_or(Error::SettingsTypeNotFound)?;
-        let (name, _) = schema
-            .types
-            .get_key_value(&id)
-            .ok_or(Error::SettingsTypeNotFound)?;
-        let qtype = QualifiedName::new(&schema.namespace, name);
-        self.find_child_complex_type(qtype)
-    }
-
-    /// Find the `Settings.PreferredApplyTime` type corresponding to
-    /// the `@Redfish.SettingsApplyTime` annotation.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the settings type is not found.
-    ///
-    /// # Panics
-    ///
-    /// Should never panic unless the EDMX `SimpleIdentifier` parser is broken.
-    #[allow(clippy::unwrap_in_result)]
-    pub fn redfish_settings_preferred_apply_time_type(
-        &self,
-    ) -> Result<(QualifiedName<'a>, &'a ComplexType), Error<'a>> {
-        let ns: EdmxNamespace = "Settings".parse().expect("must be parsed");
-        let id: SimpleIdentifier = "PreferredApplyTime".parse().expect("must be parsed");
-        let schema = self
-            .get(&Namespace::new(&ns))
-            .ok_or(Error::SettingsPreferredApplyTimeTypeNotFound)?;
-        let (name, _) = schema
-            .types
-            .get_key_value(&id)
-            .ok_or(Error::SettingsPreferredApplyTimeTypeNotFound)?;
-        let qtype = QualifiedName::new(&schema.namespace, name);
-        self.find_child_complex_type(qtype)
     }
 
     /// Find the `Resource.Resource` type corresponding that is base

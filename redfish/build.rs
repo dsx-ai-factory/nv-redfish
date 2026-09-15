@@ -52,7 +52,8 @@ fn run() -> Result<(), Box<dyn StdError>> {
             process_command_default
         };
 
-    let redfish_csdl: [&str; 5] = [
+    let redfish_csdl: [&str; 6] = [
+        "RedfishExtensions_v1.xml",
         "Settings_v1.xml",
         "Message_v1.xml",
         "Resource_v1.xml",

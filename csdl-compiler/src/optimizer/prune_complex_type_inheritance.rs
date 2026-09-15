@@ -154,6 +154,7 @@ pub fn prune_complex_type_inheritance<'a>(input: Compiled<'a>, _config: &Config)
         creatable_entity_types: input.creatable_entity_types,
         enum_types: input.enum_types,
         type_definitions: input.type_definitions,
+        annotations: input.annotations.map_type(|t| replace(&t, &replacements)),
         actions: map_types_in_actions(input.actions, |t| replace(&t, &replacements)),
     }
 }

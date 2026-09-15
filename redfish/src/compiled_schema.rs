@@ -33,3 +33,39 @@
 pub mod redfish {
     include!(concat!(env!("OUT_DIR"), "/redfish.rs"));
 }
+
+#[cfg(all(test, feature = "resource-serialization"))]
+mod tests {
+    use super::redfish::resource::ItemOrCollection;
+    use super::redfish::SettingsAnnotations;
+    use serde_json::json;
+
+    #[test]
+    fn settings_annotations_preserve_resource_json() {
+        assert_eq!(
+            serde_json::to_value(SettingsAnnotations::default())
+                .expect("empty annotations serialize"),
+            json!({}),
+        );
+        for value in [
+            json!({ "@odata.id": "/redfish/v1/Systems/1/Bios" }),
+            json!({
+                "@odata.id": "/redfish/v1/Systems/1/Bios",
+                "@Redfish.Settings": {
+                    "SettingsObject": { "@odata.id": "/redfish/v1/Systems/1/Bios/Settings" }
+                },
+                "@Redfish.SettingsApplyTime": {
+                    "ApplyTime": "OnReset",
+                    "MaintenanceWindowDurationInSeconds": 60
+                }
+            }),
+        ] {
+            let resource: ItemOrCollection = serde_json::from_value(value.clone())
+                .expect("resource with settings annotations deserializes");
+            assert_eq!(
+                serde_json::to_value(resource).expect("resource serializes"),
+                value,
+            );
+        }
+    }
+}

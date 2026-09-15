@@ -138,6 +138,7 @@ pub fn prune_entity_type_inheritance<'a>(input: Compiled<'a>, config: &Config) -
             .collect(),
         enum_types: input.enum_types,
         type_definitions: input.type_definitions,
+        annotations: input.annotations.map_type(|t| replace(&t, &replacements)),
         actions: map_types_in_actions(input.actions, |t| replace(&t, &replacements)),
     }
 }

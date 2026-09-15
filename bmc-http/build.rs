@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn StdError>> {
         .map(|f| redfish_schema(f))
         .collect::<Vec<_>>();
     let resolve_csdls = [
+        "RedfishExtensions_v1.xml",
         "Settings_v1.xml",
         "Resource_v1.xml",
         "ResolutionStep_v1.xml",
