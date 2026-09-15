@@ -32,9 +32,12 @@ use nv_redfish_tests::base::redfish::service_root::ReadOnlyComplexTypeCreate;
 use nv_redfish_tests::base::redfish::service_root::RootSetOnlyComplexType;
 use nv_redfish_tests::base::redfish::service_root::ServiceRootUpdate;
 use nv_redfish_tests::base::redfish::service_root::TestActionsServiceOemActions;
+use nv_redfish_tests::base::redfish::service_root::TestActionsServiceTestActionAction;
 use nv_redfish_tests::base::redfish::service_root::TestActionsServiceTestSerializationActionAction;
 use nv_redfish_tests::base::redfish::service_root::TestCollectionMemberCreate;
+use nv_redfish_tests::base::redfish::settings::OperationApplyTime;
 use nv_redfish_tests::base::redfish::test_vendor::TestActionsServiceTestActionAction as VendorTestAction;
+use nv_redfish_tests::base::redfish::ActionAnnotations;
 use nv_redfish_tests::json_merge;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Error;
@@ -620,7 +623,20 @@ async fn oem_action_disambiguation_test() {
     }))
     .expect("vendor action deserializes under its own namespace");
     assert!(oem_actions.test_action.is_some());
-    let _distinct_from_standard: VendorTestAction = VendorTestAction {};
+    let mut request = VendorTestAction {
+        redfish_annotations: Default::default(),
+    };
+    assert_eq!(
+        serde_json::to_value(&request).expect("empty action serializes"),
+        json!({})
+    );
+    request.redfish_annotations.operation_apply_time = Some(OperationApplyTime::OnReset);
+    assert_eq!(
+        serde_json::to_value(&request).expect("annotated action serializes"),
+        json!({
+            "@Redfish.OperationApplyTime": "OnReset"
+        })
+    );
 }
 
 // Check that actions method.
@@ -689,7 +705,72 @@ async fn action_method_test() -> Result<(), Error> {
         ModificationResponse::Entity(())
     ));
 
+    // The explicit request accepts annotations without changing the action
+    // endpoint, its ordinary parameters, or response handling.
+    bmc.expect(Expect::action(
+        &action_target,
+        json!({
+            "ActionType": "Option1",
+            "@Redfish.OperationApplyTime": "OnReset"
+        }),
+        &json!(null),
+    ));
+    let action = service_actions
+        .test_action
+        .as_ref()
+        .ok_or(Error::ExpectedProperty("test_action"))?;
+    let mut redfish_annotations = ActionAnnotations::default();
+    redfish_annotations.operation_apply_time = Some(OperationApplyTime::OnReset);
+    let result = action
+        .run(
+            &bmc,
+            &TestActionsServiceTestActionAction {
+                redfish_annotations,
+                action_type: ActionType::Option1,
+            },
+        )
+        .await
+        .map_err(Error::Bmc)?;
+    assert!(matches!(result, ModificationResponse::Entity(())));
+
     Ok(())
+}
+
+#[test]
+async fn action_annotation_schema_values_test() {
+    use nv_redfish::schema::settings::OperationApplyTime as SchemaApplyTime;
+    use nv_redfish::schema::ActionAnnotations as SchemaAnnotations;
+
+    assert_eq!(
+        serde_json::to_value(SchemaAnnotations::default()).expect("empty annotations serialize"),
+        json!({})
+    );
+    for (value, wire) in [
+        (SchemaApplyTime::Immediate, "Immediate"),
+        (SchemaApplyTime::OnReset, "OnReset"),
+        (
+            SchemaApplyTime::AtMaintenanceWindowStart,
+            "AtMaintenanceWindowStart",
+        ),
+        (
+            SchemaApplyTime::InMaintenanceWindowOnReset,
+            "InMaintenanceWindowOnReset",
+        ),
+        (
+            SchemaApplyTime::OnStartUpdateRequest,
+            "OnStartUpdateRequest",
+        ),
+        (SchemaApplyTime::OnTargetReset, "OnTargetReset"),
+    ] {
+        let mut annotations = SchemaAnnotations::default();
+        annotations.operation_apply_time = Some(value);
+        assert_eq!(
+            serde_json::to_value(annotations).expect("annotations serialize"),
+            json!({
+                "@Redfish.OperationApplyTime": wire
+            })
+        );
+    }
 }
 
 #[test]
@@ -710,6 +791,7 @@ async fn action_parameter_serialization_test() -> Result<(), Error> {
         TestCase {
             name: "optional fields are omitted and required nullable null is present",
             request: TestActionsServiceTestSerializationActionAction {
+                redfish_annotations: Default::default(),
                 required_value: "required".into(),
                 required_nullable_value: None,
                 required_collection: vec!["required collection".into()],
@@ -730,6 +812,7 @@ async fn action_parameter_serialization_test() -> Result<(), Error> {
         TestCase {
             name: "optional nullable fields can serialize explicit null",
             request: TestActionsServiceTestSerializationActionAction {
+                redfish_annotations: Default::default(),
                 required_value: "required".into(),
                 required_nullable_value: Some("required nullable".into()),
                 required_collection: vec!["required collection".into()],
@@ -753,6 +836,7 @@ async fn action_parameter_serialization_test() -> Result<(), Error> {
         TestCase {
             name: "optional fields serialize values when present",
             request: TestActionsServiceTestSerializationActionAction {
+                redfish_annotations: Default::default(),
                 required_value: "required".into(),
                 required_nullable_value: Some("required nullable".into()),
                 required_collection: vec!["required collection".into()],
@@ -791,7 +875,7 @@ async fn action_parameter_serialization_test() -> Result<(), Error> {
     Ok(())
 }
 
-// Deserialize @Redfish.Settings and navigate to settings object.
+// Read settings annotations and navigate to the settings object.
 #[test]
 async fn redfish_settings_nav_test() -> Result<(), Error> {
     let bmc = Bmc::default();
@@ -810,7 +894,7 @@ async fn redfish_settings_nav_test() -> Result<(), Error> {
             ODATA_ID: &service_id,
             ODATA_TYPE: &service_data_type,
             "@Redfish.Settings": { "SettingsObject": { ODATA_ID: &settings_id } },
-            "@Redfish.SettingsApplyTime": {},
+            "@Redfish.SettingsApplyTime": { "MaintenanceWindowDurationInSeconds": 60 },
             "SettingValue": "current",
         }),
     ));
@@ -822,8 +906,16 @@ async fn redfish_settings_nav_test() -> Result<(), Error> {
         .await
         .map_err(Error::Bmc)?;
 
-    assert!(service.redfish_settings.is_some());
-    assert!(service.redfish_settings_apply_type.is_some());
+    assert!(service.settings_annotations.settings.is_some());
+    assert_eq!(
+        service
+            .settings_annotations
+            .settings_apply_time
+            .as_ref()
+            .expect("settings apply time is present")
+            .maintenance_window_duration_in_seconds,
+        Some(60),
+    );
     let settings_nav = service.settings_object().expect("settings nav must exist");
 
     // Fetch settings object
@@ -938,6 +1030,8 @@ async fn redfish_settings_absent_test() -> Result<(), Error> {
         .await
         .map_err(Error::Bmc)?;
     assert!(service.settings_object().is_none());
+    assert!(service.settings_annotations.settings.is_none());
+    assert!(service.settings_annotations.settings_apply_time.is_none());
     Ok(())
 }
 

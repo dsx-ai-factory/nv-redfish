@@ -26,6 +26,7 @@ use crate::edmx::Namespace;
 use crate::edmx::NavigationProperty;
 use crate::edmx::Parameter;
 use crate::edmx::StructuralProperty;
+use crate::edmx::Term;
 use tagged_types::TaggedType;
 
 /// A brief description of a model element.
@@ -218,6 +219,12 @@ pub trait ODataAnnotations {
 }
 
 impl ODataAnnotations for EnumType {
+    fn annotations(&self) -> &Vec<Annotation> {
+        &self.annotations
+    }
+}
+
+impl ODataAnnotations for Term {
     fn annotations(&self) -> &Vec<Annotation> {
         &self.annotations
     }

@@ -304,6 +304,10 @@ mod test {
               </EnumType>
               <TypeDefinition Name="Label" UnderlyingType="Edm.String"/>
             </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+              <Term Name="Settings" Type="Settings.Settings"/>
+              <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
+            </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
               <ComplexType Name="Settings"/>
               <ComplexType Name="PreferredApplyTime"/>

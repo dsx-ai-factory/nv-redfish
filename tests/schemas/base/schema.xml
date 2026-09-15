@@ -266,13 +266,29 @@
 
     </Schema>
 
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+      <Term Name="OperationApplyTime" Type="Settings.v1_0_0.OperationApplyTime"/>
+      <Term Name="Settings" Type="Settings.Settings"/>
+      <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
+    </Schema>
+
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
-      <ComplexType Name="Settings">
+      <ComplexType Name="Settings" Abstract="true"/>
+      <ComplexType Name="PreferredApplyTime" Abstract="true"/>
+    </Schema>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings.v1_0_0">
+      <EnumType Name="OperationApplyTime">
+        <Member Name="Immediate"/>
+        <Member Name="OnReset"/>
+      </EnumType>
+      <ComplexType Name="Settings" BaseType="Settings.Settings">
         <NavigationProperty Name="SettingsObject" Type="Resource.Resource" Nullable="false">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
         </NavigationProperty>
       </ComplexType>
-      <ComplexType Name="PreferredApplyTime"/>
+      <ComplexType Name="PreferredApplyTime" BaseType="Settings.PreferredApplyTime">
+        <Property Name="MaintenanceWindowDurationInSeconds" Type="Edm.Int64" Nullable="false"/>
+      </ComplexType>
     </Schema>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="TestVendor">
       <!-- Vendor action whose name clashes with the standard

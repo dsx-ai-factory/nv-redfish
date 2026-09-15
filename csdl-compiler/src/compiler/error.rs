@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::compiler::annotations::Error as AnnotationError;
 use crate::compiler::QualifiedName;
 use crate::edmx::ActionName;
 use crate::edmx::Namespace;
@@ -26,6 +27,8 @@ use std::fmt::Result as FmtResult;
 /// Compilation error kinds.
 #[derive(Debug)]
 pub enum Error<'a> {
+    /// Error while resolving a protocol annotation.
+    Annotation(AnnotationError),
     /// Feature not yet implemented.
     Unimplemented,
     /// Action must be bound.
@@ -46,10 +49,6 @@ pub enum Error<'a> {
     /// supported: a wider cycle would bake one member's provisional type
     /// info into another's compiled form.
     UnsupportedCycle(QualifiedName<'a>),
-    /// Settings.Settings type was not found.
-    SettingsTypeNotFound,
-    /// Settings.PreferredApplyTime type was not found.
-    SettingsPreferredApplyTimeTypeNotFound,
     /// Resource.Resource type was not found.
     ResourceTypeNotFound,
     /// Resource.ResourceCollection type was not found.
@@ -81,6 +80,7 @@ pub enum Error<'a> {
 impl Display for Error<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
+            Self::Annotation(err) => Display::fmt(err, f),
             Self::Unimplemented => write!(f, "unimplemented"),
             Self::EntityTypeNotFound(v) => write!(f, "entity type not found: {v}"),
             Self::ComplexTypeNotFound(v) => write!(f, "complex type not found: {v}"),
@@ -103,16 +103,10 @@ impl Display for Error<'_> {
                 "complex-type reference cycle through {v}; only direct \
                  self-reference is supported"
             ),
-            Self::SettingsTypeNotFound => write!(
-                f,
-                "cannot find type for Redfish settings (Settings.Settings)"
-            ),
-            Self::SettingsPreferredApplyTimeTypeNotFound => write!(
-                f,
-                "cannot find type for Redfish settings preferred apply time (Settings.PreferredApplyTime)"
-            ),
             Self::ResourceTypeNotFound => write!(f, "Resource.Resource type was not found"),
-            Self::ResourceCollectionTypeNotFound => write!(f, "Resource.ResourceCollection type was not found"),
+            Self::ResourceCollectionTypeNotFound => {
+                write!(f, "Resource.ResourceCollection type was not found")
+            }
             Self::NotBoundAction => {
                 write!(f, "unbound action is not supported")
             }

@@ -321,10 +321,9 @@ impl<'a> StructDef<'a> {
                             #[serde(rename="@odata.etag", skip_serializing_if = "Option::is_none")]
                             pub #odata_etag: Option<ODataETag>,
                             #maybe_odata_type
-                            #[serde(rename = "@Redfish.Settings", skip_serializing_if = "Option::is_none")]
-                            pub redfish_settings: Option<#top::settings::Settings>,
-                            #[serde(rename = "@Redfish.SettingsApplyTime", skip_serializing_if = "Option::is_none")]
-                            pub redfish_settings_apply_type: Option<#top::settings::PreferredApplyTime>,
+                            /// Settings annotations.
+                            #[serde(flatten)]
+                            pub settings_annotations: #top::SettingsAnnotations,
                         },
                         ImplType::Root,
                     )
@@ -537,6 +536,7 @@ impl<'a> StructDef<'a> {
     }
 
     fn generate_action(&self, tokens: &mut TokenStream, config: &Config) {
+        let top = &config.top_module_alias;
         let mut content = TokenStream::new();
         content.extend(
             self.parameters
@@ -553,7 +553,12 @@ impl<'a> StructDef<'a> {
             // sensitivity metadata. Do not derive Debug until those fields can be redacted.
             quote! {
                 #[derive(Serialize)]
-                pub struct #name { #content }
+                pub struct #name {
+                    /// Protocol annotations for this action request.
+                    #[serde(flatten)]
+                    pub redfish_annotations: #top::ActionAnnotations,
+                    #content
+                }
             },
         ]);
     }
@@ -844,7 +849,7 @@ impl<'a> StructDef<'a> {
         let fn_settings_impl = match impl_type {
             ImplType::Root => {
                 quote! {
-                    self.redfish_settings
+                    self.settings_annotations.settings
                         .as_ref()
                         .and_then(|s| s.settings_object.as_ref())
                         .map(|r| NavProperty::Reference(r.into()))
@@ -952,6 +957,7 @@ impl<'a> StructDef<'a> {
                     {
                         if let Some(a) = &self.#name  {
                             a.run(bmc, &#typename {
+                                redfish_annotations: #top::ActionAnnotations::default(),
                                 #params
                             }).await
                         } else {

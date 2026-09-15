@@ -126,6 +126,7 @@ async fn main() -> Result<(), BmcError> {
         .run(
             &bmc,
             &redfish_std::redfish::bios::BiosChangePasswordAction {
+                redfish_annotations: Default::default(),
                 password_name: "admin".into(),
                 old_password: Some("admin1".into()),
                 new_password: "admin2".into(),

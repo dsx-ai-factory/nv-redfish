@@ -53,6 +53,8 @@
 
 /// Compiled action.
 pub mod action;
+/// Shared protocol annotations and their resolved schema types.
+pub mod annotations;
 /// Compiled schema bundle.
 pub mod compiled;
 /// Compiled complex type.
@@ -453,15 +455,7 @@ impl SchemaBundle {
         let stack = root_set.complex_types.iter().try_fold(stack, |cstack, t| {
             ensure_type(*t, ctx, &cstack).map(|(compiled, _)| cstack.merge(compiled))
         })?;
-        // Compile type for @Redfish.Settings
-        let (name, _) = ctx.schema_index.redfish_settings_type()?;
-        let (compiled, _) = ensure_type(name, ctx, &stack)?;
-        let stack = stack.merge(compiled);
-        // Compile type for @Redfish.SettingsApplyTime
-        let (name, _) = ctx
-            .schema_index
-            .redfish_settings_preferred_apply_time_type()?;
-        let (compiled, _) = ensure_type(name, ctx, &stack)?;
+        let compiled = annotations::compile_for_resources(ctx, &stack)?;
         let stack = stack.merge(compiled);
 
         let (resource_name, _) = ctx.schema_index.redfish_resource_type()?;
@@ -473,27 +467,30 @@ impl SchemaBundle {
         let stack = stack.merge(compiled);
 
         // Compile actions for all root-document types
-        self.root_docs
-            .iter()
-            .try_fold(stack, |stack, edmx| {
-                let cstack = stack.new_frame();
-                let compiled = edmx
-                    .data_services
-                    .schemas
-                    .iter()
-                    .try_fold(cstack, |stack, s| {
-                        Self::compile_schema_actions(s, ctx, stack.new_frame())
-                            .map(|v| stack.merge(v))
-                    })?
-                    .done();
-                Ok(stack.merge(compiled))
-            })
-            .map(|stack| {
-                stack
-                    .done()
-                    .mark_odata_type(resource_name)
-                    .mark_odata_type(collection_name)
-            })
+        let stack = self.root_docs.iter().try_fold(stack, |stack, edmx| {
+            let cstack = stack.new_frame();
+            let compiled = edmx
+                .data_services
+                .schemas
+                .iter()
+                .try_fold(cstack, |stack, s| {
+                    Self::compile_schema_actions(s, ctx, stack.new_frame()).map(|v| stack.merge(v))
+                })?
+                .done();
+            Ok(stack.merge(compiled))
+        })?;
+        let compiled = stack
+            .done()
+            .mark_odata_type(resource_name)
+            .mark_odata_type(collection_name);
+        if compiled.actions.is_empty() {
+            return Ok(compiled);
+        }
+
+        // Resolve shared request annotations once, after action selection.
+        let stack = Stack::default().merge(compiled);
+        let annotations = annotations::compile_for_actions(ctx, &stack)?;
+        Ok(stack.merge(annotations).done())
     }
 
     fn compile_schema_actions<'a>(
@@ -639,6 +636,10 @@ mod test {
                <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
                  <EntityType Name="Resource" Abstract="true"/>
                  <EntityType Name="ResourceCollection" Abstract="true"/>
+               </Schema>
+               <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+                 <Term Name="Settings" Type="Settings.Settings"/>
+                 <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
                </Schema>
                <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
                  <ComplexType Name="Settings"/>
@@ -853,6 +854,10 @@ mod test {
                    <Singleton Name="Service" Type="ServiceRoot.ServiceRoot"/>
                  </EntityContainer>
                  <EntityType Name="ServiceRoot" BaseType="ServiceRoot.ServiceRoot"/>
+               </Schema>
+               <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+                 <Term Name="Settings" Type="Settings.Settings"/>
+                 <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
                </Schema>
                <Schema Namespace="Settings">
                  <ComplexType Name="Settings"/>

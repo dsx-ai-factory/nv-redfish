@@ -44,8 +44,12 @@ pub mod full_type_name;
 /// Property name for structs
 pub mod property_name;
 
+/// Protocol annotation types included in the generated schema.
+pub mod action_annotations;
 /// Action name for structs
 pub mod action_name;
+/// Settings annotations included in generated resources.
+pub mod settings_annotations;
 
 /// Mod definition
 pub mod mod_def;
@@ -62,6 +66,7 @@ pub mod enum_def;
 /// Generation helpers for properties in create and update request structures.
 pub mod serializable_properties;
 
+use crate::compiler::annotations::Annotations;
 use crate::compiler::Compiled;
 use crate::compiler::ForcedUpdate;
 use crate::compiler::Properties;
@@ -124,6 +129,7 @@ impl Display for Error<'_> {
 pub struct RustGenerator<'a> {
     root: ModDef<'a>,
     config: Config,
+    annotations: &'a Annotations<'a>,
 }
 
 impl<'a> RustGenerator<'a> {
@@ -136,6 +142,7 @@ impl<'a> RustGenerator<'a> {
     pub fn new(compiled: &'a Compiled<'a>, config: Config) -> Result<Self, Error<'a>> {
         let forced_updates = compiled.forced_updates();
         let mut create_properties = Self::create_properties(compiled);
+        let annotations = &compiled.annotations;
 
         let root = ModDef::default();
         let root = compiled.actions.values().try_fold(root, |m, ma| {
@@ -168,7 +175,11 @@ impl<'a> RustGenerator<'a> {
             .enum_types
             .values()
             .try_fold(root, ModDef::add_enum_type)?;
-        Ok(Self { root, config })
+        Ok(Self {
+            root,
+            config,
+            annotations,
+        })
     }
 
     /// Collect schema properties through inheritance and nested structural properties.
@@ -266,6 +277,13 @@ impl<'a> RustGenerator<'a> {
                 pub type PrimitiveType = nv_redfish_core::EdmPrimitiveType;
             }
         });
+        if let Some(annotation) = self.annotations.redfish_operation_apply_time {
+            tokens.extend(action_annotations::generate(annotation));
+        }
+        tokens.extend(settings_annotations::generate(
+            self.annotations,
+            &self.config,
+        ));
         self.root.generate(&mut tokens, &self.config);
         tokens
     }
@@ -293,6 +311,10 @@ mod tests {
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
               <EntityType Name="Resource" Abstract="true"/>
               <EntityType Name="ResourceCollection" Abstract="true"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+              <Term Name="Settings" Type="Settings.Settings"/>
+              <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
             </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
               <ComplexType Name="Settings"/><ComplexType Name="PreferredApplyTime"/>
@@ -373,9 +395,15 @@ mod tests {
               <EntityType Name="Resource" Abstract="true"/>
               <EntityType Name="ResourceCollection" Abstract="true"/>
             </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+              <Term Name="OperationApplyTime" Type="Settings.OperationApplyTime"/>
+              <Term Name="Settings" Type="Settings.Settings"/>
+              <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
+            </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
               <ComplexType Name="Settings"/>
               <ComplexType Name="PreferredApplyTime"/>
+              <EnumType Name="OperationApplyTime"><Member Name="OnReset"/></EnumType>
             </Schema>
           </edmx:DataServices>
         </edmx:Edmx>"#;
