@@ -14,6 +14,10 @@
 // limitations under the License.
 
 //! Shared compiled protocol annotations.
+//!
+//! DSP0266 1.23.1 sections 7.11 and 7.12 define `OperationApplyTime` for
+//! action request bodies. Selection is a protocol rule; its value type
+//! and enum members come from the vocabulary, not a copied Rust enum.
 
 use crate::compiler::{
     ensure_type, Compiled, Context, Error as CompilerError, MapType, MustHaveId, OData,
@@ -50,6 +54,8 @@ pub struct Annotations<'a> {
     pub redfish_settings: Option<Annotation<'a>>,
     /// Resolved `@Redfish.SettingsApplyTime` annotation.
     pub redfish_settings_apply_time: Option<Annotation<'a>>,
+    /// Resolved `@Redfish.OperationApplyTime` annotation for POST action requests.
+    pub redfish_operation_apply_time: Option<Annotation<'a>>,
 }
 
 impl Annotations<'_> {
@@ -63,11 +69,14 @@ impl Annotations<'_> {
         let Self {
             redfish_settings,
             redfish_settings_apply_time,
+            redfish_operation_apply_time,
         } = other;
         Self {
             redfish_settings: redfish_settings.or(self.redfish_settings),
             redfish_settings_apply_time: redfish_settings_apply_time
                 .or(self.redfish_settings_apply_time),
+            redfish_operation_apply_time: redfish_operation_apply_time
+                .or(self.redfish_operation_apply_time),
         }
     }
 }
@@ -80,6 +89,7 @@ impl<'a> MapType<'a> for Annotations<'a> {
         Self {
             redfish_settings: self.redfish_settings.map(|a| a.map_type(&f)),
             redfish_settings_apply_time: self.redfish_settings_apply_time.map(|a| a.map_type(&f)),
+            redfish_operation_apply_time: self.redfish_operation_apply_time.map(|a| a.map_type(&f)),
         }
     }
 }
@@ -102,6 +112,21 @@ pub(crate) fn compile_for_resources<'a>(
     let mut compiled = stack.merge(compiled).done();
     compiled.annotations.redfish_settings = Some(settings);
     compiled.annotations.redfish_settings_apply_time = Some(apply_time);
+    Ok(compiled)
+}
+
+/// Compile the annotations accepted in POST action request bodies.
+pub(crate) fn compile_for_actions<'a>(
+    ctx: &Context<'a>,
+    stack: &Stack<'a, '_>,
+) -> Result<Compiled<'a>, CompilerError<'a>> {
+    let (mut compiled, annotation) = Annotation::compile(
+        "@Redfish.OperationApplyTime",
+        TypeClass::EnumType,
+        ctx,
+        stack,
+    )?;
+    compiled.annotations.redfish_operation_apply_time = Some(annotation);
     Ok(compiled)
 }
 

@@ -28,6 +28,7 @@ use crate::patch_support::Payload;
 use crate::patch_support::ReadPatchFn;
 use crate::schema::update_service::UpdateService as UpdateServiceSchema;
 use crate::schema::update_service::UpdateServiceSimpleUpdateAction;
+use crate::schema::ActionAnnotations;
 use crate::Error;
 use crate::NvBmc;
 use crate::Resource;
@@ -227,6 +228,7 @@ impl<B: Bmc> UpdateService<B> {
             .simple_update(
                 self.bmc.as_ref(),
                 &UpdateServiceSimpleUpdateAction {
+                    redfish_annotations: ActionAnnotations::default(),
                     image_uri,
                     transfer_protocol,
                     targets,

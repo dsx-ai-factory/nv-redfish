@@ -30,6 +30,7 @@ use nv_redfish_core::ODataId;
 use redfish_std::redfish::manager_account::ManagerAccount;
 use redfish_std::redfish::manager_account::ManagerAccountCreate;
 use redfish_std::redfish::service_root::ServiceRoot;
+use redfish_std::redfish::ActionAnnotations;
 use url::Url;
 
 #[tokio::main]
@@ -126,6 +127,7 @@ async fn main() -> Result<(), BmcError> {
         .run(
             &bmc,
             &redfish_std::redfish::bios::BiosChangePasswordAction {
+                redfish_annotations: ActionAnnotations::default(),
                 password_name: "admin".into(),
                 old_password: Some("admin1".into()),
                 new_password: "admin2".into(),

@@ -44,6 +44,8 @@ pub mod full_type_name;
 /// Property name for structs
 pub mod property_name;
 
+/// Protocol annotation types included in the generated schema.
+pub mod action_annotations;
 /// Action name for structs
 pub mod action_name;
 /// Settings annotations included in generated resources.
@@ -275,6 +277,9 @@ impl<'a> RustGenerator<'a> {
                 pub type PrimitiveType = nv_redfish_core::EdmPrimitiveType;
             }
         });
+        if let Some(annotation) = self.annotations.redfish_operation_apply_time {
+            tokens.extend(action_annotations::generate(annotation));
+        }
         tokens.extend(settings_annotations::generate(
             self.annotations,
             &self.config,
@@ -391,12 +396,14 @@ mod tests {
               <EntityType Name="ResourceCollection" Abstract="true"/>
             </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+              <Term Name="OperationApplyTime" Type="Settings.OperationApplyTime"/>
               <Term Name="Settings" Type="Settings.Settings"/>
               <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
             </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
               <ComplexType Name="Settings"/>
               <ComplexType Name="PreferredApplyTime"/>
+              <EnumType Name="OperationApplyTime"><Member Name="OnReset"/></EnumType>
             </Schema>
           </edmx:DataServices>
         </edmx:Edmx>"#;

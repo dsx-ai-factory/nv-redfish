@@ -467,27 +467,30 @@ impl SchemaBundle {
         let stack = stack.merge(compiled);
 
         // Compile actions for all root-document types
-        self.root_docs
-            .iter()
-            .try_fold(stack, |stack, edmx| {
-                let cstack = stack.new_frame();
-                let compiled = edmx
-                    .data_services
-                    .schemas
-                    .iter()
-                    .try_fold(cstack, |stack, s| {
-                        Self::compile_schema_actions(s, ctx, stack.new_frame())
-                            .map(|v| stack.merge(v))
-                    })?
-                    .done();
-                Ok(stack.merge(compiled))
-            })
-            .map(|stack| {
-                stack
-                    .done()
-                    .mark_odata_type(resource_name)
-                    .mark_odata_type(collection_name)
-            })
+        let stack = self.root_docs.iter().try_fold(stack, |stack, edmx| {
+            let cstack = stack.new_frame();
+            let compiled = edmx
+                .data_services
+                .schemas
+                .iter()
+                .try_fold(cstack, |stack, s| {
+                    Self::compile_schema_actions(s, ctx, stack.new_frame()).map(|v| stack.merge(v))
+                })?
+                .done();
+            Ok(stack.merge(compiled))
+        })?;
+        let compiled = stack
+            .done()
+            .mark_odata_type(resource_name)
+            .mark_odata_type(collection_name);
+        if compiled.actions.is_empty() {
+            return Ok(compiled);
+        }
+
+        // Resolve shared request annotations once, after action selection.
+        let stack = Stack::default().merge(compiled);
+        let annotations = annotations::compile_for_actions(ctx, &stack)?;
+        Ok(stack.merge(annotations).done())
     }
 
     fn compile_schema_actions<'a>(
