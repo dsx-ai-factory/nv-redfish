@@ -25,7 +25,6 @@ use serde::Serialize;
 use std::sync::Arc;
 
 use crate::core::EntityTypeRef as _;
-#[cfg(feature = "managers")]
 use crate::core::NavProperty;
 #[cfg(feature = "managers")]
 use crate::core::ODataId;
@@ -40,7 +39,7 @@ pub struct DellAttributes<B: Bmc> {
 
 impl<B: Bmc> DellAttributes<B> {
     /// Fetch Dell attributes from an advertised navigation property.
-    #[cfg(feature = "managers")]
+    #[allow(dead_code)] // Shared constructor for feature-specific Dell referrers.
     pub(crate) async fn new_advertised(
         bmc: &NvBmc<B>,
         nav: &NavProperty<DellAttributesSchema>,
