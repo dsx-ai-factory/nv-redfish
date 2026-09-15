@@ -1,14 +1,26 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Dell job-service resource and actions.
 
 use std::sync::Arc;
 
-use crate::core::{Bmc, ModificationResponse, NavProperty};
-use crate::oem::dell::schema::dell_job_service::{
-    DellJobService as DellJobServiceSchema, DellJobServiceDeleteJobQueueAction,
-};
+#[cfg(feature = "managers")]
+use crate::core::NavProperty;
+use crate::core::{ActionError, Bmc, ModificationResponse};
+use crate::oem::dell::schema::dell_job_service::DellJobService as DellJobServiceSchema;
 use crate::{Error, NvBmc};
 
 /// Dell job-service handle.
@@ -18,6 +30,8 @@ pub struct DellJobService<B: Bmc> {
 }
 
 impl<B: Bmc> DellJobService<B> {
+    /// Fetch a Dell JobService from an advertised Manager link.
+    #[cfg(feature = "managers")]
     pub(crate) async fn new(
         bmc: &NvBmc<B>,
         nav: &NavProperty<DellJobServiceSchema>,
@@ -36,26 +50,24 @@ impl<B: Bmc> DellJobService<B> {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ActionNotAvailable`] when the service does not
-    /// advertise the action, or a BMC error if invocation fails.
+    /// Returns [`Error::ActionNotAvailable`] when the service omits its
+    /// Actions container, or a BMC error if the generated action helper
+    /// reports the action unsupported or invocation fails.
     pub async fn delete_job_queue(
         &self,
         job_id: impl Into<String>,
-    ) -> Result<ModificationResponse<()>, Error<B>> {
-        let action = self
+    ) -> Result<ModificationResponse<()>, Error<B>>
+    where
+        B::Error: ActionError,
+    {
+        let actions = self
             .data
             .actions
             .as_ref()
             .and_then(Option::as_ref)
-            .and_then(|actions| actions.delete_job_queue.as_ref())
             .ok_or(Error::ActionNotAvailable)?;
-        action
-            .run(
-                self.bmc.as_ref(),
-                &DellJobServiceDeleteJobQueueAction {
-                    job_id: job_id.into(),
-                },
-            )
+        actions
+            .delete_job_queue(self.bmc.as_ref(), job_id.into())
             .await
             .map_err(Error::Bmc)
     }

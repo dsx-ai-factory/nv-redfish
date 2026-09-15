@@ -45,8 +45,11 @@ limitations under the License.
         <Annotation Term="OData.AdditionalProperties" Bool="false"/>
       </ComplexType>
     </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellJobService.v1_2_2">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellJobService.v1_2_1">
       <EntityType Name="DellJobService" BaseType="DellJobService.v1_2_0.DellJobService"/>
+    </Schema>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellJobService.v1_2_2">
+      <EntityType Name="DellJobService" BaseType="DellJobService.v1_2_1.DellJobService"/>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>

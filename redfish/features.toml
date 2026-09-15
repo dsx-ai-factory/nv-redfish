@@ -894,13 +894,38 @@ action_patterns = [
 
 [[oem-features]]
 vendor = "dell"
-name = "managers"
+name = "oem-dell-attributes"
 oem_csdl_files = [
     "DellAttributes_v1.xml",
+]
+csdl_files = []
+patterns = [
+    "DellAttributes.*",
+]
+
+[[oem-features]]
+vendor = "dell"
+name = "managers"
+oem_csdl_files = [
+    "DellManager_v1.xml",
+]
+csdl_files = []
+patterns = [
+    "DellManager.*",
+]
+
+[[oem-features]]
+vendor = "dell"
+name = "job-service"
+oem_csdl_files = [
+    "DellJob_v1.xml",
+    "DellJobCollection_v1.xml",
     "DellJobService_v1.xml",
 ]
 csdl_files = []
 patterns = [
+    "DellJob.*",
+    "DellJobCollection.*",
     "DellJobService.*",
 ]
 action_patterns = [

@@ -35,9 +35,12 @@ use crate::host_interface::HostInterfaceCollection;
 use crate::log_service::LogService;
 #[cfg(feature = "oem-ami")]
 use crate::oem::ami::config_bmc::ConfigBmc as AmiConfigBmc;
-#[cfg(feature = "oem-dell")]
+#[cfg(feature = "oem-dell-attributes")]
 use crate::oem::dell::attributes::DellAttributes;
-#[cfg(feature = "oem-dell")]
+#[cfg(all(
+    feature = "oem-dell",
+    any(feature = "job-service", feature = "oem-dell-attributes")
+))]
 use crate::oem::dell::DellManager;
 #[cfg(feature = "oem-hpe")]
 use crate::oem::hpe::manager::HpeManager;
@@ -226,14 +229,14 @@ impl<B: Bmc> Manager<B> {
     /// # Errors
     ///
     /// Returns an error if fetching manager attributes data fails.
-    #[cfg(feature = "oem-dell")]
+    #[cfg(feature = "oem-dell-attributes")]
     pub async fn oem_dell_attributes(&self) -> Result<Option<DellAttributes<B>>, Error<B>> {
         if let Some(dell) = self.oem_dell()? {
             if let Some(attributes) = dell.manager_attributes().await? {
                 return Ok(Some(attributes));
             }
         }
-        DellAttributes::manager_attributes(&self.bmc, &self.data).await
+        DellAttributes::new_fallback(&self.bmc, &self.data).await
     }
 
     /// Get Dell resources advertised through this Manager's OEM links.
@@ -243,7 +246,10 @@ impl<B: Bmc> Manager<B> {
     /// # Errors
     ///
     /// Returns an error if the Dell links cannot be parsed.
-    #[cfg(feature = "oem-dell")]
+    #[cfg(all(
+        feature = "oem-dell",
+        any(feature = "job-service", feature = "oem-dell-attributes")
+    ))]
     pub fn oem_dell(&self) -> Result<Option<DellManager<B>>, Error<B>> {
         DellManager::new(&self.bmc, &self.data)
     }

@@ -1,5 +1,17 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Integration tests for Dell resources advertised by Manager OEM links.
 
@@ -162,6 +174,8 @@ async fn manager_without_dell_extension_returns_none() -> Result<(), Box<dyn Std
 async fn dell_job_service_without_usable_actions_reports_unavailable(
 ) -> Result<(), Box<dyn StdError>> {
     for actions in [None, Some(Value::Null), Some(json!({}))] {
+        let has_empty_container =
+            matches!(actions.as_ref(), Some(Value::Object(values)) if values.is_empty());
         let bmc = Arc::new(Bmc::default());
         let job_service_id = "/redfish/v1/vendor/dell/job-service";
         let manager = get_manager(
@@ -195,32 +209,27 @@ async fn dell_job_service_without_usable_actions_reports_unavailable(
             .job_service()
             .await?
             .expect("Dell job service is advertised");
-        assert!(matches!(
-            job_service.delete_job_queue("JID_CLEARALL").await,
-            Err(nv_redfish::Error::ActionNotAvailable)
-        ));
+        let result = job_service.delete_job_queue("JID_CLEARALL").await;
+        if has_empty_container {
+            assert!(matches!(result, Err(nv_redfish::Error::Bmc(_))));
+        } else {
+            assert!(matches!(result, Err(nv_redfish::Error::ActionNotAvailable)));
+        }
     }
 
     Ok(())
 }
 
 #[tokio::test]
-async fn manager_configuration_job_entity_location_becomes_task() -> Result<(), Box<dyn StdError>> {
+async fn manager_top_level_configuration_job_location_becomes_task() -> Result<(), Box<dyn StdError>>
+{
     let bmc = Arc::new(Bmc::default());
     let jobs_id = "/redfish/v1/Managers/1/Oem/Dell/Jobs";
     let manager = get_manager(
         bmc.clone(),
         "/redfish/v1/Managers/manager-1",
         json!({
-            "Links": {
-                "Oem": {
-                    "Dell": {
-                        "DellJobService": {
-                            ODATA_ID: "/redfish/v1/Managers/1/Oem/Dell/DellJobService"
-                        }
-                    }
-                }
-            },
+            "Links": {},
             "Oem": {
                 "Dell": {
                     "Jobs": { ODATA_ID: jobs_id }
@@ -250,6 +259,71 @@ async fn manager_configuration_job_entity_location_becomes_task() -> Result<(), 
     };
     assert_eq!(task.location.0.to_string(), task_id);
     assert_eq!(task.retry_after, None);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn manager_follows_configuration_jobs_link() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let jobs_id = "/redfish/v1/Managers/1/Oem/Dell/Jobs";
+    let manager = get_manager(
+        bmc,
+        "/redfish/v1/Managers/manager-1",
+        json!({
+            "Links": {
+                "Oem": {
+                    "Dell": {
+                        "Jobs": { ODATA_ID: jobs_id }
+                    }
+                }
+            }
+        }),
+    )
+    .await?;
+
+    let jobs = manager
+        .oem_dell()?
+        .expect("Dell resources are advertised")
+        .configuration_jobs()
+        .expect("configuration Jobs link is advertised");
+    assert_eq!(jobs.odata_id().to_string(), jobs_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn manager_prefers_configuration_jobs_link_over_top_level_oem(
+) -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let linked_jobs_id = "/redfish/v1/Managers/1/Oem/Dell/Jobs";
+    let top_level_jobs_id = "/redfish/v1/Managers/1/Jobs";
+    let manager = get_manager(
+        bmc,
+        "/redfish/v1/Managers/manager-1",
+        json!({
+            "Links": {
+                "Oem": {
+                    "Dell": {
+                        "Jobs": { ODATA_ID: linked_jobs_id }
+                    }
+                }
+            },
+            "Oem": {
+                "Dell": {
+                    "Jobs": { ODATA_ID: top_level_jobs_id }
+                }
+            }
+        }),
+    )
+    .await?;
+
+    let jobs = manager
+        .oem_dell()?
+        .expect("Dell resources are advertised")
+        .configuration_jobs()
+        .expect("configuration Jobs link is advertised");
+    assert_eq!(jobs.odata_id().to_string(), linked_jobs_id);
 
     Ok(())
 }
