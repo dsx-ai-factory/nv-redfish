@@ -536,6 +536,7 @@ impl<'a> StructDef<'a> {
     }
 
     fn generate_action(&self, tokens: &mut TokenStream, config: &Config) {
+        let top = &config.top_module_alias;
         let mut content = TokenStream::new();
         content.extend(
             self.parameters
@@ -552,7 +553,12 @@ impl<'a> StructDef<'a> {
             // sensitivity metadata. Do not derive Debug until those fields can be redacted.
             quote! {
                 #[derive(Serialize)]
-                pub struct #name { #content }
+                pub struct #name {
+                    /// Protocol annotations for this action request.
+                    #[serde(flatten)]
+                    pub redfish_annotations: #top::ActionAnnotations,
+                    #content
+                }
             },
         ]);
     }
@@ -951,6 +957,7 @@ impl<'a> StructDef<'a> {
                     {
                         if let Some(a) = &self.#name  {
                             a.run(bmc, &#typename {
+                                redfish_annotations: #top::ActionAnnotations::default(),
                                 #params
                             }).await
                         } else {
