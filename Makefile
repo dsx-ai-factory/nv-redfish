@@ -96,6 +96,9 @@ compile-only-feature-sets = computer-systems,processors,controls \
              managers,oem-dell \
              managers,oem-dell-attributes \
              computer-systems,storages,oem-dell \
+             job-service,oem-dell \
+             managers,job-service,oem-dell \
+             managers,job-service,oem-dell,oem-dell-attributes \
              $(std-standalone-features) \
              ""
 

@@ -19,27 +19,33 @@
 mod account;
 
 /// Support of Dell iDRAC.
-#[cfg(feature = "managers")]
+#[cfg(feature = "oem-dell-attributes")]
 pub mod attributes;
 
+#[cfg(feature = "job-service")]
+mod job_service;
+#[cfg(feature = "job-service")]
+mod jobs;
+#[cfg(all(
+    feature = "managers",
+    any(feature = "job-service", feature = "oem-dell-attributes")
+))]
+mod manager;
 #[cfg(all(feature = "computer-systems", feature = "storages"))]
 mod storage_actions;
-#[cfg(feature = "managers")]
-mod job_service;
-#[cfg(feature = "managers")]
-mod jobs;
-#[cfg(feature = "managers")]
-mod manager;
 
 mod compiled_schema;
 
 #[cfg(feature = "accounts")]
 pub use account::IdracVersion;
-#[cfg(feature = "managers")]
+#[cfg(feature = "job-service")]
 pub use job_service::DellJobService;
-#[cfg(feature = "managers")]
+#[cfg(feature = "job-service")]
 pub use jobs::DellJobs;
-#[cfg(feature = "managers")]
+#[cfg(all(
+    feature = "managers",
+    any(feature = "job-service", feature = "oem-dell-attributes")
+))]
 pub use manager::DellManager;
 #[cfg(all(feature = "computer-systems", feature = "storages"))]
 pub use storage_actions::{DellStorageActions, OperationApplyTime};

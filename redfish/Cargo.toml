@@ -125,7 +125,7 @@ oem-nvidia-profiles = ["oem-nvidia"]
 oem-nvidia-security = ["oem-nvidia"]
 
 # OEM product features support
-oem-dell-attributes = ["oem-dell", "managers"]
+oem-dell-attributes = ["oem-dell"]
 
 # Patches
 patch = []
