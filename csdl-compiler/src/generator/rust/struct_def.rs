@@ -321,10 +321,9 @@ impl<'a> StructDef<'a> {
                             #[serde(rename="@odata.etag", skip_serializing_if = "Option::is_none")]
                             pub #odata_etag: Option<ODataETag>,
                             #maybe_odata_type
-                            #[serde(rename = "@Redfish.Settings", skip_serializing_if = "Option::is_none")]
-                            pub redfish_settings: Option<#top::settings::Settings>,
-                            #[serde(rename = "@Redfish.SettingsApplyTime", skip_serializing_if = "Option::is_none")]
-                            pub redfish_settings_apply_type: Option<#top::settings::PreferredApplyTime>,
+                            /// Settings annotations.
+                            #[serde(flatten)]
+                            pub settings_annotations: #top::SettingsAnnotations,
                         },
                         ImplType::Root,
                     )
@@ -844,7 +843,7 @@ impl<'a> StructDef<'a> {
         let fn_settings_impl = match impl_type {
             ImplType::Root => {
                 quote! {
-                    self.redfish_settings
+                    self.settings_annotations.settings
                         .as_ref()
                         .and_then(|s| s.settings_object.as_ref())
                         .map(|r| NavProperty::Reference(r.into()))

@@ -35,6 +35,7 @@
 //! - No codegen decisions happen here; the structure is intentionally
 //!   straightforward for generators to consume.
 
+use crate::compiler::annotations::Annotations;
 use crate::compiler::Action;
 use crate::compiler::ComplexType;
 use crate::compiler::EntityType;
@@ -82,6 +83,8 @@ pub enum ForcedUpdateTag {}
 /// Aggregated compilation outputs for a set of schemas.
 #[derive(Default, Debug)]
 pub struct Compiled<'a> {
+    /// Shared protocol annotations and their resolved schema types.
+    pub annotations: Annotations<'a>,
     /// Compiled complex types by name.
     pub complex_types: HashMap<QualifiedName<'a>, ComplexType<'a>>,
     /// Compiled entity types by name.
@@ -177,6 +180,7 @@ impl<'a> Compiled<'a> {
     /// Merge two compiled structures.
     #[must_use]
     pub fn merge(mut self, other: Self) -> Self {
+        self.annotations = self.annotations.merge(other.annotations);
         self.complex_types.extend(other.complex_types);
         self.type_definitions.extend(other.type_definitions);
         self.enum_types.extend(other.enum_types);

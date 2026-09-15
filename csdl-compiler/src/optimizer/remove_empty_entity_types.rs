@@ -81,6 +81,9 @@ pub fn remove_empty_entity_types<'a>(input: Compiled<'a>, config: &Config) -> Co
             .collect(),
         enum_types: input.enum_types,
         type_definitions: input.type_definitions,
+        annotations: input
+            .annotations
+            .map_type(|t| replace(&t, &et_replacements)),
         actions: map_types_in_actions(input.actions, |t| replace(&t, &et_replacements)),
     }
 }
