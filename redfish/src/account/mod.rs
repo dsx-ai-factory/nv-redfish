@@ -41,7 +41,6 @@ use crate::Error;
 use crate::NvBmc;
 use crate::ServiceRoot;
 use nv_redfish_core::Bmc;
-#[cfg(feature = "oem-dell")]
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -57,7 +56,6 @@ pub use item::Account;
 #[doc(inline)]
 pub use collection::AccountCollection;
 #[doc(inline)]
-#[cfg(feature = "oem-dell")]
 pub(crate) use collection::FixedSlotConfig;
 #[doc(inline)]
 pub(crate) use item::Config as AccountConfig;
@@ -72,7 +70,6 @@ pub struct AccountServiceConfig {
 #[derive(Clone)]
 enum AccountServiceBehavior {
     Standard,
-    #[cfg(feature = "oem-dell")]
     FixedSlots(RangeInclusive<u32>),
 }
 
@@ -85,7 +82,7 @@ impl AccountServiceConfig {
         }
     }
 
-    #[cfg(feature = "oem-dell")]
+    #[allow(dead_code)] // Constructed by OEM behavior mappings when enabled.
     pub(crate) const fn fixed_slots(slots: RangeInclusive<u32>) -> Self {
         Self {
             behavior: AccountServiceBehavior::FixedSlots(slots),
@@ -101,7 +98,6 @@ impl AccountServiceConfig {
                 },
                 fixed_slots: None,
             },
-            #[cfg(feature = "oem-dell")]
             AccountServiceBehavior::FixedSlots(slots) => collection::Config {
                 account: AccountConfig {
                     read_patch_fn,

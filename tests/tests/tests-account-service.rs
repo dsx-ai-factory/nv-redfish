@@ -286,17 +286,14 @@ async fn account_fixture(
 async fn slot_account_fixture(
     slots: &[(u32, bool, &str)],
 ) -> TestResult<(Arc<Bmc>, String, AccountCollection<Bmc>)> {
-    idrac_account_fixture(IdracVersion::Idrac9, slots).await
+    idrac_account_fixture(IdracVersion::IDRAC9, slots).await
 }
 
 async fn idrac_account_fixture(
     version: IdracVersion,
     slots: &[(u32, bool, &str)],
 ) -> TestResult<(Arc<Bmc>, String, AccountCollection<Bmc>)> {
-    let config = version
-        .account_service_config()
-        .ok_or("unknown iDRAC version has no account configuration")?;
-    account_fixture_with_config("Dell", slots, config).await
+    account_fixture_with_config("Dell", slots, version.account_service_config()).await
 }
 
 async fn account_fixture_with_config(
@@ -436,7 +433,7 @@ async fn create_account_standard_preserves_all_response_variants() -> TestResult
 
 #[test]
 async fn dell_standard_collection_uses_post_and_resource_delete() -> TestResult<()> {
-    let (bmc, accounts_id, accounts) = idrac_account_fixture(IdracVersion::Idrac10, &[]).await?;
+    let (bmc, accounts_id, accounts) = idrac_account_fixture(IdracVersion::IDRAC10, &[]).await?;
     let account_id = format!("{accounts_id}/3");
     let create = create_request("user");
 
@@ -460,11 +457,6 @@ async fn dell_standard_collection_uses_post_and_resource_delete() -> TestResult<
     assert_empty(account.delete().await?);
 
     Ok(())
-}
-
-#[test]
-async fn unknown_idrac_version_has_no_account_configuration() {
-    assert!(IdracVersion::Unknown.account_service_config().is_none());
 }
 
 // Create account (HPE-like vendor): response omits `AccountTypes`, expect
