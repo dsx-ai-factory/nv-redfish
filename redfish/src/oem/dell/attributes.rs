@@ -15,40 +15,53 @@
 
 use crate::core::Bmc;
 use crate::core::EdmPrimitiveType;
+use crate::core::ModificationResponse;
 use crate::oem::dell::schema::dell_attributes::DellAttributes as DellAttributesSchema;
+#[cfg(feature = "managers")]
 use crate::oem::oem_value;
-use std::marker::PhantomData;
+use crate::Error;
+use crate::NvBmc;
+use serde::Serialize;
 use std::sync::Arc;
 
-#[cfg(feature = "managers")]
 use crate::core::EntityTypeRef as _;
-#[cfg(feature = "managers")]
 use crate::core::NavProperty;
 #[cfg(feature = "managers")]
 use crate::core::ODataId;
 #[cfg(feature = "managers")]
 use crate::schema::manager::Manager as ManagerSchema;
-#[cfg(feature = "managers")]
-use crate::Error;
-#[cfg(feature = "managers")]
-use crate::NvBmc;
 
 /// Dell OEM Attributes.
 pub struct DellAttributes<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<DellAttributesSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> DellAttributes<B> {
-    /// Create Dell OEM Manager attributes.
+    /// Fetch Dell attributes from an advertised navigation property.
+    #[allow(dead_code)] // Shared constructor for feature-specific Dell referrers.
+    pub(crate) async fn new_advertised(
+        bmc: &NvBmc<B>,
+        nav: &NavProperty<DellAttributesSchema>,
+    ) -> Result<Self, Error<B>> {
+        nav.get(bmc.as_ref())
+            .await
+            .map_err(Error::Bmc)
+            .map(|data| Self {
+                bmc: bmc.clone(),
+                data,
+            })
+    }
+
+    /// Fetch Dell Manager attributes from the conventional fallback URI.
     ///
-    /// Returns `Ok(None)` when the manager does not include `Oem.Dell`.
+    /// Returns `Ok(None)` when the Manager does not include `Oem.Dell`.
     ///
     /// # Errors
     ///
     /// Returns an error if fetching or parsing Dell attributes data fails.
     #[cfg(feature = "managers")]
-    pub(crate) async fn manager_attributes(
+    pub(crate) async fn new_fallback(
         bmc: &NvBmc<B>,
         manager: &ManagerSchema,
     ) -> Result<Option<Self>, Error<B>> {
@@ -59,9 +72,8 @@ impl<B: Bmc> DellAttributes<B> {
             .as_ref()
             .is_some_and(|oem| oem_value(oem, "Dell").is_some())
         {
-            // Dell doesn't provide navigation property to the
-            // Attributes from the Manager. So we just craft @odata.id
-            // for it.
+            // Some iDRAC versions identify Dell in Oem but do not advertise
+            // the corresponding Manager attributes navigation property.
             let odata_id = ODataId::from(format!(
                 "{}/Oem/Dell/DellAttributes/{}",
                 manager.odata_id(),
@@ -70,8 +82,8 @@ impl<B: Bmc> DellAttributes<B> {
             bmc.expand_property(&NavProperty::new_reference(odata_id))
                 .await
                 .map(|data| Self {
+                    bmc: bmc.clone(),
                     data,
-                    _marker: PhantomData,
                 })
                 .map(Some)
         } else {
@@ -87,6 +99,38 @@ impl<B: Bmc> DellAttributes<B> {
             .as_ref()
             .and_then(|attributes| attributes.dynamic_properties.get(name))
             .map(|v| DellAttributeRef::new(v.as_ref()))
+    }
+
+    /// Update dynamic Dell attributes on this resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serializing or applying the update fails.
+    pub async fn update<T>(&self, attributes: &T) -> Result<ModificationResponse<Self>, Error<B>>
+    where
+        T: Serialize + Send + Sync,
+    {
+        #[derive(Serialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct Update<'a, T> {
+            attributes: &'a T,
+        }
+
+        self.bmc
+            .as_ref()
+            .update(
+                self.data.odata_id(),
+                self.data.etag(),
+                &Update { attributes },
+            )
+            .await
+            .map(|response| {
+                response.map_entity(|data| Self {
+                    bmc: self.bmc.clone(),
+                    data: Arc::new(data),
+                })
+            })
+            .map_err(Error::Bmc)
     }
 }
 

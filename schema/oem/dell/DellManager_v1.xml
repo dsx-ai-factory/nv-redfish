@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
+  <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Core.V1.xml">
+    <edmx:Include Namespace="Org.OData.Core.V1" Alias="OData"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/RedfishExtensions_v1.xml">
+    <edmx:Include Namespace="RedfishExtensions.v1_0_0" Alias="Redfish"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/Resource_v1.xml">
+    <edmx:Include Namespace="Resource"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/DellAttributes_v1.xml">
+    <edmx:Include Namespace="DellAttributes"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/DellJobService_v1.xml">
+    <edmx:Include Namespace="DellJobService"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/DellJobCollection_v1.xml">
+    <edmx:Include Namespace="DellJobCollection"/>
+  </edmx:Reference>
+
+  <edmx:DataServices>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellManager">
+      <Annotation Term="Redfish.OwningEntity" String="Dell"/>
+      <ComplexType Name="DellManager" BaseType="Resource.OemObject" Abstract="true"/>
+      <ComplexType Name="DellManagerLinks" BaseType="Resource.OemObject" Abstract="true"/>
+    </Schema>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellManager.v1_6_0">
+      <ComplexType Name="DellManager" BaseType="DellManager.DellManager">
+        <NavigationProperty Name="Jobs" Type="DellJobCollection.DellJobCollection"/>
+      </ComplexType>
+      <ComplexType Name="DellManagerLinks" BaseType="DellManager.DellManagerLinks">
+        <NavigationProperty Name="DellAttributes" Type="Collection(DellAttributes.DellAttributes)"/>
+        <NavigationProperty Name="DellJobService" Type="DellJobService.DellJobService"/>
+        <NavigationProperty Name="Jobs" Type="DellJobCollection.DellJobCollection"/>
+      </ComplexType>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
