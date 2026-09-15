@@ -464,6 +464,15 @@ impl SchemaBundle {
         let (compiled, _) = ensure_type(name, ctx, &stack)?;
         let stack = stack.merge(compiled);
 
+        // Compile the standard type for @Redfish.OperationApplyTime when the
+        // schema bundle provides it. Minimal compiler inputs may omit it.
+        let stack = if let Some(name) = ctx.schema_index.redfish_operation_apply_time_type() {
+            let (compiled, _) = ensure_type(name, ctx, &stack)?;
+            stack.merge(compiled)
+        } else {
+            stack
+        };
+
         let (resource_name, _) = ctx.schema_index.redfish_resource_type()?;
         let compiled = EntityType::ensure(resource_name, ctx, &stack)?;
         let stack = stack.merge(compiled);

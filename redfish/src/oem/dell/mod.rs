@@ -19,7 +19,17 @@
 #[cfg(feature = "oem-dell-attributes")]
 pub mod attributes;
 
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+mod storage_actions;
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+mod volumes;
+
 mod compiled_schema;
+
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+pub use storage_actions::DellStorageActions;
+#[cfg(all(feature = "computer-systems", feature = "storages"))]
+pub use volumes::{DellVolumeCreate, DellVolumes};
 
 /// Dell OEM Schema.
 pub use compiled_schema::redfish as schema;

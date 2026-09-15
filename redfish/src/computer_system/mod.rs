@@ -92,7 +92,7 @@ pub use secure_boot::SecureBoot;
 pub use secure_boot::SecureBootCurrentBootType;
 #[doc(inline)]
 #[cfg(feature = "storages")]
-pub use storage::Storage;
+pub use storage::{Storage, Volume, VolumeCollection};
 
 /// Computer system collection.
 ///
