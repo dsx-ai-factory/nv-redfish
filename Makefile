@@ -90,6 +90,8 @@ compile-only-feature-sets = computer-systems,processors,controls \
              environment-metrics,memory,oem-nvidia \
              oem-dell \
              oem-ami \
+             accounts,oem-dell \
+             accounts,managers,oem-dell \
              managers,oem-dell-attributes \
              computer-systems,storages,oem-dell \
              $(std-standalone-features) \

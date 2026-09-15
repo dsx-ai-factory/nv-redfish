@@ -50,7 +50,6 @@ use std::sync::Arc;
 #[derive(Clone, Copy)]
 pub enum DeletionStrategy {
     DeleteResource,
-    #[cfg(feature = "oem-dell")]
     DisableSlot,
 }
 
@@ -222,7 +221,6 @@ impl<B: Bmc> Account<B> {
                     })
                     .await
             }
-            #[cfg(feature = "oem-dell")]
             DeletionStrategy::DisableSlot => {
                 self.update(&ManagerAccountUpdate::builder().with_enabled(false).build())
                     .await
