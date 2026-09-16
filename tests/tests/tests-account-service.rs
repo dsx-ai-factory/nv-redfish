@@ -532,7 +532,7 @@ async fn create_account_dell_slot_defined_first_available() -> TestResult<()> {
 
 #[test]
 async fn create_account_slot_defined_preserves_nested_writable_values() -> TestResult<()> {
-    let (bmc, accounts_id, accounts) = account_fixture("Dell", &[(3, false, "")]).await?;
+    let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, false, "")]).await?;
     let account_id = format!("{accounts_id}/3");
     bmc.expect(Expect::get(
         &account_id,
