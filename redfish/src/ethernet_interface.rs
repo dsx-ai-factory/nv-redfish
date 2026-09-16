@@ -21,8 +21,6 @@ use crate::schema::ethernet_interface::EthernetInterface as EthernetInterfaceSch
 use crate::schema::ethernet_interface_collection::EthernetInterfaceCollection as EthernetInterfaceCollectionSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 use std::marker::PhantomData;
@@ -160,11 +158,5 @@ impl<B: Bmc> EthernetInterface<B> {
             .and_then(Option::as_ref)
             .map(String::as_str)
             .map(UefiDevicePath::new)
-    }
-}
-
-impl<B: Bmc> Resource for EthernetInterface<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

@@ -81,9 +81,8 @@ async fn processor_metrics_oem_nvidia_reads_gpu_shape() -> Result<(), Box<dyn St
         panic!("payload declares the GPU shape");
     };
     assert_eq!(gpu.sm_utilization_percent.flatten(), Some(42.5));
-    // Shared properties are reachable without matching the variant.
     assert_eq!(
-        oem.common().throttle_reasons.clone().flatten(),
+        gpu.throttle_reasons.clone().flatten(),
         Some(vec!["SWPowerCap".to_owned()])
     );
 
@@ -127,13 +126,14 @@ async fn processor_metrics_oem_nvidia_unknown_shape_reads_as_generic(
             .oem_nvidia()?
             .expect("NVIDIA OEM extension must be available");
 
-        assert!(
-            matches!(oem, NvidiaProcessorMetrics::Generic(_)),
-            "unknown @odata.type {:?} must read as the generic shape",
-            odata_type
-        );
+        let NvidiaProcessorMetrics::Generic(generic) = oem else {
+            panic!(
+                "unknown @odata.type {:?} must read as the generic shape",
+                odata_type
+            );
+        };
         assert_eq!(
-            oem.common().throttle_reasons.clone().flatten(),
+            generic.throttle_reasons.clone().flatten(),
             Some(vec!["HWSlowdown".to_owned()])
         );
     }

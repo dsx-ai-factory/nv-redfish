@@ -266,6 +266,29 @@
 
     </Schema>
 
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Inheritance">
+      <ComplexType Name="Parent" Abstract="true">
+        <Property Name="Label" Type="Edm.String" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
+        </Property>
+        <Property Name="Enabled" Type="Edm.Boolean" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+        <Property Name="Secret" Type="Edm.String" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Write"/>
+        </Property>
+      </ComplexType>
+      <ComplexType Name="Child" BaseType="Inheritance.Parent">
+        <Property Name="Value" Type="Edm.Int64" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+      </ComplexType>
+      <!-- Two descendants ensure the optimizer retains the shared parent. -->
+      <ComplexType Name="Sibling" BaseType="Inheritance.Parent">
+        <Property Name="OtherValue" Type="Edm.String" Nullable="false"/>
+      </ComplexType>
+    </Schema>
+
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
       <Term Name="OperationApplyTime" Type="Settings.v1_0_0.OperationApplyTime"/>
       <Term Name="Settings" Type="Settings.Settings"/>

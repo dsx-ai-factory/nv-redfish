@@ -43,7 +43,6 @@ use crate::patch_support::CollectionWithPatch;
 use crate::patch_support::FilterFn;
 use crate::patch_support::JsonValue;
 use crate::patch_support::ReadPatchFn;
-use crate::resource::Resource as _;
 use crate::schema::computer_system::ComputerSystem as ComputerSystemSchema;
 use crate::schema::computer_system_collection::ComputerSystemCollection as ComputerSystemCollectionSchema;
 use crate::schema::resource::ResourceCollection;
@@ -143,7 +142,7 @@ impl<B: Bmc> SystemCollection<B> {
             .map(Some)
         } else if bmc.quirks.bug_missing_root_nav_properties() {
             bmc.expand_property(&NavProperty::new_reference(
-                format!("{}/Systems", root.odata_id()).into(),
+                format!("{}/Systems", root.root.odata_id).into(),
             ))
             .await
             .map(Some)
@@ -180,7 +179,16 @@ impl<B: Bmc> CollectionWithPatch<ComputerSystemCollectionSchema, ComputerSystemS
         base: ResourceCollection,
         members: Vec<NavProperty<ComputerSystemSchema>>,
     ) -> ComputerSystemCollectionSchema {
-        ComputerSystemCollectionSchema { base, members }
+        ComputerSystemCollectionSchema {
+            odata_id: base.odata_id,
+            odata_etag: base.odata_etag,
+            odata_type: base.odata_type,
+            settings_annotations: base.settings_annotations,
+            description: base.description,
+            name: base.name,
+            oem: base.oem,
+            members,
+        }
     }
 }
 

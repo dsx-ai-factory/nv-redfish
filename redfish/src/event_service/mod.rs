@@ -23,8 +23,6 @@ use crate::patch_support::ReadPatchFn;
 use crate::schema::event_service::EventService as EventServiceSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use crate::ServiceRoot;
 use futures_util::future;
 use futures_util::TryStreamExt as _;
@@ -212,12 +210,6 @@ impl<B: Bmc> EventService<B> {
         });
 
         Ok(Box::pin(stream))
-    }
-}
-
-impl<B: Bmc> Resource for EventService<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

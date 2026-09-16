@@ -19,8 +19,6 @@ use crate::computer_system::memory_metrics::MemoryMetrics;
 use crate::schema::memory::Memory as MemorySchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 use std::sync::Arc;
@@ -125,11 +123,5 @@ impl<B: Bmc> Memory<B> {
         };
 
         metrics.power_limit_control().await
-    }
-}
-
-impl<B: Bmc> Resource for Memory<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

@@ -38,8 +38,6 @@ use crate::patch_support::UpdateWithPatch;
 use crate::schema::manager_account::ManagerAccount;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
@@ -226,11 +224,5 @@ impl<B: Bmc> Account<B> {
                     .await
             }
         }
-    }
-}
-
-impl<B: Bmc> Resource for Account<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

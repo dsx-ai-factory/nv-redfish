@@ -19,8 +19,6 @@ use crate::mac_address::MacAddress;
 use crate::schema::port::Port as PortSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 use std::future::Future;
@@ -90,12 +88,6 @@ impl<B: Bmc> Port<B> {
     #[cfg(feature = "oem-lenovo")]
     pub fn oem_lenovo(&self) -> Result<Option<LenovoPort>, Error<B>> {
         LenovoPort::new(&self.data).map_err(Error::Json)
-    }
-}
-
-impl<B: Bmc> Resource for Port<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

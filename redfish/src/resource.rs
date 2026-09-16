@@ -15,13 +15,6 @@
 
 //! Redfish resource
 
-use crate::core::EntityTypeRef as _;
-use crate::core::ODataId;
-use crate::ResourceSchema;
-use tagged_types::TaggedType;
-
-#[cfg(feature = "oem")]
-use crate::oem::OemIdentifier;
 #[cfg(feature = "resource-status")]
 use crate::ResourceStatusSchema;
 #[cfg(feature = "resource-status")]
@@ -46,85 +39,6 @@ pub use crate::schema::resource::PowerState;
     feature = "managers"
 ))]
 pub use crate::schema::resource::ResetType;
-
-/// Redfish resource identifier.
-pub type ResourceId = TaggedType<String, ResourceIdTag>;
-/// Reference to Redfish resource identifier.
-pub type ResourceIdRef<'a> = TaggedType<&'a str, ResourceIdTag>;
-#[doc(hidden)]
-#[derive(tagged_types::Tag)]
-#[implement(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[transparent(Debug, Display, FromStr, Serialize, Deserialize)]
-#[capability(inner_access, cloned)]
-pub enum ResourceIdTag {}
-
-/// Redfish resource name.
-pub type ResourceName = TaggedType<String, ResourceNameTag>;
-/// Reference to Redfish resource name.
-pub type ResourceNameRef<'a> = TaggedType<&'a str, ResourceNameTag>;
-#[doc(hidden)]
-#[derive(tagged_types::Tag)]
-#[implement(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[transparent(Debug, Display, FromStr, Serialize, Deserialize)]
-#[capability(inner_access, cloned)]
-pub enum ResourceNameTag {}
-
-/// Redfish resource description.
-pub type ResourceDescription = TaggedType<String, ResourceDescriptionTag>;
-/// Reference to Redfish resource description.
-pub type ResourceDescriptionRef<'a> = TaggedType<&'a str, ResourceDescriptionTag>;
-#[doc(hidden)]
-#[derive(tagged_types::Tag)]
-#[implement(Clone)]
-#[transparent(Debug, Display, FromStr, Serialize, Deserialize)]
-#[capability(inner_access, cloned)]
-pub enum ResourceDescriptionTag {}
-
-/// Represents Redfish Resource base type.
-pub trait Resource {
-    /// Required function. Must be implemented for Redfish resources.
-    fn resource_ref(&self) -> &ResourceSchema;
-
-    /// Identifier of the resource.
-    fn id(&self) -> ResourceIdRef<'_> {
-        ResourceIdRef::new(&self.resource_ref().id)
-    }
-
-    /// Name of the resource.
-    fn name(&self) -> ResourceNameRef<'_> {
-        ResourceNameRef::new(&self.resource_ref().name)
-    }
-
-    /// Description of the resource.
-    fn description(&self) -> Option<ResourceDescriptionRef<'_>> {
-        self.resource_ref()
-            .description
-            .as_ref()
-            .and_then(Option::as_deref)
-            .map(ResourceDescriptionRef::new)
-    }
-
-    /// OEM identifier if present in the resource.
-    #[cfg(feature = "oem")]
-    fn oem_id(&self) -> Option<OemIdentifier<&str>> {
-        oem_id_from_resource(self.resource_ref()).map(OemIdentifier::new)
-    }
-
-    /// OData identifier of the resource.
-    fn odata_id(&self) -> &ODataId {
-        self.resource_ref().odata_id()
-    }
-}
-
-#[cfg(feature = "oem")]
-pub(crate) fn oem_id_from_resource(r: &ResourceSchema) -> Option<&str> {
-    r.base
-        .oem
-        .as_ref()
-        .and_then(|v| v.additional_properties.as_object())
-        .and_then(|v| v.keys().next())
-        .map(String::as_str)
-}
 
 /// The status and health of a resource and its children.
 #[cfg(feature = "resource-status")]

@@ -25,8 +25,6 @@ use crate::schema::volume::VolumeCreate;
 use crate::schema::volume_collection::VolumeCollection as VolumeCollectionSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
@@ -118,12 +116,6 @@ impl<B: Bmc> Storage<B> {
     }
 }
 
-impl<B: Bmc> Resource for Storage<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
-    }
-}
-
 /// A standard Redfish Volume resource.
 pub struct Volume<B: Bmc> {
     data: Arc<VolumeSchema>,
@@ -143,12 +135,6 @@ impl<B: Bmc> Volume<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<VolumeSchema> {
         self.data.clone()
-    }
-}
-
-impl<B: Bmc> Resource for Volume<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 
@@ -264,6 +250,15 @@ impl<B: Bmc> CollectionWithPatch<StorageCollectionSchema, StorageSchema, B>
         base: ResourceCollection,
         members: Vec<NavProperty<StorageSchema>>,
     ) -> StorageCollectionSchema {
-        StorageCollectionSchema { base, members }
+        StorageCollectionSchema {
+            odata_id: base.odata_id,
+            odata_etag: base.odata_etag,
+            odata_type: base.odata_type,
+            settings_annotations: base.settings_annotations,
+            description: base.description,
+            name: base.name,
+            oem: base.oem,
+            members,
+        }
     }
 }

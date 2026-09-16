@@ -22,7 +22,6 @@ use nv_redfish::computer_system::BootOptionReference;
 use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::computer_system::SystemCollection;
 use nv_redfish::resource::ResetType;
-use nv_redfish::Resource;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
@@ -602,7 +601,10 @@ async fn viking_with_garbage_in_computer_systems() -> Result<(), Box<dyn StdErro
     // Should only have DGX and HGX_Baseboard_0, not the garbage FDR entry
     assert_eq!(members.len(), 2);
 
-    let member_ids: Vec<_> = members.iter().map(|m| m.odata_id().to_string()).collect();
+    let member_ids: Vec<_> = members
+        .iter()
+        .map(|m| m.raw().odata_id.to_string())
+        .collect();
     assert!(member_ids.contains(&dgx_id));
     assert!(member_ids.contains(&hgx_id));
     assert!(!member_ids.contains(&garbage_id));

@@ -23,8 +23,6 @@ use crate::schema::service_root::ServiceRoot as SchemaServiceRoot;
 use crate::Error;
 use crate::NvBmc;
 use crate::ProtocolFeatures;
-use crate::Resource;
-use crate::ResourceSchema;
 
 use tagged_types::TaggedType;
 
@@ -345,11 +343,5 @@ impl<B: Bmc> ServiceRoot<B> {
     #[cfg(feature = "oem-ami")]
     pub fn oem_ami_service_root(&self) -> Result<Option<AmiServiceRoot<B>>, Error<B>> {
         AmiServiceRoot::new(&self.bmc, &self.root)
-    }
-}
-
-impl<B: Bmc> Resource for ServiceRoot<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.root.as_ref().base
     }
 }

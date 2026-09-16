@@ -27,8 +27,6 @@ use crate::resource::ResetType;
 use crate::schema::chassis::Chassis as ChassisSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::bmc::Bmc;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
@@ -467,8 +465,6 @@ impl<B: Bmc> Chassis<B> {
     #[cfg(feature = "oem-nvidia")]
     pub fn oem_nvidia_cbc(&self) -> Result<Option<NvidiaCbcChassis<B>>, Error<B>> {
         self.data
-            .base
-            .base
             .oem
             .as_ref()
             .map(NvidiaCbcChassis::new)
@@ -491,12 +487,6 @@ impl<B: Bmc> Chassis<B> {
             .and_then(|actions| actions.oem.as_ref())
             .map(|actions| NvidiaChassisActions::new(&self.bmc, actions))
             .transpose()
-    }
-}
-
-impl<B: Bmc> Resource for Chassis<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

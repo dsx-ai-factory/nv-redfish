@@ -48,8 +48,6 @@ impl BmcQuirks {
         // root; use it to distinguish GB300 from other AMI BMCs so the
         // expand workaround is not applied to every AMI platform.
         let rtp_version = root
-            .base
-            .base
             .oem
             .as_ref()
             .and_then(|oem| oem.additional_properties.get("Ami"))

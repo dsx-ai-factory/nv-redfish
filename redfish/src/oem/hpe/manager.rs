@@ -39,8 +39,6 @@ impl<B: Bmc> HpeManager<B> {
     /// Returns an error if parsing HPE manager OEM data fails.
     pub(crate) fn new(bmc: &NvBmc<B>, manager: &ManagerSchema) -> Result<Option<Self>, Error<B>> {
         Ok(manager
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, "Hpe"))?

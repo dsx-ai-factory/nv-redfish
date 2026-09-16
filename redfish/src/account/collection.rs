@@ -98,7 +98,16 @@ impl<B: Bmc> CollectionWithPatch<ManagerAccountCollection, ManagerAccount, B>
         base: ResourceCollection,
         members: Vec<NavProperty<ManagerAccount>>,
     ) -> ManagerAccountCollection {
-        ManagerAccountCollection { base, members }
+        ManagerAccountCollection {
+            odata_id: base.odata_id,
+            odata_etag: base.odata_etag,
+            odata_type: base.odata_type,
+            settings_annotations: base.settings_annotations,
+            description: base.description,
+            name: base.name,
+            oem: base.oem,
+            members,
+        }
     }
 }
 
@@ -167,7 +176,7 @@ impl<B: Bmc> AccountCollection<B> {
             let mut candidates = Vec::new();
             for nav in &self.collection.members {
                 let account = Account::new(&self.bmc, nav, &self.config.account).await?;
-                let Ok(id) = account.raw().base.id.parse::<u32>() else {
+                let Ok(id) = account.raw().id.parse::<u32>() else {
                     continue;
                 };
                 if !cfg.slots.contains(&id) || account.is_enabled() {
@@ -194,7 +203,7 @@ impl<B: Bmc> AccountCollection<B> {
 
                 // Build an update based on the create request:
                 let update = ManagerAccountUpdate {
-                    base: None,
+                    oem: None,
                     user_name: Some(create.user_name),
                     password: Some(create.password),
                     role_id: Some(create.role_id),

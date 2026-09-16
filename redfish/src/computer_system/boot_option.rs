@@ -22,8 +22,6 @@ use crate::schema::boot_option_collection::BootOptionCollection as BootOptionCol
 use crate::schema::resource::ResourceCollection;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 use std::convert::identity;
@@ -46,7 +44,16 @@ impl<B: Bmc> CollectionWithPatch<BootOptionCollectionSchema, BootOptionSchema, B
         base: ResourceCollection,
         members: Vec<NavProperty<BootOptionSchema>>,
     ) -> BootOptionCollectionSchema {
-        BootOptionCollectionSchema { base, members }
+        BootOptionCollectionSchema {
+            odata_id: base.odata_id,
+            odata_etag: base.odata_etag,
+            odata_type: base.odata_type,
+            settings_annotations: base.settings_annotations,
+            description: base.description,
+            name: base.name,
+            oem: base.oem,
+            members,
+        }
     }
 }
 
@@ -133,7 +140,7 @@ impl<B: Bmc> BootOption<B> {
     #[must_use]
     pub fn boot_reference(&self) -> BootOptionReference<&str> {
         self.data.boot_option_reference.as_deref().map_or_else(
-            || BootOptionReference::new(self.id().inner()),
+            || BootOptionReference::new(&self.data.id),
             BootOptionReference::new,
         )
     }
@@ -165,11 +172,5 @@ impl<B: Bmc> BootOption<B> {
             .and_then(Option::as_ref)
             .map(String::as_str)
             .map(UefiDevicePath::new)
-    }
-}
-
-impl<B: Bmc> Resource for BootOption<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

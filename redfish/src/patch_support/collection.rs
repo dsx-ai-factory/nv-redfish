@@ -17,7 +17,6 @@ use crate::patch_support::FilterFn;
 use crate::patch_support::JsonValue;
 use crate::patch_support::Payload;
 use crate::patch_support::ReadPatchFn;
-use crate::schema::resource::ItemOrCollection;
 use crate::schema::resource::Oem;
 use crate::schema::resource::ResourceCollection;
 use crate::schema::SettingsAnnotations;
@@ -143,14 +142,10 @@ impl Collection {
 
     fn base(&self) -> ResourceCollection {
         ResourceCollection {
-            base: ItemOrCollection {
-                odata_id: self.base.base.odata_id.clone(),
-                odata_etag: self.base.base.odata_etag.clone(),
-                // Don't support `@Redfish.Settings /
-                // @Redfish.SettingsApplyTime` for patched
-                // collection...
-                settings_annotations: SettingsAnnotations::default(),
-            },
+            odata_id: self.base.odata_id.clone(),
+            odata_etag: self.base.odata_etag.clone(),
+            // Settings annotations are not supported for patched collections.
+            settings_annotations: SettingsAnnotations::default(),
             odata_type: self.base.odata_type.clone(),
             description: self.base.description.clone(),
             name: self.base.name.clone(),

@@ -25,7 +25,6 @@ use crate::core::NavProperty;
 use crate::patch_support::CollectionWithPatch;
 use crate::patch_support::FilterFn;
 use crate::patch_support::JsonValue;
-use crate::resource::Resource as _;
 use crate::schema::manager::Manager as ManagerSchema;
 use crate::schema::manager_collection::ManagerCollection as ManagerCollectionSchema;
 use crate::schema::resource::ResourceCollection;
@@ -75,7 +74,7 @@ impl<B: Bmc> ManagerCollection<B> {
                 .map(Some)
         } else if bmc.quirks.bug_missing_root_nav_properties() {
             bmc.expand_property(&NavProperty::new_reference(
-                format!("{}/Managers", root.odata_id()).into(),
+                format!("{}/Managers", root.root.odata_id).into(),
             ))
             .await
             .map(Some)
@@ -111,6 +110,15 @@ impl<B: Bmc> CollectionWithPatch<ManagerCollectionSchema, ManagerSchema, B>
         base: ResourceCollection,
         members: Vec<NavProperty<ManagerSchema>>,
     ) -> ManagerCollectionSchema {
-        ManagerCollectionSchema { base, members }
+        ManagerCollectionSchema {
+            odata_id: base.odata_id,
+            odata_etag: base.odata_etag,
+            odata_type: base.odata_type,
+            settings_annotations: base.settings_annotations,
+            description: base.description,
+            name: base.name,
+            oem: base.oem,
+            members,
+        }
     }
 }

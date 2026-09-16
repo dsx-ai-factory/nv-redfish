@@ -21,7 +21,7 @@ use std::sync::Arc;
 use nv_redfish::computer_system::Storage;
 use nv_redfish::oem::dell::OperationApplyTime;
 use nv_redfish::schema::volume::{LinksCreate, RaidType, VolumeCreate};
-use nv_redfish::{Error, Resource, ServiceRoot};
+use nv_redfish::{Error, ServiceRoot};
 use nv_redfish_core::{ModificationResponse, ODataId, Reference, ReferenceLeaf};
 use nv_redfish_tests::{assert_empty, assert_task, async_task, Bmc, Expect, ODATA_ID, ODATA_TYPE};
 use serde_json::{json, Value};
@@ -222,8 +222,8 @@ async fn discovers_storage_volumes_and_lists_members() -> Result<(), Box<dyn Std
 
     let members = volumes.members().await?;
     assert_eq!(members.len(), 2);
-    assert_eq!(members[0].odata_id().to_string(), VOLUME_ID);
-    assert_eq!(members[1].odata_id().to_string(), second_volume_id);
+    assert_eq!(members[0].raw().odata_id.to_string(), VOLUME_ID);
+    assert_eq!(members[1].raw().odata_id.to_string(), second_volume_id);
     Ok(())
 }
 
@@ -240,7 +240,7 @@ async fn standard_create_uses_embedded_volume_without_get() -> Result<(), Box<dy
     let ModificationResponse::Entity(volume) = volumes.create(&standard_create()).await? else {
         panic!("expected an embedded Volume");
     };
-    assert_eq!(volume.odata_id().to_string(), VOLUME_ID);
+    assert_eq!(volume.raw().odata_id.to_string(), VOLUME_ID);
     Ok(())
 }
 
@@ -261,7 +261,7 @@ async fn standard_create_resolves_reference_response() -> Result<(), Box<dyn Std
     let ModificationResponse::Entity(volume) = volumes.create(&standard_create()).await? else {
         panic!("expected a resolved Volume");
     };
-    assert_eq!(volume.odata_id().to_string(), VOLUME_ID);
+    assert_eq!(volume.raw().odata_id.to_string(), VOLUME_ID);
     Ok(())
 }
 
@@ -304,7 +304,7 @@ async fn dell_create_posts_raid_payload_and_uses_embedded_volume_without_get(
     let ModificationResponse::Entity(volume) = volumes.create(&dell_create()).await? else {
         panic!("expected an embedded Volume");
     };
-    assert_eq!(volume.odata_id().to_string(), VOLUME_ID);
+    assert_eq!(volume.raw().odata_id.to_string(), VOLUME_ID);
     Ok(())
 }
 
@@ -325,7 +325,7 @@ async fn dell_create_resolves_reference_response() -> Result<(), Box<dyn StdErro
     let ModificationResponse::Entity(volume) = volumes.create(&dell_create()).await? else {
         panic!("expected a resolved Volume");
     };
-    assert_eq!(volume.odata_id().to_string(), VOLUME_ID);
+    assert_eq!(volume.raw().odata_id.to_string(), VOLUME_ID);
     Ok(())
 }
 

@@ -29,8 +29,6 @@ use crate::schema::telemetry_service::TelemetryService as TelemetryServiceSchema
 use crate::schema::telemetry_service::TelemetryServiceUpdate;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use crate::ServiceRoot;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::EntityTypeRef as _;
@@ -281,11 +279,5 @@ impl<B: Bmc> TelemetryService<B> {
                 MetricReportDefinition::new(&self.bmc, &nav).await
             })
             .await
-    }
-}
-
-impl<B: Bmc> Resource for TelemetryService<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

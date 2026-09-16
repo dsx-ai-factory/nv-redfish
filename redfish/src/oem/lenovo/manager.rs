@@ -17,7 +17,6 @@
 
 use crate::oem::lenovo::schema::lenovo_manager::v0_1_0::LenovoManagerProperties as LenovoManagerV0_1Schema;
 use crate::oem::lenovo::schema::lenovo_manager::v1_0_0::LenovoManagerProperties as LenovoManagerV1_0Schema;
-use crate::oem::lenovo::schema::lenovo_manager::LenovoManagerProperties as LenovoManagerPropertiesSchema;
 use crate::oem::lenovo::security_service::LenovoSecurityService;
 use crate::oem::oem_object;
 use crate::schema::manager::Manager as ManagerSchema;
@@ -60,8 +59,6 @@ impl<B: Bmc> LenovoManager<B> {
     /// Returns an error if parsing Lenovo manager OEM data fails.
     pub(crate) fn new(bmc: &NvBmc<B>, manager: &ManagerSchema) -> Result<Option<Self>, Error<B>> {
         Ok(manager
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, "Lenovo"))?
@@ -103,19 +100,14 @@ impl<B: Bmc> LenovoManager<B> {
     ///
     /// Returns an error if fetching Lenovo Security service data fails.
     pub async fn security(&self) -> Result<Option<LenovoSecurityService<B>>, Error<B>> {
-        if let Some(p) = &self.base().security {
+        let security = match self.data.as_ref() {
+            LenovoManagerSchema::V0_1(data) => &data.security,
+            LenovoManagerSchema::V1_0(data) => &data.security,
+        };
+        if let Some(p) = security {
             LenovoSecurityService::new(&self.bmc, p).await.map(Some)
         } else {
             Ok(None)
-        }
-    }
-
-    /// Host-side IPMI access via KCS protocol.
-    #[must_use]
-    pub fn base(&self) -> &LenovoManagerPropertiesSchema {
-        match self.data.as_ref() {
-            LenovoManagerSchema::V0_1(data) => &data.base,
-            LenovoManagerSchema::V1_0(data) => &data.base,
         }
     }
 }

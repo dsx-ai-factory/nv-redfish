@@ -28,9 +28,7 @@ use crate::schema::pcie_device_collection::PcieDeviceCollection as PcieDeviceCol
 use crate::Error;
 #[cfg(feature = "chassis")]
 use crate::NvBmc;
-use crate::Resource;
 use crate::ResourceProvidesStatus;
-use crate::ResourceSchema;
 use crate::ResourceStatusSchema;
 use nv_redfish_core::Bmc;
 #[cfg(feature = "chassis")]
@@ -170,12 +168,6 @@ impl<B: Bmc> PcieDevice<B> {
             .and_then(Option::as_ref)
             .map(String::as_str)
             .map(FirmwareVersion::new)
-    }
-}
-
-impl<B: Bmc> Resource for PcieDevice<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

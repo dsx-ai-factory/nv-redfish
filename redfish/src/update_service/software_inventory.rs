@@ -21,8 +21,6 @@ use crate::schema::software_inventory::SoftwareInventory as SoftwareInventorySch
 use crate::schema::software_inventory_collection::SoftwareInventoryCollection as SoftwareInventoryCollectionSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::EdmDateTimeOffset;
 use nv_redfish_core::NavProperty;
@@ -106,12 +104,6 @@ impl<B: Bmc> SoftwareInventory<B> {
     }
 }
 
-impl<B: Bmc> Resource for SoftwareInventory<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
-    }
-}
-
 pub struct SoftwareInventoryCollection<B: Bmc> {
     bmc: NvBmc<B>,
     collection: Arc<SoftwareInventoryCollectionSchema>,
@@ -125,7 +117,16 @@ impl<B: Bmc> CollectionWithPatch<SoftwareInventoryCollectionSchema, SoftwareInve
         base: ResourceCollection,
         members: Vec<NavProperty<SoftwareInventorySchema>>,
     ) -> SoftwareInventoryCollectionSchema {
-        SoftwareInventoryCollectionSchema { base, members }
+        SoftwareInventoryCollectionSchema {
+            odata_id: base.odata_id,
+            odata_etag: base.odata_etag,
+            odata_type: base.odata_type,
+            settings_annotations: base.settings_annotations,
+            description: base.description,
+            name: base.name,
+            oem: base.oem,
+            members,
+        }
     }
 }
 

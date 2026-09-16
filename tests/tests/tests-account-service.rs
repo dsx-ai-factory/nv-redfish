@@ -71,7 +71,7 @@ async fn account_request_debug_redacts_passwords() {
         .build();
     let update_debug = format!("{update:?}");
     assert!(!update_debug.contains(SECRET));
-    assert!(update_debug.contains("base: None"));
+    assert!(update_debug.contains("oem: None"));
     assert!(update_debug.contains("password: Some(\"<redacted>\")"));
     assert!(update_debug.contains("user_name: Some(\"debug-user\")"));
     assert_eq!(
@@ -125,8 +125,8 @@ async fn list_accounts() -> Result<(), Box<dyn StdError>> {
     let account = accounts.first().unwrap().raw();
     assert_eq!(account.user_name, Some("Administrator".into()));
     assert_eq!(account.role_id, Some("AdministratorRole".into()));
-    assert_eq!(account.base.name, "User Account");
-    assert_eq!(account.base.id, "1");
+    assert_eq!(account.name, "User Account");
+    assert_eq!(account.id, "1");
     Ok(())
 }
 
@@ -407,8 +407,8 @@ async fn create_account_standard_preserves_all_response_variants() -> TestResult
 
     assert_eq!(account.user_name, Some("user".into()));
     assert_eq!(account.role_id, Some("Operator".into()));
-    assert_eq!(account.base.id, "1");
-    assert_eq!(account.base.name, "User Account");
+    assert_eq!(account.id, "1");
+    assert_eq!(account.name, "User Account");
     assert!(account.account_types.as_ref().is_some_and(Vec::is_empty));
 
     let task_id = "/redfish/v1/TaskService/Tasks/42";
@@ -522,7 +522,7 @@ async fn create_account_dell_slot_defined_first_available() -> TestResult<()> {
 
     let account = into_entity(accounts.create_account(create_request("user")).await?).raw();
 
-    assert_eq!(account.base.id, "3");
+    assert_eq!(account.id, "3");
     assert_eq!(account.user_name, Some("user".into()));
     assert_eq!(account.role_id, Some("Operator".into()));
     assert_eq!(account.enabled, Some(true));
@@ -583,7 +583,7 @@ async fn create_account_slot_defined_uses_lowest_in_range() -> TestResult<()> {
     ));
 
     let account = into_entity(accounts.create_account(create_request("user")).await?);
-    assert_eq!(account.raw().base.id, "3");
+    assert_eq!(account.raw().id, "3");
 
     Ok(())
 }
@@ -617,7 +617,7 @@ async fn create_account_slot_defined_rechecks_stale_candidate() -> TestResult<()
 
     let account = into_entity(accounts.create_account(create_request("user")).await?).raw();
 
-    assert_eq!(account.base.id, "4");
+    assert_eq!(account.id, "4");
     assert_eq!(account.user_name.as_deref(), Some("user"));
 
     Ok(())
@@ -839,7 +839,7 @@ async fn list_dell_accounts_hide_disabled() -> TestResult<()> {
     let data = accounts.all_accounts_data().await?;
     let ids: Vec<_> = data
         .into_iter()
-        .map(|a| a.raw().as_ref().base.id.clone())
+        .map(|a| a.raw().as_ref().id.clone())
         .collect();
 
     assert_eq!(ids, vec!["1", "4"]);

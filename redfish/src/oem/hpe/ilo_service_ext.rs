@@ -39,8 +39,6 @@ impl<B: Bmc> HpeiLoServiceExt<B> {
     /// Returns an error if parsing HPE extension OEM data fails.
     pub(crate) fn new(manager: &ServiceRootSchema) -> Result<Option<Self>, Error<B>> {
         Ok(manager
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, "Hpe"))?

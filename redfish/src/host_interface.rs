@@ -20,8 +20,6 @@ use crate::schema::host_interface::HostInterface as HostInterfaceSchema;
 use crate::schema::host_interface_collection::HostInterfaceCollection as HostInterfaceCollectionSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 use std::marker::PhantomData;
@@ -100,11 +98,5 @@ impl<B: Bmc> HostInterface<B> {
             .as_ref()
             .and_then(Option::as_ref)
             .copied()
-    }
-}
-
-impl<B: Bmc> Resource for HostInterface<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

@@ -31,8 +31,6 @@ use crate::schema::update_service::UpdateServiceSimpleUpdateAction;
 use crate::schema::ActionAnnotations;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use crate::ServiceRoot;
 
 use nv_redfish_core::Bmc;
@@ -103,7 +101,7 @@ impl<B: Bmc> UpdateService<B> {
             .map(Some)
         } else if bmc.quirks.bug_missing_root_nav_properties() {
             let nav =
-                NavProperty::new_reference(format!("{}/UpdateService", root.odata_id()).into());
+                NavProperty::new_reference(format!("{}/UpdateService", root.root.odata_id).into());
             if let Some(service_patch_fn) = service_patch_fn {
                 Payload::get(bmc.as_ref(), &nav, service_patch_fn.as_ref()).await
             } else {
@@ -409,12 +407,6 @@ impl<B: Bmc> UpdateService<B> {
             .multipart_update(multipart_uri, request)
             .await
             .map_err(Error::Bmc)
-    }
-}
-
-impl<B: Bmc> Resource for UpdateService<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

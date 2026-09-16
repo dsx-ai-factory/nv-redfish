@@ -20,8 +20,6 @@ use crate::entity_link::FromLink;
 use crate::schema::processor_metrics::ProcessorMetrics as ProcessorMetricsSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 #[cfg(feature = "impl-entity-link")]
@@ -73,17 +71,9 @@ impl<B: Bmc> ProcessorMetrics<B> {
     #[cfg(feature = "oem-nvidia")]
     pub fn oem_nvidia(&self) -> Result<Option<NvidiaProcessorMetrics>, Error<B>> {
         self.data
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), NvidiaProcessorMetrics::new)
-    }
-}
-
-impl<B: Bmc> Resource for ProcessorMetrics<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

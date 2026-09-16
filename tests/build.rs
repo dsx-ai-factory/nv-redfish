@@ -33,9 +33,10 @@ fn main() -> Result<(), Error> {
         output: out_dir().join("base_tests.rs"),
         csdls: base_csdls,
         entity_type_patterns: vec![],
-        include_root_patterns: vec!["ServiceRoot.*.RootSetOnlyComplexType"
-            .parse()
-            .expect("valid root-set complex type pattern")],
+        include_root_patterns: ["ServiceRoot.*.RootSetOnlyComplexType", "Inheritance.*"]
+            .iter()
+            .map(|pattern| pattern.parse().expect("valid root-set type pattern"))
+            .collect(),
         rigid_array_patterns: vec!["ServiceRoot.*.ServiceRoot/RigidArrayValues"
             .parse()
             .expect("valid rigid array pattern")],

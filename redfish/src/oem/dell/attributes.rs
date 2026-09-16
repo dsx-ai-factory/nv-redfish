@@ -53,8 +53,6 @@ impl<B: Bmc> DellAttributes<B> {
         manager: &ManagerSchema,
     ) -> Result<Option<Self>, Error<B>> {
         if manager
-            .base
-            .base
             .oem
             .as_ref()
             .is_some_and(|oem| oem_value(oem, "Dell").is_some())
@@ -65,7 +63,7 @@ impl<B: Bmc> DellAttributes<B> {
             let odata_id = ODataId::from(format!(
                 "{}/Oem/Dell/DellAttributes/{}",
                 manager.odata_id(),
-                manager.base.id
+                manager.id
             ));
             bmc.expand_property(&NavProperty::new_reference(odata_id))
                 .await

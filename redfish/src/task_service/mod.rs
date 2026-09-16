@@ -31,8 +31,6 @@ use crate::schema::task::Task as TaskSchema;
 use crate::schema::task_service::TaskService as TaskServiceSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use crate::ServiceRoot;
 
 use nv_redfish_core::AsyncTask;
@@ -117,11 +115,5 @@ impl<B: Bmc> TaskService<B> {
 
         let task_ref = NavProperty::new_reference(task_location);
         Ok(TaskLink::new(&self.bmc, task_ref))
-    }
-}
-
-impl<B: Bmc> Resource for TaskService<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

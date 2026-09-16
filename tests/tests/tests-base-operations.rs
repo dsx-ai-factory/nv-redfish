@@ -35,6 +35,7 @@ use nv_redfish_tests::base::redfish::service_root::TestActionsServiceOemActions;
 use nv_redfish_tests::base::redfish::service_root::TestActionsServiceTestActionAction;
 use nv_redfish_tests::base::redfish::service_root::TestActionsServiceTestSerializationActionAction;
 use nv_redfish_tests::base::redfish::service_root::TestCollectionMemberCreate;
+use nv_redfish_tests::base::redfish::service_root::TestSettingsService;
 use nv_redfish_tests::base::redfish::settings::OperationApplyTime;
 use nv_redfish_tests::base::redfish::test_vendor::TestActionsServiceTestActionAction as VendorTestAction;
 use nv_redfish_tests::base::redfish::ActionAnnotations;
@@ -927,7 +928,48 @@ async fn redfish_settings_nav_test() -> Result<(), Error> {
             "SettingValue": "current",
         }),
     ));
-    let _settings = settings_nav.get(&bmc).await.map_err(Error::Bmc)?;
+    let settings = settings_nav.get(&bmc).await.map_err(Error::Bmc)?;
+    assert_eq!(
+        settings.setting_value.as_ref().and_then(Option::as_deref),
+        Some("current")
+    );
+    Ok(())
+}
+
+// Inline SettingsObject payloads also produce a typed reference for retrieval.
+#[test]
+async fn redfish_settings_expanded_test() -> Result<(), Error> {
+    let bmc = Bmc::default();
+    let service: TestSettingsService = serde_json::from_value(json!({
+        ODATA_ID: "/redfish/v1/TestSettingsService",
+        ODATA_TYPE: "ServiceRoot.v1_0_0.TestSettingsService",
+        "SettingValue": "current",
+        "@Redfish.Settings": {
+            "SettingsObject": {
+                ODATA_ID: "/redfish/v1/TestSettingsService/Settings",
+                ODATA_TYPE: "ServiceRoot.v1_0_0.TestSettingsService",
+                "SettingValue": "pending"
+            }
+        }
+    }))
+    .expect("resource with expanded settings deserializes");
+    let settings_nav = service
+        .settings_object()
+        .expect("expanded settings are present");
+    assert!(matches!(settings_nav, NavProperty::Reference(_)));
+    bmc.expect(Expect::get(
+        "/redfish/v1/TestSettingsService/Settings",
+        json!({
+            ODATA_ID: "/redfish/v1/TestSettingsService/Settings",
+            ODATA_TYPE: "ServiceRoot.v1_0_0.TestSettingsService",
+            "SettingValue": "pending"
+        }),
+    ));
+    let settings = settings_nav.get(&bmc).await.map_err(Error::Bmc)?;
+    assert_eq!(
+        settings.setting_value.as_ref().and_then(Option::as_deref),
+        Some("pending")
+    );
     Ok(())
 }
 
@@ -1001,7 +1043,7 @@ async fn redfish_settings_update_test() -> Result<(), Error> {
     Ok(())
 }
 
-// If no @Redfish.Settings present, settings_object() returns None.
+// If no @Redfish.Settings is present, settings_object() returns None.
 #[test]
 async fn redfish_settings_absent_test() -> Result<(), Error> {
     let bmc = Bmc::default();

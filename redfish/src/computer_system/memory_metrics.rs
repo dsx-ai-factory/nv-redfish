@@ -20,8 +20,6 @@ use crate::entity_link::FromLink;
 use crate::schema::memory_metrics::MemoryMetrics as MemoryMetricsSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 #[cfg(feature = "impl-entity-link")]
@@ -77,17 +75,9 @@ impl<B: Bmc> MemoryMetrics<B> {
     #[cfg(feature = "oem-nvidia")]
     pub fn oem_nvidia(&self) -> Result<Option<Arc<NvidiaMemoryMetrics>>, Error<B>> {
         self.data
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, OEM_KEY))
-    }
-}
-
-impl<B: Bmc> Resource for MemoryMetrics<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 
