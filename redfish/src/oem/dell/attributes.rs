@@ -21,15 +21,19 @@ use crate::oem::dell::schema::dell_attributes::DellAttributes as DellAttributesS
 use crate::oem::oem_value;
 use crate::Error;
 use crate::NvBmc;
-use serde::Serialize;
 use std::sync::Arc;
 
+#[cfg(feature = "managers")]
 use crate::core::EntityTypeRef as _;
 use crate::core::NavProperty;
 #[cfg(feature = "managers")]
 use crate::core::ODataId;
+use crate::core::Updatable as _;
 #[cfg(feature = "managers")]
 use crate::schema::manager::Manager as ManagerSchema;
+
+#[doc(inline)]
+pub use crate::oem::dell::schema::dell_attributes::{AttributesUpdate, DellAttributesUpdate};
 
 /// Dell OEM Attributes.
 pub struct DellAttributes<B: Bmc> {
@@ -104,23 +108,12 @@ impl<B: Bmc> DellAttributes<B> {
     /// # Errors
     ///
     /// Returns an error if serializing or applying the update fails.
-    pub async fn update<T>(&self, attributes: &T) -> Result<ModificationResponse<Self>, Error<B>>
-    where
-        T: Serialize + Send + Sync,
-    {
-        #[derive(Serialize)]
-        #[serde(rename_all = "PascalCase")]
-        struct Update<'a, T> {
-            attributes: &'a T,
-        }
-
-        self.bmc
-            .as_ref()
-            .update(
-                self.data.odata_id(),
-                self.data.etag(),
-                &Update { attributes },
-            )
+    pub async fn update(
+        &self,
+        update: &DellAttributesUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.data
+            .update(self.bmc.as_ref(), update)
             .await
             .map(|response| {
                 response.map_entity(|data| Self {

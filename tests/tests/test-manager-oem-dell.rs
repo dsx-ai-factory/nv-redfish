@@ -15,12 +15,14 @@
 
 //! Integration tests for Dell resources advertised by Manager OEM links.
 
+use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::sync::Arc;
 
 use nv_redfish::manager::Manager;
+use nv_redfish::oem::dell::attributes::{AttributesUpdate, DellAttributesUpdate};
 use nv_redfish::ServiceRoot;
-use nv_redfish_core::{ModificationResponse, ODataId};
+use nv_redfish_core::{EdmPrimitiveType, ModificationResponse, ODataId};
 use nv_redfish_tests::{assert_empty, Bmc, Expect, ODATA_ID, ODATA_TYPE};
 use serde_json::{json, Value};
 
@@ -73,11 +75,21 @@ async fn manager_discovers_and_updates_advertised_dell_attributes() -> Result<()
         attributes_id,
         json!({ "Attributes": { "SSH.1.Enable": "Disabled" } }),
     ));
-    assert_empty(
-        attributes
-            .update(&json!({ "SSH.1.Enable": "Disabled" }))
-            .await?,
-    );
+    let values = HashMap::from([(
+        "SSH.1.Enable".to_string(),
+        Some(EdmPrimitiveType::String("Disabled".to_string())),
+    )]);
+    let update = DellAttributesUpdate::builder()
+        .with_attributes(
+            AttributesUpdate::builder()
+                .with_dynamic_properties(values)
+                .build(),
+        )
+        .build();
+    let update_debug = format!("{update:?}");
+    assert!(!update_debug.contains("Disabled"));
+    assert!(update_debug.contains("dynamic_properties: \"<redacted>\""));
+    assert_empty(attributes.update(&update).await?);
 
     let fallback_bmc = Arc::new(Bmc::default());
     let fallback_manager = get_manager(
