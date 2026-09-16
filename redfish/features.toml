@@ -883,6 +883,19 @@ oem_csdl_files = [
 csdl_files = []
 
 [[oem-features]]
+vendor = "dell"
+name = "storages"
+oem_csdl_files = [
+    "DellStorage_v1.xml",
+]
+csdl_files = [
+    "Storage_v1.xml",
+]
+action_patterns = [
+    "DellStorage.*",
+]
+
+[[oem-features]]
 vendor = "lenovo"
 name = "computer-systems"
 oem_csdl_files = [

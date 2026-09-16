@@ -19,6 +19,7 @@
 #[allow(clippy::missing_const_for_fn)]
 #[allow(clippy::struct_field_names)]
 #[allow(clippy::too_long_first_doc_paragraph)]
+#[allow(clippy::unused_trait_names)]
 #[allow(missing_docs)]
 pub mod redfish {
     include!(concat!(env!("OUT_DIR"), "/oem-dell.rs"));
