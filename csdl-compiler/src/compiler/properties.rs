@@ -260,13 +260,15 @@ impl TypeInfo {
                     // navigation properties. RequiredOnCreate above keeps
                     // create payload shapes writable even when the type is
                     // otherwise read-only.
-                    if ct.odata.additional_properties.is_none_or(|v| {
-                        // Redfish-specific heuristic: treat additional
-                        // properties of `OemActions` complex types as
-                        // read-only; we do this because the schema does not indicate their
-                        // immutability.
-                        !v.into_inner() || ct.name.name.inner().as_str() == "OemActions"
-                    }) && (ct.properties.is_empty() || structural_properties_are_read_only)
+                    if ct.redfish.dynamic_properties.is_none()
+                        && ct.odata.additional_properties.is_none_or(|v| {
+                            // Redfish-specific heuristic: treat additional
+                            // properties of `OemActions` complex types as
+                            // read-only; we do this because the schema does not indicate their
+                            // immutability.
+                            !v.into_inner() || ct.name.name.inner().as_str() == "OemActions"
+                        })
+                        && (ct.properties.is_empty() || structural_properties_are_read_only)
                     {
                         Some(Permissions::Read)
                     } else {
