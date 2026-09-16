@@ -1,5 +1,17 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Mock-based integration tests for standard Volume and Dell storage operations.
 
@@ -7,10 +19,10 @@ use std::error::Error as StdError;
 use std::sync::Arc;
 
 use nv_redfish::computer_system::Storage;
-use nv_redfish::oem::dell::{DellOperationApplyTime, DellVolumeCreate};
-use nv_redfish::schema::volume::{RaidType, VolumeCreate};
+use nv_redfish::oem::dell::OperationApplyTime;
+use nv_redfish::schema::volume::{LinksCreate, RaidType, VolumeCreate};
 use nv_redfish::{Error, Resource, ServiceRoot};
-use nv_redfish_core::{ModificationResponse, ODataId};
+use nv_redfish_core::{ModificationResponse, ODataId, Reference, ReferenceLeaf};
 use nv_redfish_tests::{assert_empty, assert_task, async_task, Bmc, Expect, ODATA_ID, ODATA_TYPE};
 use serde_json::{json, Value};
 
@@ -147,15 +159,20 @@ fn standard_request_payload() -> Value {
     json!({ "DisplayName": "scratch" })
 }
 
-fn dell_create() -> DellVolumeCreate {
-    DellVolumeCreate::new(
-        "os".to_string(),
-        RaidType::Raid1,
-        vec![
-            ODataId::from("/redfish/v1/Drives/1".to_string()),
-            ODataId::from("/redfish/v1/Drives/2".to_string()),
-        ],
-    )
+fn dell_create() -> VolumeCreate {
+    let drives = ["/redfish/v1/Drives/1", "/redfish/v1/Drives/2"]
+        .iter()
+        .map(|id| {
+            Reference::from(&ReferenceLeaf {
+                odata_id: ODataId::from(id.to_string()),
+            })
+        })
+        .collect();
+    VolumeCreate::builder()
+        .with_name("os".to_string())
+        .with_raid_type(RaidType::Raid1)
+        .with_links(LinksCreate::builder().with_drives(drives).build())
+        .build()
 }
 
 fn dell_request_payload() -> Value {
@@ -284,8 +301,7 @@ async fn dell_create_posts_raid_payload_and_uses_embedded_volume_without_get(
         volume_payload(VOLUME_ID, "volume-1"),
     ));
 
-    let ModificationResponse::Entity(volume) = volumes.oem_dell().create(&dell_create()).await?
-    else {
+    let ModificationResponse::Entity(volume) = volumes.create(&dell_create()).await? else {
         panic!("expected an embedded Volume");
     };
     assert_eq!(volume.odata_id().to_string(), VOLUME_ID);
@@ -306,8 +322,7 @@ async fn dell_create_resolves_reference_response() -> Result<(), Box<dyn StdErro
         volume_payload(VOLUME_ID, "volume-1"),
     ));
 
-    let ModificationResponse::Entity(volume) = volumes.oem_dell().create(&dell_create()).await?
-    else {
+    let ModificationResponse::Entity(volume) = volumes.create(&dell_create()).await? else {
         panic!("expected a resolved Volume");
     };
     assert_eq!(volume.odata_id().to_string(), VOLUME_ID);
@@ -325,7 +340,7 @@ async fn dell_create_preserves_task() -> Result<(), Box<dyn StdError>> {
         async_task(task_id, 6),
     ));
 
-    assert_task(volumes.oem_dell().create(&dell_create()).await?, task_id, 6);
+    assert_task(volumes.create(&dell_create()).await?, task_id, 6);
     Ok(())
 }
 
@@ -335,15 +350,15 @@ async fn dell_create_preserves_empty() -> Result<(), Box<dyn StdError>> {
     let volumes = volumes(bmc.clone()).await?;
     bmc.expect(Expect::create_empty(VOLUMES_ID, dell_request_payload()));
 
-    assert_empty(volumes.oem_dell().create(&dell_create()).await?);
+    assert_empty(volumes.create(&dell_create()).await?);
     Ok(())
 }
 
 #[tokio::test]
 async fn decommission_serializes_supported_apply_times() -> Result<(), Box<dyn StdError>> {
     for (apply_time, expected) in [
-        (DellOperationApplyTime::Immediate, "Immediate"),
-        (DellOperationApplyTime::OnReset, "OnReset"),
+        (OperationApplyTime::Immediate, "Immediate"),
+        (OperationApplyTime::OnReset, "OnReset"),
     ] {
         let bmc = Arc::new(Bmc::default());
         let storage = storage(bmc.clone(), Some(advertised_decommission_action())).await?;

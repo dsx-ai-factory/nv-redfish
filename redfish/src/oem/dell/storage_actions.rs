@@ -1,39 +1,32 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Dell actions advertised by a Storage resource.
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize as _;
 
-use crate::core::{Action, Bmc, ModificationResponse};
+use crate::core::{Bmc, ModificationResponse};
+use crate::oem::dell::schema::dell_storage::StorageControllerDrivesDecommissionAction;
+use crate::oem::dell::schema::storage::OemActions as DellStorageOemActions;
+use crate::oem::dell::schema::ActionAnnotations;
 use crate::schema::storage::OemActions as StorageOemActions;
 use crate::{Error, NvBmc};
 
-/// Apply times advertised for Dell drive decommission operations.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub enum DellOperationApplyTime {
-    /// Apply the operation immediately.
-    Immediate,
-    /// Apply the operation when the system or service is reset.
-    OnReset,
-}
-
-#[derive(Debug, Deserialize)]
-struct DellStorageOemActions {
-    #[serde(rename = "#DellStorage.ControllerDrivesDecommission")]
-    controller_drives_decommission: Option<Action<DecommissionRequest, ()>>,
-}
-
-#[derive(Debug, Serialize)]
-struct DecommissionRequest {
-    #[serde(
-        rename = "@Redfish.OperationApplyTime",
-        skip_serializing_if = "Option::is_none"
-    )]
-    operation_apply_time: Option<DellOperationApplyTime>,
-}
+pub use crate::oem::dell::schema::settings::OperationApplyTime;
 
 /// Dell actions advertised by a Storage resource.
 pub struct DellStorageActions<B: Bmc> {
@@ -42,6 +35,7 @@ pub struct DellStorageActions<B: Bmc> {
 }
 
 impl<B: Bmc> DellStorageActions<B> {
+    /// Parse Dell actions from a standard Storage OEM actions object.
     pub(crate) fn new(bmc: &NvBmc<B>, actions: &StorageOemActions) -> Result<Self, Error<B>> {
         DellStorageOemActions::deserialize(&actions.additional_properties)
             .map_err(Error::Json)
@@ -59,18 +53,22 @@ impl<B: Bmc> DellStorageActions<B> {
     /// not advertise this action, or a BMC error if invocation fails.
     pub async fn decommission_controller_drives(
         &self,
-        apply_time: Option<DellOperationApplyTime>,
+        apply_time: Option<OperationApplyTime>,
     ) -> Result<ModificationResponse<()>, Error<B>> {
         let action = self
             .data
             .controller_drives_decommission
             .as_ref()
             .ok_or(Error::ActionNotAvailable)?;
+
+        let redfish_annotations = ActionAnnotations {
+            operation_apply_time: apply_time,
+        };
         action
             .run(
                 self.bmc.as_ref(),
-                &DecommissionRequest {
-                    operation_apply_time: apply_time,
+                &StorageControllerDrivesDecommissionAction {
+                    redfish_annotations,
                 },
             )
             .await

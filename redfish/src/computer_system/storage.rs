@@ -35,7 +35,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 #[cfg(feature = "oem-dell")]
-use crate::oem::dell::{DellStorageActions, DellVolumes};
+use crate::oem::dell::DellStorageActions;
 
 /// Represents a storage controller in a computer system.
 ///
@@ -131,6 +131,7 @@ pub struct Volume<B: Bmc> {
 }
 
 impl<B: Bmc> Volume<B> {
+    /// Wrap generated Volume data.
     pub(crate) const fn from_data(data: Arc<VolumeSchema>) -> Self {
         Self {
             data,
@@ -158,6 +159,7 @@ pub struct VolumeCollection<B: Bmc> {
 }
 
 impl<B: Bmc> VolumeCollection<B> {
+    /// Create a collection handle from an advertised navigation property.
     fn new(bmc: &NvBmc<B>, collection: &NavProperty<VolumeCollectionSchema>) -> Self {
         Self {
             bmc: bmc.clone(),
@@ -214,13 +216,6 @@ impl<B: Bmc> VolumeCollection<B> {
                     .map_err(Error::Bmc)
             })
             .await
-    }
-
-    /// Use Dell's typed RAID volume creation payload with this collection.
-    #[cfg(feature = "oem-dell")]
-    #[must_use]
-    pub fn oem_dell(&self) -> DellVolumes<B> {
-        DellVolumes::new(&self.bmc, self.id.clone())
     }
 }
 
