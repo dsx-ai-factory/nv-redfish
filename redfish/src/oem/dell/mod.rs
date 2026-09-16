@@ -15,6 +15,9 @@
 
 //! Support of Dell OEM extensions to Redfish.
 
+#[cfg(feature = "accounts")]
+mod account;
+
 /// Support of Dell iDRAC.
 #[cfg(feature = "oem-dell-attributes")]
 pub mod attributes;
@@ -24,6 +27,8 @@ mod storage_actions;
 
 mod compiled_schema;
 
+#[cfg(feature = "accounts")]
+pub use account::IdracVersion;
 #[cfg(all(feature = "computer-systems", feature = "storages"))]
 pub use storage_actions::{DellStorageActions, OperationApplyTime};
 
