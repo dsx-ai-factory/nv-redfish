@@ -130,8 +130,34 @@ pub fn ami_service_root(
     json_merge([&base, &fields])
 }
 
-/// Build a ServiceRoot payload for anonymous Redfish 1.9.0 platforms
-/// (Liteon powershelf class) merged with the provided `fields`.
+/// Build a ServiceRoot payload for Lite-On power shelves merged with `fields`.
+///
+/// Live shelves may omit the `Systems` navigation property on `/redfish/v1` while
+/// `/redfish/v1/Systems` still responds to GET.
+pub fn liteon_powershelf_service_root(root_id: &ODataId, fields: Value) -> Value {
+    let base = json!({
+        ODATA_ID: root_id,
+        ODATA_TYPE: "#ServiceRoot.v1_13_0.ServiceRoot",
+        "Id": "RootService",
+        "Name": "Root Service",
+        "Vendor": "LITE-ON TECHNOLOGY CORP.",
+        "RedfishVersion": "1.17.0",
+        "ProtocolFeaturesSupported": {
+            "ExpandQuery": {
+                "NoLinks": false
+            }
+        },
+        "Links": {
+            "Sessions": {
+                ODATA_ID: format!("{root_id}/SessionService/Sessions"),
+            }
+        },
+    });
+    json_merge([&base, &fields])
+}
+
+/// Build a ServiceRoot payload for anonymous Redfish 1.9.0 platforms merged with
+/// the provided `fields`.
 pub fn anonymous_1_9_service_root(root_id: &ODataId, fields: Value) -> Value {
     let base = json!({
         ODATA_ID: root_id,
