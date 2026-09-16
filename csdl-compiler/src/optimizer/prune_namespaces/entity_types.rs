@@ -59,6 +59,7 @@ pub fn prune<'a>(input: Compiled<'a>, _config: &Config) -> Compiled<'a> {
             .into_iter()
             .map(|(name, v)| (name, v.map_nav_properties(map_nav_prop)))
             .collect(),
+        annotations: input.annotations.map_type(|t| replace(&t, &replacements)),
         actions: map_types_in_actions(input.actions, |t| replace(&t, &replacements)),
         enum_types: input.enum_types,
         type_definitions: input.type_definitions,

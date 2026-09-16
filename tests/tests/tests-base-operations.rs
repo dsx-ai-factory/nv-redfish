@@ -791,7 +791,7 @@ async fn action_parameter_serialization_test() -> Result<(), Error> {
     Ok(())
 }
 
-// Deserialize @Redfish.Settings and navigate to settings object.
+// Read settings annotations and navigate to the settings object.
 #[test]
 async fn redfish_settings_nav_test() -> Result<(), Error> {
     let bmc = Bmc::default();
@@ -810,7 +810,7 @@ async fn redfish_settings_nav_test() -> Result<(), Error> {
             ODATA_ID: &service_id,
             ODATA_TYPE: &service_data_type,
             "@Redfish.Settings": { "SettingsObject": { ODATA_ID: &settings_id } },
-            "@Redfish.SettingsApplyTime": {},
+            "@Redfish.SettingsApplyTime": { "MaintenanceWindowDurationInSeconds": 60 },
             "SettingValue": "current",
         }),
     ));
@@ -822,8 +822,16 @@ async fn redfish_settings_nav_test() -> Result<(), Error> {
         .await
         .map_err(Error::Bmc)?;
 
-    assert!(service.redfish_settings.is_some());
-    assert!(service.redfish_settings_apply_type.is_some());
+    assert!(service.settings_annotations.settings.is_some());
+    assert_eq!(
+        service
+            .settings_annotations
+            .settings_apply_time
+            .as_ref()
+            .expect("settings apply time is present")
+            .maintenance_window_duration_in_seconds,
+        Some(60),
+    );
     let settings_nav = service.settings_object().expect("settings nav must exist");
 
     // Fetch settings object
@@ -938,6 +946,8 @@ async fn redfish_settings_absent_test() -> Result<(), Error> {
         .await
         .map_err(Error::Bmc)?;
     assert!(service.settings_object().is_none());
+    assert!(service.settings_annotations.settings.is_none());
+    assert!(service.settings_annotations.settings_apply_time.is_none());
     Ok(())
 }
 

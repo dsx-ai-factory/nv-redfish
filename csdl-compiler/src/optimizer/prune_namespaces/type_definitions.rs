@@ -52,6 +52,7 @@ pub fn prune<'a>(input: Compiled<'a>, _config: &Config) -> Compiled<'a> {
             .collect(),
         excerpt_copies: input.excerpt_copies,
         creatable_entity_types: input.creatable_entity_types,
+        annotations: input.annotations.map_type(|t| replace(&t, &replacements)),
         actions: map_types_in_actions(input.actions, |t| replace(&t, &replacements)),
     }
 }

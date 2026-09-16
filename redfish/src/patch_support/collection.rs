@@ -20,6 +20,7 @@ use crate::patch_support::ReadPatchFn;
 use crate::schema::resource::ItemOrCollection;
 use crate::schema::resource::Oem;
 use crate::schema::resource::ResourceCollection;
+use crate::schema::SettingsAnnotations;
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::Bmc;
@@ -148,8 +149,7 @@ impl Collection {
                 // Don't support `@Redfish.Settings /
                 // @Redfish.SettingsApplyTime` for patched
                 // collection...
-                redfish_settings: None,
-                redfish_settings_apply_type: None,
+                settings_annotations: SettingsAnnotations::default(),
             },
             odata_type: self.base.odata_type.clone(),
             description: self.base.description.clone(),

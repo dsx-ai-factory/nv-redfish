@@ -4,4 +4,4 @@ error[E0609]: no field `write_only` on type `ServiceRoot`
 21 |     println!("{:?}", v.write_only);
    |                        ^^^^^^^^^^ unknown field
    |
-   = note: available fields are: `odata_id`, `odata_etag`, `odata_type`, `redfish_settings`, `redfish_settings_apply_type` ... and 14 others
+   = note: available fields are: `odata_id`, `odata_etag`, `odata_type`, `settings_annotations`, `redfish_version` ... and 13 others
