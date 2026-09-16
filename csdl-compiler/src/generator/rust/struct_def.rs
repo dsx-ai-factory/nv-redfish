@@ -164,21 +164,13 @@ impl<'a> StructDef<'a> {
         } else {
             // Add dynamic properties if no additional properties
             // defined.
-            self.dynamic_properties
-                .map_or_else(
-                    TokenStream::new,
-                    |dynamic_properties| match dynamic_properties.ptype.as_str() {
-                        "Edm.PrimitiveType" => quote! {
-                            #[serde(flatten)]
-                            pub dynamic_properties: #top::DynamicProperties<#top::edm::PrimitiveType>,
-                        },
-                        "Edm.String" => quote! {
-                            #[serde(flatten)]
-                            pub dynamic_properties: #top::DynamicProperties<#top::edm::String>,
-                        },
-                        v => quote! { not_supported_type: compile_error!(#v) },
-                    },
-                )
+            self.dynamic_properties.map_or_else(TokenStream::new, |v| {
+                let dynamic_type = Self::dynamic_properties_type(v, config);
+                quote! {
+                    #[serde(flatten)]
+                    pub dynamic_properties: #dynamic_type,
+                }
+            })
         };
 
         // Combine all together in content
@@ -388,6 +380,27 @@ impl<'a> StructDef<'a> {
         } else {
             TokenStream::new()
         };
+        let dynamic_properties_type = if has_additional_properties {
+            None
+        } else {
+            self.dynamic_properties
+                .map(|v| Self::dynamic_properties_type(v, config))
+        };
+        let dynamic_properties = dynamic_properties_type.as_ref().map(|dynamic_type| {
+            quote! {
+                #[serde(flatten)]
+                pub dynamic_properties: #dynamic_type,
+            }
+        });
+        let dynamic_properties_impl = dynamic_properties_type.as_ref().map(|dynamic_type| {
+            quote! {
+                #[must_use]
+                pub fn with_dynamic_properties(mut self, v: #dynamic_type) -> Self {
+                    self.dynamic_properties = v;
+                    self
+                }
+            }
+        });
 
         let content = properties.struct_content_for_update();
         let comment = format!(" Update struct corresponding to `{}`", self.name);
@@ -398,12 +411,13 @@ impl<'a> StructDef<'a> {
             SerializableStructKind::Update,
             self.base.is_some(),
             has_additional_properties,
+            dynamic_properties_type.is_some(),
         );
         tokens.extend(quote! {
             #[doc = #comment]
             #[derive(Serialize, Default)]
             #debug_derive
-            pub struct #name { #base #content #additional_properties }
+            pub struct #name { #base #content #additional_properties #dynamic_properties }
         });
 
         let content = properties.optional_property_setter_for_update();
@@ -421,6 +435,7 @@ impl<'a> StructDef<'a> {
                 }
                 #base_impl
                 #content
+                #dynamic_properties_impl
             }
             #debug_impl
         });
@@ -456,6 +471,7 @@ impl<'a> StructDef<'a> {
             SerializableStructKind::Create,
             false,
             has_additional_properties,
+            false,
         );
         tokens.extend([quote! {
             #[doc = #comment]
@@ -494,10 +510,14 @@ impl<'a> StructDef<'a> {
         kind: SerializableStructKind,
         has_base: bool,
         has_additional_properties: bool,
+        has_dynamic_properties: bool,
     ) -> (TokenStream, TokenStream) {
-        // Additional properties contain arbitrary request values and have no schema metadata that
-        // can identify sensitive entries, so always use a redacting Debug implementation for them.
-        if properties.can_contain_sensitive_info() || has_additional_properties {
+        // Open properties contain arbitrary request values and have no schema metadata that can
+        // identify sensitive entries, so always use a redacting Debug implementation for them.
+        if properties.can_contain_sensitive_info()
+            || has_additional_properties
+            || has_dynamic_properties
+        {
             let mut fields = TokenStream::new();
             match kind {
                 SerializableStructKind::Update => {
@@ -516,6 +536,8 @@ impl<'a> StructDef<'a> {
             // metadata that can identify sensitive entries, so never expose their contents.
             let additional_properties = has_additional_properties
                 .then(|| quote! { .field("additional_properties", &"<redacted>") });
+            let dynamic_properties = has_dynamic_properties
+                .then(|| quote! { .field("dynamic_properties", &"<redacted>") });
             (
                 quote! {},
                 quote! {
@@ -525,6 +547,7 @@ impl<'a> StructDef<'a> {
                                 #base
                                 #fields
                                 #additional_properties
+                                #dynamic_properties
                                 .finish()
                         }
                     }
@@ -577,6 +600,21 @@ impl<'a> StructDef<'a> {
         quote! {
             #doc #serde
             pub #name: #field_type,
+        }
+    }
+
+    /// Returns the generated Rust map type for Redfish dynamic properties.
+    fn dynamic_properties_type(
+        dynamic_properties: DynamicProperties<'_>,
+        config: &Config,
+    ) -> TokenStream {
+        let top = &config.top_module_alias;
+        match dynamic_properties.ptype.as_str() {
+            "Edm.PrimitiveType" => {
+                quote! { #top::DynamicProperties<#top::edm::PrimitiveType> }
+            }
+            "Edm.String" => quote! { #top::DynamicProperties<#top::edm::String> },
+            value => quote! { compile_error!(#value) },
         }
     }
 

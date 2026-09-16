@@ -16,6 +16,7 @@
 
 use nv_redfish::computer_system::Bios;
 use nv_redfish::computer_system::ComputerSystem;
+use nv_redfish::schema::bios::{AttributesUpdate, BiosUpdate};
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::EdmPrimitiveType;
 use nv_redfish_core::ODataId;
@@ -24,6 +25,7 @@ use nv_redfish_tests::Expect;
 use nv_redfish_tests::ODATA_ID;
 use nv_redfish_tests::ODATA_TYPE;
 use serde_json::json;
+use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::sync::Arc;
 use tokio::test;
@@ -31,6 +33,42 @@ use tokio::test;
 const SERVICE_ROOT_DATA_TYPE: &str = "#ServiceRoot.v1_13_0.ServiceRoot";
 const COMPUTER_SYSTEM_DATA_TYPE: &str = "#ComputerSystem.v1_20_1.ComputerSystem";
 const BIOS_DATA_TYPE: &str = "#Bios.v1_2_1.Bios";
+
+#[test]
+async fn bios_dynamic_attribute_update_serializes_and_redacts_debug() {
+    const SECRET: &str = "bios-secret-sentinel";
+
+    let values = HashMap::from([
+        (
+            "BootMode".to_string(),
+            Some(EdmPrimitiveType::String("Uefi".to_string())),
+        ),
+        (
+            "SetupPassword".to_string(),
+            Some(EdmPrimitiveType::String(SECRET.to_string())),
+        ),
+    ]);
+    let update = BiosUpdate::builder()
+        .with_attributes(
+            AttributesUpdate::builder()
+                .with_dynamic_properties(values)
+                .build(),
+        )
+        .build();
+
+    assert_eq!(
+        serde_json::to_value(&update).expect("BIOS update must serialize"),
+        json!({
+            "Attributes": {
+                "BootMode": "Uefi",
+                "SetupPassword": SECRET,
+            }
+        })
+    );
+    let debug = format!("{update:?}");
+    assert!(!debug.contains(SECRET));
+    assert!(debug.contains("dynamic_properties: \"<redacted>\""));
+}
 
 // Test 1: basic BIOS retrieval via bios() and EdmPrimitiveType mapping.
 #[test]
