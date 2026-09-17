@@ -14,11 +14,13 @@
 // limitations under the License.
 //! Integration tests of BIOS support.
 
+use nv_redfish::computer_system::AttributesUpdate;
 use nv_redfish::computer_system::Bios;
+use nv_redfish::computer_system::BiosUpdate;
 use nv_redfish::computer_system::ComputerSystem;
-use nv_redfish::schema::bios::{AttributesUpdate, BiosUpdate};
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::EdmPrimitiveType;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Expect;
@@ -205,6 +207,123 @@ async fn bios_missing_or_empty_attributes() -> Result<(), Box<dyn StdError>> {
     assert!(bios_empty_attrs.attribute("Anything").is_none());
 
     Ok(())
+}
+
+#[test]
+async fn bios_update_uses_live_resource_and_preserves_entity() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = bios_ids();
+    let system = get_computer_system(bmc.clone(), &ids, "Generic").await?;
+    bmc.expect(Expect::get(
+        &ids.bios_id,
+        bios_payload(
+            &ids.bios_id,
+            json!({ "Attributes": { "BootMode": "Legacy" } }),
+        ),
+    ));
+    let bios = system.bios().await?.ok_or("BIOS missing")?;
+    let update = bios_update("BootMode", "Uefi");
+
+    bmc.expect(Expect::update(
+        &ids.bios_id,
+        json!({ "Attributes": { "BootMode": "Uefi" } }),
+        bios_payload(
+            &ids.bios_id,
+            json!({ "Attributes": { "BootMode": "Uefi" } }),
+        ),
+    ));
+
+    let ModificationResponse::Entity(updated) = bios.update(&update).await? else {
+        return Err("expected BIOS entity response".into());
+    };
+    let boot_mode = updated
+        .attribute("BootMode")
+        .ok_or("updated BootMode missing")?;
+    assert_eq!(boot_mode.str_value(), Some("Uefi"));
+    Ok(())
+}
+
+#[test]
+async fn bios_settings_uses_advertised_reference_and_handles_absence(
+) -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = bios_ids();
+    let settings_id = format!("{}/Settings", ids.bios_id);
+    let system = get_computer_system(bmc.clone(), &ids, "Generic").await?;
+    bmc.expect(Expect::get(
+        &ids.bios_id,
+        bios_payload(
+            &ids.bios_id,
+            json!({
+                "@Redfish.Settings": {
+                    "SettingsObject": { ODATA_ID: &settings_id }
+                }
+            }),
+        ),
+    ));
+    let bios = system.bios().await?.ok_or("BIOS missing")?;
+
+    let settings_etag = "W/\"bios-settings\"";
+    bmc.expect(Expect::get(
+        &settings_id,
+        bios_payload(
+            &settings_id,
+            json!({ "@odata.etag": settings_etag, "Attributes": {} }),
+        ),
+    ));
+    let settings = bios.settings().await?.ok_or("BIOS settings missing")?;
+    let update = bios_update("BootMode", "Uefi");
+    bmc.expect(Expect::update(
+        &settings_id,
+        json!({ "Attributes": { "BootMode": "Uefi" } }),
+        json!({ ODATA_ID: &settings_id }),
+    ));
+    bmc.expect(Expect::get(
+        &settings_id,
+        bios_payload(
+            &settings_id,
+            json!({ "Attributes": { "BootMode": "Uefi" } }),
+        ),
+    ));
+
+    assert!(matches!(
+        settings.update(&update).await?,
+        ModificationResponse::Entity(_)
+    ));
+
+    let system = get_computer_system(bmc.clone(), &ids, "Generic").await?;
+    bmc.expect(Expect::get(
+        &ids.bios_id,
+        bios_payload(&ids.bios_id, json!({})),
+    ));
+    let bios = system.bios().await?.ok_or("BIOS missing")?;
+    assert!(bios.settings().await?.is_none());
+    Ok(())
+}
+
+fn bios_update(name: &str, value: &str) -> BiosUpdate {
+    BiosUpdate::builder()
+        .with_attributes(
+            AttributesUpdate::builder()
+                .with_dynamic_properties(HashMap::from([(
+                    name.to_string(),
+                    Some(EdmPrimitiveType::String(value.to_string())),
+                )]))
+                .build(),
+        )
+        .build()
+}
+
+fn bios_payload(id: &str, fields: serde_json::Value) -> serde_json::Value {
+    nv_redfish_tests::json_merge([
+        &json!({
+            ODATA_ID: id,
+            ODATA_TYPE: BIOS_DATA_TYPE,
+            "Id": "Bios",
+            "Name": "BIOS Settings",
+        }),
+        &fields,
+    ])
 }
 
 struct BiosIds {
