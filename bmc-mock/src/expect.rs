@@ -19,6 +19,7 @@ use std::fmt::Display;
 
 use nv_redfish_core::action::ActionTarget;
 use nv_redfish_core::AsyncTask;
+use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
 
 use serde_json::from_str;
@@ -38,6 +39,13 @@ pub enum ExpectedRequest {
 
     /// Expected Update.
     Update { id: ODataId, request: JsonValue },
+
+    /// Expected update with an entity tag.
+    UpdateWithEtag {
+        id: ODataId,
+        etag: ODataETag,
+        request: JsonValue,
+    },
 
     /// Expected asynchronous update.
     UpdateTask {
@@ -133,6 +141,23 @@ impl<E> Expect<E> {
         Expect {
             request: ExpectedRequest::Update {
                 id: uri.to_string().into(),
+                request: from_str(&request.to_string()).expect("invalid json"),
+            },
+            response: Ok(from_str(&response.to_string()).expect("invalid json")),
+        }
+    }
+
+    /// Expect an update request that carries this exact entity tag.
+    pub fn update_with_etag(
+        uri: impl Display,
+        etag: impl Display,
+        request: impl Display,
+        response: impl Display,
+    ) -> Self {
+        Expect {
+            request: ExpectedRequest::UpdateWithEtag {
+                id: uri.to_string().into(),
+                etag: etag.to_string().into(),
                 request: from_str(&request.to_string()).expect("invalid json"),
             },
             response: Ok(from_str(&response.to_string()).expect("invalid json")),

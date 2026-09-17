@@ -17,14 +17,21 @@
 use std::error::Error as StdError;
 use std::sync::Arc;
 
+use nv_redfish::ethernet_interface::EthernetInterfaceUpdate;
+use nv_redfish::host_interface::HostInterfaceUpdate;
 use nv_redfish::manager::Manager;
+use nv_redfish::manager::ManagerNetworkProtocolUpdate;
 use nv_redfish::manager::ManagerResetToDefaultsType;
 use nv_redfish::resource::ResetType;
+use nv_redfish::schema::manager_network_protocol::ProtocolUpdate;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::ami_viking_service_root;
 use nv_redfish_tests::anonymous_1_9_service_root;
+use nv_redfish_tests::assert_empty;
+use nv_redfish_tests::assert_task;
+use nv_redfish_tests::async_task;
 use nv_redfish_tests::expect_redfish_reset_action;
 use nv_redfish_tests::json_merge;
 use nv_redfish_tests::redfish_action_payload;
@@ -42,6 +49,12 @@ const MANAGER_COLLECTION_DATA_TYPE: &str = "#ManagerCollection.ManagerCollection
 const MANAGER_DATA_TYPE: &str = "#Manager.v1_16_0.Manager";
 const MANAGER_NETWORK_PROTOCOL_DATA_TYPE: &str =
     "#ManagerNetworkProtocol.v1_5_0.ManagerNetworkProtocol";
+const ETHERNET_INTERFACE_COLLECTION_DATA_TYPE: &str =
+    "#EthernetInterfaceCollection.EthernetInterfaceCollection";
+const ETHERNET_INTERFACE_DATA_TYPE: &str = "#EthernetInterface.v1_10_0.EthernetInterface";
+const HOST_INTERFACE_COLLECTION_DATA_TYPE: &str =
+    "#HostInterfaceCollection.HostInterfaceCollection";
+const HOST_INTERFACE_DATA_TYPE: &str = "#HostInterface.v1_3_0.HostInterface";
 
 #[test]
 async fn network_protocol_returns_none_when_link_is_absent() -> Result<(), Box<dyn StdError>> {
@@ -94,6 +107,198 @@ async fn network_protocol_fetches_linked_resource() -> Result<(), Box<dyn StdErr
 
     assert_eq!(ipmi.protocol_enabled, Some(Some(true)));
     assert_eq!(ipmi.port, Some(Some(1623)));
+
+    Ok(())
+}
+
+#[test]
+async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(), Box<dyn StdError>>
+{
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let ethernet_interfaces_id = format!("{}/EthernetInterfaces", ids.manager_id);
+    let ethernet_interface_id = format!("{ethernet_interfaces_id}/1");
+    let host_interfaces_id = format!("{}/HostInterfaces", ids.manager_id);
+    let host_interface_id = format!("{host_interfaces_id}/1");
+    let manager = get_manager(
+        bmc.clone(),
+        &ids,
+        manager_payload_with_fields(
+            &ids,
+            json!({
+                "NetworkProtocol": { ODATA_ID: &ids.manager_network_protocol_id },
+                "EthernetInterfaces": { ODATA_ID: &ethernet_interfaces_id },
+                "HostInterfaces": { ODATA_ID: &host_interfaces_id }
+            }),
+        ),
+    )
+    .await?;
+
+    bmc.expect(Expect::get(
+        &ids.manager_network_protocol_id,
+        json!({
+            ODATA_ID: &ids.manager_network_protocol_id,
+            ODATA_TYPE: MANAGER_NETWORK_PROTOCOL_DATA_TYPE,
+            "@odata.etag": "network-v1",
+            "Id": "NetworkProtocol",
+            "Name": "Manager Network Protocol",
+            "IPMI": { "ProtocolEnabled": true, "Port": 623 }
+        }),
+    ));
+    let network_protocol = manager
+        .network_protocol()
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing network protocol"))?;
+    let protocol = ProtocolUpdate::builder()
+        .with_protocol_enabled(false)
+        .with_port(6623)
+        .build();
+    let network_update = ManagerNetworkProtocolUpdate::builder()
+        .with_ipmi(protocol)
+        .build();
+    bmc.expect(Expect::update_with_etag(
+        &ids.manager_network_protocol_id,
+        "network-v1",
+        json!({ "IPMI": { "ProtocolEnabled": false, "Port": 6623 } }),
+        json!({ ODATA_ID: &ids.manager_network_protocol_id }),
+    ));
+    bmc.expect(Expect::get(
+        &ids.manager_network_protocol_id,
+        json!({
+            ODATA_ID: &ids.manager_network_protocol_id,
+            ODATA_TYPE: MANAGER_NETWORK_PROTOCOL_DATA_TYPE,
+            "@odata.etag": "network-v2",
+            "Id": "NetworkProtocol",
+            "Name": "Manager Network Protocol",
+            "IPMI": { "ProtocolEnabled": false, "Port": 6623 }
+        }),
+    ));
+    let ModificationResponse::Entity(updated_network) =
+        network_protocol.update(&network_update).await?
+    else {
+        return Err(std::io::Error::other("expected network entity response").into());
+    };
+    assert_eq!(
+        updated_network
+            .raw()
+            .ipmi
+            .as_ref()
+            .and_then(|ipmi| ipmi.port),
+        Some(Some(6623))
+    );
+    let task_id = "/redfish/v1/TaskService/Tasks/network-update";
+    bmc.expect(Expect::update_task(
+        &ids.manager_network_protocol_id,
+        serde_json::to_value(&network_update)?,
+        async_task(task_id, 3),
+    ));
+    assert_task(updated_network.update(&network_update).await?, task_id, 3);
+    bmc.expect(Expect::update_empty(
+        &ids.manager_network_protocol_id,
+        serde_json::to_value(&network_update)?,
+    ));
+    assert_empty(updated_network.update(&network_update).await?);
+
+    bmc.expect(Expect::get(
+        &ethernet_interfaces_id,
+        json!({
+            ODATA_ID: &ethernet_interfaces_id,
+            ODATA_TYPE: ETHERNET_INTERFACE_COLLECTION_DATA_TYPE,
+            "Name": "Ethernet Interfaces",
+            "Members": [{
+                ODATA_ID: &ethernet_interface_id,
+                ODATA_TYPE: ETHERNET_INTERFACE_DATA_TYPE,
+                "@odata.etag": "ethernet-v1",
+                "Id": "1",
+                "Name": "Ethernet Interface",
+                "InterfaceEnabled": true,
+                "MTUSize": 1500
+            }]
+        }),
+    ));
+    let ethernet = manager
+        .ethernet_interfaces()
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing ethernet interfaces"))?
+        .members()
+        .await?
+        .pop()
+        .ok_or_else(|| std::io::Error::other("missing ethernet interface"))?;
+    let ethernet_update = EthernetInterfaceUpdate::builder()
+        .with_interface_enabled(false)
+        .with_mtu_size(9000)
+        .build();
+    bmc.expect(Expect::update_with_etag(
+        &ethernet_interface_id,
+        "ethernet-v1",
+        json!({ "InterfaceEnabled": false, "MTUSize": 9000 }),
+        json!({
+            ODATA_ID: &ethernet_interface_id,
+            ODATA_TYPE: ETHERNET_INTERFACE_DATA_TYPE,
+            "@odata.etag": "ethernet-v2",
+            "Id": "1",
+            "Name": "Ethernet Interface",
+            "InterfaceEnabled": false,
+            "MTUSize": 9000
+        }),
+    ));
+    let ModificationResponse::Entity(updated_ethernet) = ethernet.update(&ethernet_update).await?
+    else {
+        return Err(std::io::Error::other("expected ethernet entity response").into());
+    };
+    assert_eq!(updated_ethernet.interface_enabled(), Some(false));
+    assert_eq!(updated_ethernet.raw().mtu_size, Some(Some(9000)));
+
+    bmc.expect(Expect::get(
+        &host_interfaces_id,
+        json!({
+            ODATA_ID: &host_interfaces_id,
+            ODATA_TYPE: HOST_INTERFACE_COLLECTION_DATA_TYPE,
+            "Name": "Host Interfaces",
+            "Members": [{
+                ODATA_ID: &host_interface_id,
+                ODATA_TYPE: HOST_INTERFACE_DATA_TYPE,
+                "@odata.etag": "host-v1",
+                "Id": "1",
+                "Name": "Host Interface",
+                "InterfaceEnabled": true
+            }]
+        }),
+    ));
+    let host = manager
+        .host_interfaces()
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing host interfaces"))?
+        .members()
+        .await?
+        .pop()
+        .ok_or_else(|| std::io::Error::other("missing host interface"))?;
+    let host_update = HostInterfaceUpdate::builder()
+        .with_interface_enabled(false)
+        .with_firmware_auth_role_id("Operator".into())
+        .build();
+    bmc.expect(Expect::update_with_etag(
+        &host_interface_id,
+        "host-v1",
+        json!({ "InterfaceEnabled": false, "FirmwareAuthRoleId": "Operator" }),
+        json!({
+            ODATA_ID: &host_interface_id,
+            ODATA_TYPE: HOST_INTERFACE_DATA_TYPE,
+            "@odata.etag": "host-v2",
+            "Id": "1",
+            "Name": "Host Interface",
+            "InterfaceEnabled": false,
+            "FirmwareAuthRoleId": "Operator"
+        }),
+    ));
+    let ModificationResponse::Entity(updated_host) = host.update(&host_update).await? else {
+        return Err(std::io::Error::other("expected host entity response").into());
+    };
+    assert_eq!(updated_host.interface_enabled(), Some(false));
+    assert_eq!(
+        updated_host.raw().firmware_auth_role_id.as_deref(),
+        Some("Operator")
+    );
 
     Ok(())
 }

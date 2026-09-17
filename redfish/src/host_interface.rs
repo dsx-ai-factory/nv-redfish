@@ -21,9 +21,13 @@ use crate::schema::host_interface_collection::HostInterfaceCollection as HostInt
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::EntityTypeRef as _;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
-use std::marker::PhantomData;
 use std::sync::Arc;
+
+#[doc(inline)]
+pub use crate::schema::host_interface::HostInterfaceUpdate;
 
 /// Host interfaces collection.
 ///
@@ -64,8 +68,8 @@ impl<B: Bmc> HostInterfaceCollection<B> {
 ///
 /// Provides functions to access host interface.
 pub struct HostInterface<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<HostInterfaceSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> HostInterface<B> {
@@ -78,8 +82,8 @@ impl<B: Bmc> HostInterface<B> {
             .await
             .map_err(crate::Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
     }
 
@@ -87,6 +91,28 @@ impl<B: Bmc> HostInterface<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<HostInterfaceSchema> {
         self.data.clone()
+    }
+
+    /// Update this host interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &HostInterfaceUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<HostInterfaceSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
     }
 
     /// State of the interface. `None` means that BMC hasn't reported

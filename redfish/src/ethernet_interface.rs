@@ -22,13 +22,14 @@ use crate::schema::ethernet_interface_collection::EthernetInterfaceCollection as
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::EntityTypeRef as _;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use tagged_types::TaggedType;
 
 #[doc(inline)]
-pub use crate::schema::ethernet_interface::LinkStatus;
+pub use crate::schema::ethernet_interface::{EthernetInterfaceUpdate, LinkStatus};
 
 /// Ethernet interfaces collection.
 ///
@@ -81,8 +82,8 @@ pub enum UefiDevicePathTag {}
 ///
 /// Provides functions to access ethernet interface.
 pub struct EthernetInterface<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<EthernetInterfaceSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> EthernetInterface<B> {
@@ -95,8 +96,8 @@ impl<B: Bmc> EthernetInterface<B> {
             .await
             .map_err(crate::Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
     }
 
@@ -104,6 +105,28 @@ impl<B: Bmc> EthernetInterface<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<EthernetInterfaceSchema> {
         self.data.clone()
+    }
+
+    /// Update this ethernet interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &EthernetInterfaceUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<EthernetInterfaceSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
     }
 
     /// State of the interface. `None` means that BMC hasn't reported

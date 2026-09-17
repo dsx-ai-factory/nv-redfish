@@ -14,18 +14,20 @@
 // limitations under the License.
 //! Manager network protocol resource.
 
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-use nv_redfish_core::{Bmc, NavProperty};
+use nv_redfish_core::{Bmc, EntityTypeRef as _, ModificationResponse, NavProperty};
 
 use crate::schema::manager_network_protocol::ManagerNetworkProtocol as ManagerNetworkProtocolSchema;
 use crate::{Error, NvBmc};
 
+#[doc(inline)]
+pub use crate::schema::manager_network_protocol::ManagerNetworkProtocolUpdate;
+
 /// Network protocol configuration associated with a manager.
 pub struct ManagerNetworkProtocol<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<ManagerNetworkProtocolSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> ManagerNetworkProtocol<B> {
@@ -37,8 +39,8 @@ impl<B: Bmc> ManagerNetworkProtocol<B> {
             .await
             .map_err(Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
     }
 
@@ -46,5 +48,27 @@ impl<B: Bmc> ManagerNetworkProtocol<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<ManagerNetworkProtocolSchema> {
         self.data.clone()
+    }
+
+    /// Update this manager network protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &ManagerNetworkProtocolUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<ManagerNetworkProtocolSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
     }
 }
