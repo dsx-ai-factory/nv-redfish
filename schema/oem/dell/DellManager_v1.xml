@@ -19,41 +19,36 @@ limitations under the License.
   <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Core.V1.xml">
     <edmx:Include Namespace="Org.OData.Core.V1" Alias="OData"/>
   </edmx:Reference>
-  <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Capabilities.V1.xml">
-    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
-  </edmx:Reference>
   <edmx:Reference Uri="/redfish/v1/Schemas/RedfishExtensions_v1.xml">
     <edmx:Include Namespace="RedfishExtensions.v1_0_0" Alias="Redfish"/>
   </edmx:Reference>
   <edmx:Reference Uri="/redfish/v1/Schemas/Resource_v1.xml">
     <edmx:Include Namespace="Resource"/>
-    <edmx:Include Namespace="Resource.v1_0_0"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/DellAttributes_v1.xml">
+    <edmx:Include Namespace="DellAttributes"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/DellJobService_v1.xml">
+    <edmx:Include Namespace="DellJobService"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/DellJobCollection_v1.xml">
+    <edmx:Include Namespace="DellJobCollection"/>
   </edmx:Reference>
 
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellAttributes">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellManager">
       <Annotation Term="Redfish.OwningEntity" String="Dell"/>
-      <EntityType Name="DellAttributes" BaseType="Resource.v1_0_0.Resource" Abstract="true"/>
+      <ComplexType Name="DellManager" BaseType="Resource.OemObject" Abstract="true"/>
+      <ComplexType Name="DellManagerLinks" BaseType="Resource.OemObject" Abstract="true"/>
     </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellAttributes.v1_0_0">
-      <EntityType Name="DellAttributes" BaseType="DellAttributes.DellAttributes">
-        <Annotation Term="Capabilities.UpdateRestrictions">
-          <Record>
-            <PropertyValue Property="Updatable" Bool="true"/>
-          </Record>
-        </Annotation>
-        <Property Name="Attributes" Type="DellAttributes.v1_0_0.Attributes" Nullable="false"/>
-      </EntityType>
-      <ComplexType Name="Attributes">
-        <Annotation Term="OData.AdditionalProperties" Bool="false"/>
-        <Annotation Term="Redfish.DynamicPropertyPatterns">
-          <Collection>
-            <Record>
-              <PropertyValue Property="Pattern" String="[A-Za-z0-9]+"/>
-              <PropertyValue Property="Type" String="Edm.PrimitiveType"/>
-            </Record>
-          </Collection>
-        </Annotation>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellManager.v1_6_0">
+      <ComplexType Name="DellManager" BaseType="DellManager.DellManager">
+        <NavigationProperty Name="Jobs" Type="DellJobCollection.DellJobCollection"/>
+      </ComplexType>
+      <ComplexType Name="DellManagerLinks" BaseType="DellManager.DellManagerLinks">
+        <NavigationProperty Name="DellAttributes" Type="Collection(DellAttributes.DellAttributes)"/>
+        <NavigationProperty Name="DellJobService" Type="DellJobService.DellJobService"/>
+        <NavigationProperty Name="Jobs" Type="DellJobCollection.DellJobCollection"/>
       </ComplexType>
     </Schema>
   </edmx:DataServices>

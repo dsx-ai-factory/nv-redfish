@@ -26,35 +26,43 @@ limitations under the License.
     <edmx:Include Namespace="RedfishExtensions.v1_0_0" Alias="Redfish"/>
   </edmx:Reference>
   <edmx:Reference Uri="/redfish/v1/Schemas/Resource_v1.xml">
-    <edmx:Include Namespace="Resource"/>
     <edmx:Include Namespace="Resource.v1_0_0"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/DellJob_v1.xml">
+    <edmx:Include Namespace="DellJob"/>
   </edmx:Reference>
 
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellAttributes">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellJobCollection">
       <Annotation Term="Redfish.OwningEntity" String="Dell"/>
-      <EntityType Name="DellAttributes" BaseType="Resource.v1_0_0.Resource" Abstract="true"/>
-    </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="DellAttributes.v1_0_0">
-      <EntityType Name="DellAttributes" BaseType="DellAttributes.DellAttributes">
-        <Annotation Term="Capabilities.UpdateRestrictions">
+      <EntityType Name="DellJobCollection" BaseType="Resource.v1_0_0.ResourceCollection">
+        <Annotation Term="Capabilities.InsertRestrictions">
           <Record>
-            <PropertyValue Property="Updatable" Bool="true"/>
+            <PropertyValue Property="Insertable" Bool="true"/>
           </Record>
         </Annotation>
-        <Property Name="Attributes" Type="DellAttributes.v1_0_0.Attributes" Nullable="false"/>
-      </EntityType>
-      <ComplexType Name="Attributes">
-        <Annotation Term="OData.AdditionalProperties" Bool="false"/>
-        <Annotation Term="Redfish.DynamicPropertyPatterns">
+        <Annotation Term="Capabilities.UpdateRestrictions">
+          <Record>
+            <PropertyValue Property="Updatable" Bool="false"/>
+          </Record>
+        </Annotation>
+        <Annotation Term="Capabilities.DeleteRestrictions">
+          <Record>
+            <PropertyValue Property="Deletable" Bool="false"/>
+          </Record>
+        </Annotation>
+        <Annotation Term="Redfish.Uris">
           <Collection>
-            <Record>
-              <PropertyValue Property="Pattern" String="[A-Za-z0-9]+"/>
-              <PropertyValue Property="Type" String="Edm.PrimitiveType"/>
-            </Record>
+            <String>/redfish/v1/Managers/{ManagerId}/Oem/Dell/Jobs</String>
+            <String>/redfish/v1/Managers/{ManagerId}/Jobs</String>
           </Collection>
         </Annotation>
-      </ComplexType>
+        <NavigationProperty Name="Members" Type="Collection(DellJob.DellJob)">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
+          <Annotation Term="OData.AutoExpandReferences"/>
+          <Annotation Term="Redfish.Required"/>
+        </NavigationProperty>
+      </EntityType>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>
