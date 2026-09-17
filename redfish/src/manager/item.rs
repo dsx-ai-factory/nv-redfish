@@ -18,8 +18,6 @@ use crate::schema::manager::Manager as ManagerSchema;
 use crate::schema::manager::ResetToDefaultsType as ManagerResetToDefaultsType;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
@@ -275,11 +273,5 @@ impl<B: Bmc> Manager<B> {
     #[cfg(feature = "oem-ami")]
     pub async fn oem_ami_config_bmc(&self) -> Result<Option<AmiConfigBmc<B>>, Error<B>> {
         AmiConfigBmc::new(&self.bmc, &self.data).await
-    }
-}
-
-impl<B: Bmc> Resource for Manager<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

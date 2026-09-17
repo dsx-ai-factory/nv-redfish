@@ -49,8 +49,6 @@ impl<B: Bmc> LenovoComputerSystem<B> {
         computer_system: &ComputerSystemSchema,
     ) -> Result<Option<Self>, Error<B>> {
         Ok(computer_system
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, "Lenovo"))?

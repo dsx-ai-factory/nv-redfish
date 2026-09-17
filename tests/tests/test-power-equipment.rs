@@ -16,7 +16,6 @@
 //! Integration tests for standard PowerEquipment and PowerShelves.
 
 use nv_redfish::power_equipment::PowerEquipmentType;
-use nv_redfish::Resource as _;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::json_merge;
@@ -71,7 +70,7 @@ async fn power_equipment_lists_power_shelves() -> Result<(), Box<dyn StdError>> 
         .await?
         .ok_or_else(|| missing("missing PowerEquipment"))?;
     assert_eq!(
-        power_equipment.odata_id().to_string(),
+        power_equipment.raw().odata_id.to_string(),
         ids.power_equipment_id
     );
 
@@ -111,7 +110,7 @@ async fn power_equipment_lists_power_shelves() -> Result<(), Box<dyn StdError>> 
         .first()
         .ok_or_else(|| missing("missing power shelf member"))?;
     let raw = shelf.raw();
-    assert_eq!(shelf.odata_id().to_string(), ids.power_shelf_id);
+    assert_eq!(raw.odata_id.to_string(), ids.power_shelf_id);
     assert_eq!(raw.equipment_type, PowerEquipmentType::PowerShelf);
     assert_eq!(raw.manufacturer, Some(Some("NVIDIA".into())));
     assert_eq!(raw.model, Some(Some("NV-PowerShelf-1".into())));

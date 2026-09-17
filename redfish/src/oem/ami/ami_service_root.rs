@@ -43,8 +43,6 @@ impl<B: Bmc> AmiServiceRoot<B> {
         service_root: &ServiceRootSchema,
     ) -> Result<Option<Self>, Error<B>> {
         Ok(service_root
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, "Ami"))?

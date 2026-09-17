@@ -24,8 +24,6 @@ use crate::schema::power_distribution_collection::PowerDistributionCollection as
 use crate::schema::power_equipment::PowerEquipment as PowerEquipmentSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use crate::ServiceRoot;
 use nv_redfish_core::Bmc;
 use std::marker::PhantomData;
@@ -84,12 +82,6 @@ impl<B: Bmc> PowerEquipment<B> {
         PowerShelfCollection::new(&self.bmc, collection_ref)
             .await
             .map(Some)
-    }
-}
-
-impl<B: Bmc> Resource for PowerEquipment<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 
@@ -156,11 +148,5 @@ impl<B: Bmc> PowerShelf<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<PowerDistributionSchema> {
         self.data.clone()
-    }
-}
-
-impl<B: Bmc> Resource for PowerShelf<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

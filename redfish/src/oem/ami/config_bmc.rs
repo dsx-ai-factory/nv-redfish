@@ -53,7 +53,7 @@ impl<B: Bmc> ConfigBmc<B> {
         bmc: &NvBmc<B>,
         manager: &ManagerSchema,
     ) -> Result<Option<Self>, Error<B>> {
-        let oem = manager.base.base.oem.as_ref();
+        let oem = manager.oem.as_ref();
         if oem.and_then(|v| oem_value(v, "Ami")).is_some() {
             // AMI provides reference to ConfigBMC right in the Oem object.
             // {"Oem":{"ConfigBMC":""/redfish/v1/Managers/Self/Oem/ConfigBMC"}}

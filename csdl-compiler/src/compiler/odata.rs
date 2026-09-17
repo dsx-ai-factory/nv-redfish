@@ -34,7 +34,7 @@ pub type MustHaveId = TaggedType<bool, MustHaveIdTag>;
 #[capability(inner_access)]
 pub enum MustHaveIdTag {}
 
-/// Whether the type must include `@odata.id` in generated code.
+/// Whether the type must include `@odata.type` in generated code.
 pub type MustHaveType = TaggedType<bool, MustHaveTypeTag>;
 #[doc(hidden)]
 #[derive(tagged_types::Tag)]

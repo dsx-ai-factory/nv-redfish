@@ -343,10 +343,10 @@ pub trait Deletable: EntityTypeRef + for<'de> Deserialize<'de> {
     }
 }
 
-/// This trait is assigned to updatable entity types to support
-/// @Redfish.Settings workflow.
+/// Supports the `@Redfish.Settings` workflow on updatable entity types.
 pub trait RedfishSettings<E: EntityTypeRef>: Sized {
-    /// Reference to the enity type object.
+    /// Return a typed reference to the settings resource.
+    /// Inline settings objects are also returned as references to their identifiers.
     fn settings_object(&self) -> Option<NavProperty<E>>;
 }
 

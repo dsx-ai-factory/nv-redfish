@@ -178,7 +178,7 @@ async fn ami_viking_missing_update_service_name_workaround() -> Result<(), Box<d
     ));
 
     let update_service = service_root.update_service().await?.unwrap();
-    assert_eq!(update_service.raw().base.name, "Unnamed update service");
+    assert_eq!(update_service.raw().name, "Unnamed update service");
 
     Ok(())
 }

@@ -194,8 +194,6 @@ pub use nv_redfish_core::StreamEvent;
 #[doc(inline)]
 pub use protocol_features::ProtocolFeatures;
 #[doc(inline)]
-pub use resource::Resource;
-#[doc(inline)]
 pub use service_root::ServiceRoot;
 
 #[doc(inline)]
@@ -205,5 +203,4 @@ pub use resource::ResourceProvidesStatus;
 #[cfg(feature = "resource-status")]
 pub(crate) use crate::schema::resource::Status as ResourceStatusSchema;
 
-pub(crate) use crate::schema::resource::Resource as ResourceSchema;
 pub(crate) use bmc::NvBmc;

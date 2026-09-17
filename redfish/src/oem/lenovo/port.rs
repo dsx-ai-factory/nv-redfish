@@ -33,9 +33,7 @@ impl LenovoPort {
     ///
     /// Returns an error if parsing Lenovo port OEM data fails.
     pub(crate) fn new(port: &PortSchema) -> Result<Option<Self>, JsonError> {
-        port.base
-            .base
-            .oem
+        port.oem
             .as_ref()
             .and_then(|oem| oem.additional_properties.get("Lenovo"))
             .map(|data| {

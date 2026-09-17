@@ -26,8 +26,6 @@ use crate::entity_link::FromLink;
 use crate::schema::environment_metrics::EnvironmentMetrics as EnvironmentMetricsSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 #[cfg(feature = "impl-entity-link")]
@@ -145,17 +143,9 @@ impl<B: Bmc> EnvironmentMetrics<B> {
     #[cfg(feature = "oem-nvidia")]
     pub fn oem_nvidia(&self) -> Result<Option<Arc<NvidiaEnvironmentMetrics>>, Error<B>> {
         self.data
-            .base
-            .base
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, OEM_KEY))
-    }
-}
-
-impl<B: Bmc> Resource for EnvironmentMetrics<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

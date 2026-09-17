@@ -19,11 +19,9 @@
 //! shapes, chosen by `@odata.type`: `NvidiaGPUProcessorMetrics` adds
 //! GPU counters on top of the properties every NVIDIA processor
 //! reports, and plain `NvidiaProcessorMetrics` carries only the latter.
-//! Both extend the same base, so [`NvidiaProcessorMetrics::common`]
-//! reaches the shared properties without matching on the variant.
+//! Each variant exposes its inherited properties directly.
 
 use crate::oem::declares;
-use crate::oem::nvidia::schema::nvidia_processor_metrics::v1_1_0::NvidiaProcessorMetrics as CommonSchema;
 use crate::oem::nvidia::schema::nvidia_processor_metrics::v1_5_0::NvidiaProcessorMetrics as NvidiaProcessorMetricsSchema;
 use crate::oem::nvidia::schema::nvidia_processor_metrics::NvidiaGpuProcessorMetrics as NvidiaGpuProcessorMetricsSchema;
 use crate::oem::nvidia::OEM_KEY;
@@ -71,15 +69,5 @@ impl NvidiaProcessorMetrics {
             ))
         };
         Ok(Some(this))
-    }
-
-    /// Properties reported by every NVIDIA processor, whichever shape
-    /// this resource used.
-    #[must_use]
-    pub fn common(&self) -> &CommonSchema {
-        match self {
-            Self::Gpu(m) => &m.base,
-            Self::Generic(m) => &m.base,
-        }
     }
 }

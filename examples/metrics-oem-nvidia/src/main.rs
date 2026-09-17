@@ -46,7 +46,6 @@ use nv_redfish::oem::oem_value;
 use nv_redfish::schema::resource::Oem as ResourceOem;
 use nv_redfish::telemetry_service::MetricReport;
 use nv_redfish::Error;
-use nv_redfish::Resource as _;
 use nv_redfish::ServiceRoot;
 use serde_json::Value;
 use std::error::Error as StdError;
@@ -206,11 +205,11 @@ async fn walk_systems(
     };
 
     for system in systems.members().await? {
-        println!("system {}", system.id());
+        println!("system {}", system.raw().id);
 
         if let Some(processors) = system.processors().await? {
             for processor in processors {
-                println!("  processor {}", processor.id());
+                println!("  processor {}", processor.raw().id);
                 let outcome = match processor.metrics().await {
                     Ok(Some(metrics)) => match metrics.oem_nvidia() {
                         Ok(Some(oem)) => {
@@ -221,7 +220,7 @@ async fn walk_systems(
                             };
                             Outcome::Read(format!(
                                 "read as {shape}; {}",
-                                describe(raw.base.base.oem.as_ref(), dump)
+                                describe(raw.oem.as_ref(), dump)
                             ))
                         }
                         Ok(None) => Outcome::OemAbsent,
@@ -238,12 +237,12 @@ async fn walk_systems(
 
         if let Some(modules) = system.memory_modules().await? {
             for memory in modules {
-                println!("  memory {}", memory.id());
+                println!("  memory {}", memory.raw().id);
                 let outcome = match memory.metrics().await {
                     Ok(Some(metrics)) => match metrics.oem_nvidia() {
                         Ok(Some(_)) => {
                             let raw = metrics.raw();
-                            Outcome::Read(describe(raw.base.base.oem.as_ref(), dump))
+                            Outcome::Read(describe(raw.oem.as_ref(), dump))
                         }
                         Ok(None) => Outcome::OemAbsent,
                         Err(err) => Outcome::Failed(err.to_string()),
@@ -261,7 +260,7 @@ async fn walk_systems(
             for storage in storages {
                 if let Some(drives) = storage.drives().await? {
                     for drive in drives {
-                        println!("  drive {}", drive.id());
+                        println!("  drive {}", drive.raw().id);
                         probe_environment(&drive.environment_metrics().await, tally, dump).await;
                     }
                 }
@@ -285,7 +284,7 @@ async fn walk_chassis(
     };
 
     for chassis in collection.members().await? {
-        println!("chassis {}", chassis.id());
+        println!("chassis {}", chassis.raw().id);
         probe_environment(&chassis.environment_metrics().await, tally, dump).await;
     }
     Ok(())
@@ -316,7 +315,7 @@ async fn walk_telemetry(
             Ok(report) => match report.oem_nvidia() {
                 Ok(Some(_)) => {
                     let raw = report.raw();
-                    Outcome::Read(describe(raw.base.base.oem.as_ref(), dump))
+                    Outcome::Read(describe(raw.oem.as_ref(), dump))
                 }
                 Ok(None) => Outcome::OemAbsent,
                 Err(err) => Outcome::Failed(err.to_string()),
@@ -354,7 +353,7 @@ async fn probe_environment(
     let outcome = match metrics.oem_nvidia() {
         Ok(Some(_)) => {
             let raw = metrics.raw();
-            Outcome::Read(describe(raw.base.base.oem.as_ref(), dump))
+            Outcome::Read(describe(raw.oem.as_ref(), dump))
         }
         Ok(None) => Outcome::OemAbsent,
         Err(err) => Outcome::Failed(err.to_string()),
@@ -367,7 +366,7 @@ async fn probe_environment(
     println!("      sensor links            : {}", sensors.len());
 
     match metrics.power_limit_control().await {
-        Ok(Some(control)) => println!("      power limit control     : {}", control.id()),
+        Ok(Some(control)) => println!("      power limit control     : {}", control.raw().id),
         Ok(None) => println!("      power limit control     : none reported"),
         Err(err) => println!("      power limit control     : FAILED -- {err}"),
     }

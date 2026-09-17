@@ -63,11 +63,11 @@ impl<'a> SerializableProperties<'a> {
     /// according to their Redfish and `OData` annotations, and
     /// computes their generated Rust names and types.
     #[must_use]
-    pub fn for_update(properties: &Properties<'a>, config: &Config) -> Self {
+    pub fn for_update(properties: &[&Properties<'a>], config: &Config) -> Self {
         Self(
             properties
-                .properties
                 .iter()
+                .flat_map(|p| &p.properties)
                 .filter_map(|p| {
                     let (typeinfo, v) = &p.ptype.inner();
                     if !(p.redfish.is_required_on_create.into_inner()

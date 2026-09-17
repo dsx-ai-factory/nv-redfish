@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::core::Bmc;
-use crate::core::EntityTypeRef as _;
 use crate::core::ModificationResponse;
 use crate::core::NavProperty;
 use crate::core::RedfishSettings as _;
@@ -30,8 +29,6 @@ use crate::resource::ResetType;
 use crate::schema::computer_system::ComputerSystem as ComputerSystemSchema;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 
 use serde::Serialize;
 use std::convert::identity;
@@ -255,10 +252,9 @@ impl<B: Bmc> ComputerSystem<B> {
         };
 
         let settings = self.data.settings_object();
-
         let update_odata = settings
             .as_ref()
-            .map_or_else(|| self.data.odata_id(), |settings| settings.odata_id());
+            .map_or(&self.data.odata_id, NavProperty::id);
 
         self.bmc
             .as_ref()
@@ -451,7 +447,7 @@ impl<B: Bmc> ComputerSystem<B> {
     /// Returns an error if NVIDIA OEM data parsing/fetching fails.
     #[cfg(feature = "oem-nvidia")]
     pub async fn oem_nvidia(&self) -> Result<Option<NvidiaComputerSystem<B>>, Error<B>> {
-        if let Some(oem) = self.data.base.base.oem.as_ref() {
+        if let Some(oem) = self.data.oem.as_ref() {
             NvidiaComputerSystem::new(&self.bmc, oem).await
         } else {
             Ok(None)
@@ -468,11 +464,5 @@ impl<B: Bmc> ComputerSystem<B> {
     #[cfg(feature = "oem-lenovo")]
     pub fn oem_lenovo(&self) -> Result<Option<LenovoComputerSystem<B>>, Error<B>> {
         LenovoComputerSystem::new(&self.bmc, &self.data)
-    }
-}
-
-impl<B: Bmc> Resource for ComputerSystem<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

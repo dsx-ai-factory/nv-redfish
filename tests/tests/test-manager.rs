@@ -20,7 +20,6 @@ use std::sync::Arc;
 use nv_redfish::manager::Manager;
 use nv_redfish::manager::ManagerResetToDefaultsType;
 use nv_redfish::resource::ResetType;
-use nv_redfish::Resource;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
@@ -316,7 +315,10 @@ async fn viking_with_garbage_in_managers() -> Result<(), Box<dyn StdError>> {
     // Should only have 3 valid managers, not the garbage entries
     assert_eq!(members.len(), 3);
 
-    let member_ids: Vec<_> = members.iter().map(|m| m.odata_id().to_string()).collect();
+    let member_ids: Vec<_> = members
+        .iter()
+        .map(|m| m.raw().odata_id.to_string())
+        .collect();
     assert!(member_ids.contains(&bmc_id));
     assert!(member_ids.contains(&hgx_bmc_id));
     assert!(member_ids.contains(&fabric_mgr_id));

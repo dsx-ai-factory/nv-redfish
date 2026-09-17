@@ -68,7 +68,6 @@ pub use thermal::Thermal;
 use crate::core::NavProperty;
 use crate::entity_link::EntityLink;
 use crate::patch_support::CollectionWithPatch;
-use crate::resource::Resource as _;
 use crate::schema::chassis::Chassis as ChassisSchema;
 use crate::schema::chassis_collection::ChassisCollection as ChassisCollectionSchema;
 use crate::schema::resource::ResourceCollection;
@@ -104,7 +103,7 @@ impl<B: Bmc> ChassisCollection<B> {
             .map(Some)
         } else if bmc.quirks.bug_missing_root_nav_properties() {
             bmc.expand_property(&NavProperty::new_reference(
-                format!("{}/Chassis", root.odata_id()).into(),
+                format!("{}/Chassis", root.root.odata_id).into(),
             ))
             .await
             .map(Some)
@@ -141,6 +140,15 @@ impl<B: Bmc> CollectionWithPatch<ChassisCollectionSchema, ChassisSchema, B>
         base: ResourceCollection,
         members: Vec<NavProperty<ChassisSchema>>,
     ) -> ChassisCollectionSchema {
-        ChassisCollectionSchema { base, members }
+        ChassisCollectionSchema {
+            odata_id: base.odata_id,
+            odata_etag: base.odata_etag,
+            odata_type: base.odata_type,
+            settings_annotations: base.settings_annotations,
+            description: base.description,
+            name: base.name,
+            oem: base.oem,
+            members,
+        }
     }
 }

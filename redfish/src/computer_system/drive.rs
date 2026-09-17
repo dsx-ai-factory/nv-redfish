@@ -19,8 +19,6 @@ use crate::schema::drive::Drive as DriveSchema;
 use crate::schema::drive_metrics::DriveMetrics;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::NavProperty;
 use std::sync::Arc;
@@ -131,11 +129,5 @@ impl<B: Bmc> Drive<B> {
         };
 
         metrics.power_limit_control().await
-    }
-}
-
-impl<B: Bmc> Resource for Drive<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }

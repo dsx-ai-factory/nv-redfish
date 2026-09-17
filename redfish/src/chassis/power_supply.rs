@@ -18,8 +18,6 @@ use crate::schema::power_supply::PowerSupply as PowerSupplySchema;
 use crate::schema::power_supply_metrics::PowerSupplyMetrics;
 use crate::Error;
 use crate::NvBmc;
-use crate::Resource;
-use crate::ResourceSchema;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
@@ -169,18 +167,10 @@ impl<B: Bmc> PowerSupply<B> {
     #[cfg(feature = "oem-delta")]
     pub fn oem_delta(&self) -> Result<Option<DeltaPowerSupply<B>>, Error<B>> {
         self.data
-            .base
-            .base
             .oem
             .as_ref()
             .map(DeltaPowerSupply::new)
             .transpose()
             .map(|v| v.and_then(identity))
-    }
-}
-
-impl<B: Bmc> Resource for PowerSupply<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
