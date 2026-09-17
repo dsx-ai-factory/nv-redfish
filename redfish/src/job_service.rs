@@ -22,7 +22,7 @@ use crate::entity_link::EntityLink;
 use crate::schema::job::Job as JobSchema;
 use crate::schema::job_collection::JobCollection as JobCollectionSchema;
 use crate::schema::job_service::JobService as JobServiceSchema;
-use crate::{Error, NvBmc, Resource, ResourceSchema, ServiceRoot};
+use crate::{Error, NvBmc, ServiceRoot};
 
 /// Link to a standard Redfish Job resource.
 pub type JobLink<B> = EntityLink<B, JobSchema>;
@@ -67,12 +67,6 @@ impl<B: Bmc> JobService<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<JobServiceSchema> {
         self.data.clone()
-    }
-}
-
-impl<B: Bmc> Resource for JobService<B> {
-    fn resource_ref(&self) -> &ResourceSchema {
-        &self.data.as_ref().base
     }
 }
 

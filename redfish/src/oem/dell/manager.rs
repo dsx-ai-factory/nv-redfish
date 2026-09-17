@@ -51,7 +51,7 @@ impl<B: Bmc> DellManager<B> {
         let links = manager
             .links
             .as_ref()
-            .and_then(|links| links.base.oem.as_ref())
+            .and_then(|links| links.oem.as_ref())
             .and_then(|oem| oem_value(oem, "Dell"))
             .map(DellManagerLinksSchema::deserialize)
             .transpose()
@@ -59,8 +59,6 @@ impl<B: Bmc> DellManager<B> {
             .map(Arc::new);
         #[cfg(feature = "job-service")]
         let resources = manager
-            .base
-            .base
             .oem
             .as_ref()
             .and_then(|oem| oem_value(oem, "Dell"))
@@ -87,7 +85,7 @@ impl<B: Bmc> DellManager<B> {
         Ok(Some(Self {
             bmc: bmc.clone(),
             #[cfg(feature = "oem-dell-attributes")]
-            manager_id: manager.base.id.clone(),
+            manager_id: manager.id.clone(),
             links,
             #[cfg(feature = "job-service")]
             resources,
