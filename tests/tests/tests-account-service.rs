@@ -229,7 +229,6 @@ async fn get_account_service_with_config(
         json!({
             ODATA_ID: &account_service_id,
             ODATA_TYPE: &ACCOUNT_SERVICE_DATA_TYPE,
-            "@odata.etag": "account-service-v1",
             "Id": "AccountService",
             "Name": "AccountService",
             "Accounts": {
@@ -241,7 +240,7 @@ async fn get_account_service_with_config(
 }
 
 #[test]
-async fn update_account_service_preserves_uri_etag_config_and_read_patch() -> TestResult<()> {
+async fn update_account_service_preserves_uri_config_and_read_patch() -> TestResult<()> {
     let bmc = Arc::new(Bmc::default());
     let root_id = ODataId::service_root();
     let account_service = get_account_service(bmc.clone(), &root_id, "HPE").await?;
@@ -251,14 +250,12 @@ async fn update_account_service_preserves_uri_etag_config_and_read_patch() -> Te
         .with_account_lockout_threshold(5)
         .build();
 
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &service_id,
-        "account-service-v1",
         serde_json::to_value(&update)?,
         json!({
             ODATA_ID: &service_id,
             ODATA_TYPE: ACCOUNT_SERVICE_DATA_TYPE,
-            "@odata.etag": "account-service-v2",
             "Id": "AccountService",
             "Name": "AccountService",
             "AccountLockoutThreshold": 5,

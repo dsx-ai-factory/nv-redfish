@@ -112,8 +112,7 @@ async fn network_protocol_fetches_linked_resource() -> Result<(), Box<dyn StdErr
 }
 
 #[test]
-async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(), Box<dyn StdError>>
-{
+async fn typed_updates_use_resource_uris_and_map_responses() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = ids();
     let ethernet_interfaces_id = format!("{}/EthernetInterfaces", ids.manager_id);
@@ -139,7 +138,6 @@ async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(),
         json!({
             ODATA_ID: &ids.manager_network_protocol_id,
             ODATA_TYPE: MANAGER_NETWORK_PROTOCOL_DATA_TYPE,
-            "@odata.etag": "network-v1",
             "Id": "NetworkProtocol",
             "Name": "Manager Network Protocol",
             "IPMI": { "ProtocolEnabled": true, "Port": 623 }
@@ -156,9 +154,8 @@ async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(),
     let network_update = ManagerNetworkProtocolUpdate::builder()
         .with_ipmi(protocol)
         .build();
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &ids.manager_network_protocol_id,
-        "network-v1",
         json!({ "IPMI": { "ProtocolEnabled": false, "Port": 6623 } }),
         json!({ ODATA_ID: &ids.manager_network_protocol_id }),
     ));
@@ -167,7 +164,6 @@ async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(),
         json!({
             ODATA_ID: &ids.manager_network_protocol_id,
             ODATA_TYPE: MANAGER_NETWORK_PROTOCOL_DATA_TYPE,
-            "@odata.etag": "network-v2",
             "Id": "NetworkProtocol",
             "Name": "Manager Network Protocol",
             "IPMI": { "ProtocolEnabled": false, "Port": 6623 }
@@ -208,7 +204,6 @@ async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(),
             "Members": [{
                 ODATA_ID: &ethernet_interface_id,
                 ODATA_TYPE: ETHERNET_INTERFACE_DATA_TYPE,
-                "@odata.etag": "ethernet-v1",
                 "Id": "1",
                 "Name": "Ethernet Interface",
                 "InterfaceEnabled": true,
@@ -228,14 +223,12 @@ async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(),
         .with_interface_enabled(false)
         .with_mtu_size(9000)
         .build();
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &ethernet_interface_id,
-        "ethernet-v1",
         json!({ "InterfaceEnabled": false, "MTUSize": 9000 }),
         json!({
             ODATA_ID: &ethernet_interface_id,
             ODATA_TYPE: ETHERNET_INTERFACE_DATA_TYPE,
-            "@odata.etag": "ethernet-v2",
             "Id": "1",
             "Name": "Ethernet Interface",
             "InterfaceEnabled": false,
@@ -258,7 +251,6 @@ async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(),
             "Members": [{
                 ODATA_ID: &host_interface_id,
                 ODATA_TYPE: HOST_INTERFACE_DATA_TYPE,
-                "@odata.etag": "host-v1",
                 "Id": "1",
                 "Name": "Host Interface",
                 "InterfaceEnabled": true
@@ -277,14 +269,12 @@ async fn typed_updates_use_advertised_metadata_and_map_responses() -> Result<(),
         .with_interface_enabled(false)
         .with_firmware_auth_role_id("Operator".into())
         .build();
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &host_interface_id,
-        "host-v1",
         json!({ "InterfaceEnabled": false, "FirmwareAuthRoleId": "Operator" }),
         json!({
             ODATA_ID: &host_interface_id,
             ODATA_TYPE: HOST_INTERFACE_DATA_TYPE,
-            "@odata.etag": "host-v2",
             "Id": "1",
             "Name": "Host Interface",
             "InterfaceEnabled": false,

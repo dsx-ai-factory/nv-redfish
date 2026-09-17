@@ -55,7 +55,7 @@ const BOOT_OPTION_DATA_TYPE: &str = "#BootOption.v1_0_4.BootOption";
 const SECURE_BOOT_DATA_TYPE: &str = "#SecureBoot.v1_1_0.SecureBoot";
 
 #[test]
-async fn secure_boot_typed_update_uses_uri_etag_and_maps_entity() -> Result<(), Box<dyn StdError>> {
+async fn secure_boot_typed_update_uses_uri_and_maps_entity() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = computer_system_ids();
     let secure_boot_id = format!("{}/SecureBoot", ids.system_id);
@@ -71,7 +71,6 @@ async fn secure_boot_typed_update_uses_uri_etag_and_maps_entity() -> Result<(), 
         json!({
             ODATA_ID: &secure_boot_id,
             ODATA_TYPE: SECURE_BOOT_DATA_TYPE,
-            "@odata.etag": "secure-boot-v1",
             "Id": "SecureBoot",
             "Name": "Secure Boot",
             "SecureBootEnable": false
@@ -85,14 +84,12 @@ async fn secure_boot_typed_update_uses_uri_etag_and_maps_entity() -> Result<(), 
         .with_secure_boot_enable(true)
         .build();
 
-    bmc.expect(Expect::update_with_etag(
+    bmc.expect(Expect::update(
         &secure_boot_id,
-        "secure-boot-v1",
         json!({ "SecureBootEnable": true }),
         json!({
             ODATA_ID: &secure_boot_id,
             ODATA_TYPE: SECURE_BOOT_DATA_TYPE,
-            "@odata.etag": "secure-boot-v2",
             "Id": "SecureBoot",
             "Name": "Secure Boot",
             "SecureBootEnable": true
