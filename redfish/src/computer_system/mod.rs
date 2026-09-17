@@ -55,19 +55,14 @@ use std::convert::identity;
 use std::sync::Arc;
 
 #[doc(inline)]
-pub use item::BootOptionReference;
-#[doc(inline)]
-pub use item::ComputerSystem;
+pub use item::{BootOptionReference, BootUpdate, ComputerSystem, ComputerSystemUpdate};
 
 #[doc(inline)]
 #[cfg(feature = "bios")]
-pub use bios::Bios;
+pub use bios::{AttributesUpdate, Bios, BiosUpdate};
 #[doc(inline)]
 #[cfg(feature = "boot-options")]
-pub use boot_option::BootOption;
-#[doc(inline)]
-#[cfg(feature = "boot-options")]
-pub use boot_option::BootOptionCollection;
+pub use boot_option::{BootOption, BootOptionCollection, BootOptionUpdate};
 #[doc(inline)]
 #[cfg(feature = "storages")]
 pub use drive::Drive;

@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use crate::core::Bmc;
+use crate::core::EntityTypeRef as _;
 use crate::core::ModificationResponse;
 use crate::core::NavProperty;
 use crate::core::RedfishSettings as _;
@@ -30,10 +31,12 @@ use crate::schema::computer_system::ComputerSystem as ComputerSystemSchema;
 use crate::Error;
 use crate::NvBmc;
 
-use serde::Serialize;
 use std::convert::identity;
 use std::sync::Arc;
 use tagged_types::TaggedType;
+
+pub use crate::schema::computer_system::BootUpdate;
+pub use crate::schema::computer_system::ComputerSystemUpdate;
 
 #[cfg(feature = "bios")]
 use crate::computer_system::Bios;
@@ -89,18 +92,6 @@ pub type BootOptionReference<T> = TaggedType<T, BootOptionReferenceTag>;
 #[capability(inner_access, cloned)]
 pub enum BootOptionReferenceTag {}
 
-#[derive(Serialize)]
-struct BootPatch {
-    #[serde(rename = "BootOrder")]
-    boot_order: Vec<BootOptionReference<String>>,
-}
-
-#[derive(Serialize)]
-struct ComputerSystemBootOrderUpdate {
-    #[serde(rename = "Boot")]
-    boot: BootPatch,
-}
-
 /// Represents a computer system in the BMC.
 ///
 /// Provides access to system information and sub-resources such as processors.
@@ -108,6 +99,7 @@ pub struct ComputerSystem<B: Bmc> {
     #[allow(dead_code)] // feature-enabled...
     bmc: NvBmc<B>,
     data: Arc<ComputerSystemSchema>,
+    read_patch_fn: Option<ReadPatchFn>,
 }
 
 impl<B: Bmc> ComputerSystem<B> {
@@ -117,7 +109,8 @@ impl<B: Bmc> ComputerSystem<B> {
         nav: &NavProperty<ComputerSystemSchema>,
         read_patch_fn: Option<&ReadPatchFn>,
     ) -> Result<Self, Error<B>> {
-        if let Some(read_patch_fn) = read_patch_fn {
+        let read_patch_fn = read_patch_fn.cloned();
+        if let Some(read_patch_fn) = read_patch_fn.as_ref() {
             Payload::get(bmc.as_ref(), nav, read_patch_fn.as_ref()).await
         } else {
             nav.get(bmc.as_ref()).await.map_err(Error::Bmc)
@@ -125,6 +118,7 @@ impl<B: Bmc> ComputerSystem<B> {
         .map(|data| Self {
             bmc: bmc.clone(),
             data,
+            read_patch_fn,
         })
     }
 
@@ -183,6 +177,19 @@ impl<B: Bmc> ComputerSystem<B> {
     #[must_use]
     pub fn power_state(&self) -> Option<PowerState> {
         self.data.power_state.and_then(identity)
+    }
+
+    /// Update this computer system.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the computer system fails.
+    pub async fn update(
+        &self,
+        update: &ComputerSystemUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.update_at(self.data.odata_id(), self.data.etag(), update)
+            .await
     }
 
     /// Reset this computer system.
@@ -247,27 +254,40 @@ impl<B: Bmc> ComputerSystem<B> {
         &self,
         boot_order: Vec<BootOptionReference<String>>,
     ) -> Result<ModificationResponse<Self>, Error<B>> {
-        let update = ComputerSystemBootOrderUpdate {
-            boot: BootPatch { boot_order },
-        };
+        let update = ComputerSystemUpdate::builder()
+            .with_boot(
+                BootUpdate::builder()
+                    .with_boot_order(
+                        boot_order
+                            .into_iter()
+                            .map(|reference| reference.inner().clone())
+                            .collect(),
+                    )
+                    .build(),
+            )
+            .build();
 
         let settings = self.data.settings_object();
         let update_odata = settings
             .as_ref()
-            .map_or(&self.data.odata_id, NavProperty::id);
+            .map_or_else(|| self.data.odata_id(), |settings| settings.odata_id());
+        self.update_at(update_odata, None, &update).await
+    }
 
+    /// Update the computer system resource at the supplied identifier.
+    async fn update_at(
+        &self,
+        odata_id: &nv_redfish_core::ODataId,
+        etag: Option<&nv_redfish_core::ODataETag>,
+        update: &ComputerSystemUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
         self.bmc
             .as_ref()
-            .update::<_, NavProperty<ComputerSystemSchema>>(update_odata, None, &update)
+            .update::<_, NavProperty<ComputerSystemSchema>>(odata_id, etag, update)
             .await
             .map_err(Error::Bmc)?
             .try_map_entity_async(|nav| async move {
-                let data = nav.get(self.bmc.as_ref()).await.map_err(Error::Bmc)?;
-
-                Ok(Self {
-                    bmc: self.bmc.clone(),
-                    data,
-                })
+                Self::new(&self.bmc, &nav, self.read_patch_fn.as_ref()).await
             })
             .await
     }

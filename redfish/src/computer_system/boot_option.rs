@@ -23,11 +23,15 @@ use crate::schema::resource::ResourceCollection;
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::EntityTypeRef as _;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
+use nv_redfish_core::RedfishSettings as _;
 use std::convert::identity;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use tagged_types::TaggedType;
+
+pub use crate::schema::boot_option::BootOptionUpdate;
 
 /// Boot options collection.
 ///
@@ -110,8 +114,8 @@ pub enum DisplayNameTag {}
 ///
 /// Provides functions to access boot option.
 pub struct BootOption<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<BootOptionSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> BootOption<B> {
@@ -124,8 +128,8 @@ impl<B: Bmc> BootOption<B> {
             .await
             .map_err(crate::Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
     }
 
@@ -133,6 +137,46 @@ impl<B: Bmc> BootOption<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<BootOptionSchema> {
         self.data.clone()
+    }
+
+    /// Get the advertised boot option settings object.
+    ///
+    /// Returns `Ok(None)` when this boot option does not advertise
+    /// `@Redfish.Settings`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching the settings object fails.
+    pub async fn settings(&self) -> Result<Option<Self>, Error<B>> {
+        match self.data.settings_object() {
+            Some(settings) => Self::new(&self.bmc, &settings).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// Update this boot option.
+    ///
+    /// Call this method on the handle returned by [`Self::settings`] when the
+    /// service advertises `@Redfish.Settings`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the boot option fails.
+    pub async fn update(
+        &self,
+        update: &BootOptionUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<BootOptionSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
     }
 
     ///

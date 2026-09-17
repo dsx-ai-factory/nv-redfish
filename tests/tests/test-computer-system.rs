@@ -19,7 +19,9 @@ use std::sync::Arc;
 
 use nv_redfish::account::AccountServiceConfig;
 use nv_redfish::computer_system::BootOptionReference;
+use nv_redfish::computer_system::BootOptionUpdate;
 use nv_redfish::computer_system::ComputerSystem;
+use nv_redfish::computer_system::ComputerSystemUpdate;
 use nv_redfish::computer_system::SystemCollection;
 use nv_redfish::resource::ResetType;
 use nv_redfish::ServiceRoot;
@@ -47,6 +49,8 @@ use tokio::test;
 const SERVICE_ROOT_DATA_TYPE: &str = "#ServiceRoot.v1_13_0.ServiceRoot";
 const SYSTEM_COLLECTION_DATA_TYPE: &str = "#ComputerSystemCollection.ComputerSystemCollection";
 const SYSTEM_DATA_TYPE: &str = "#ComputerSystem.v1_20_0.ComputerSystem";
+const BOOT_OPTION_COLLECTION_DATA_TYPE: &str = "#BootOptionCollection.BootOptionCollection";
+const BOOT_OPTION_DATA_TYPE: &str = "#BootOption.v1_0_4.BootOption";
 
 #[test]
 async fn reset_invokes_computer_system_reset_action() -> Result<(), Box<dyn StdError>> {
@@ -119,6 +123,199 @@ async fn set_boot_order_preserves_task_and_empty_responses() -> Result<(), Box<d
             .await?,
     );
 
+    Ok(())
+}
+
+#[test]
+async fn computer_system_update_preserves_reference_response() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let service_root = expect_nvidia_dpu_service_root(bmc.clone(), &ids).await?;
+    bmc.expect(Expect::expand(
+        &ids.systems_id,
+        json!({
+            ODATA_ID: &ids.systems_id,
+            ODATA_TYPE: SYSTEM_COLLECTION_DATA_TYPE,
+            "Id": resource_name(&ids.systems_id),
+            "Name": "Computer System Collection",
+            "Members": [
+                computer_system(&ids, json!({ "HostName": "old-host", "UUID": "" }))
+            ]
+        }),
+    ));
+    let mut systems = service_root
+        .systems()
+        .await?
+        .ok_or("systems missing")?
+        .members()
+        .await?;
+    let system = systems.pop().ok_or("computer system missing")?;
+    assert_eq!(system.raw().uuid, Some(None));
+    let update = ComputerSystemUpdate::builder()
+        .with_host_name("new-host".into())
+        .build();
+
+    bmc.expect(Expect::update(
+        &ids.system_id,
+        json!({ "HostName": "new-host" }),
+        json!({ ODATA_ID: &ids.system_id }),
+    ));
+    bmc.expect(Expect::get(
+        &ids.system_id,
+        computer_system(&ids, json!({ "HostName": "new-host", "UUID": "" })),
+    ));
+
+    let ModificationResponse::Entity(updated) = system.update(&update).await? else {
+        return Err("expected computer system entity response".into());
+    };
+    assert_eq!(updated.raw().host_name, Some(Some("new-host".into())));
+    assert_eq!(updated.raw().uuid, Some(None));
+    Ok(())
+}
+
+#[test]
+async fn set_boot_order_uses_advertised_settings_resource() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let settings_id = format!("{}/SD", ids.system_id);
+    let system = get_system(
+        bmc.clone(),
+        &ids,
+        computer_system(
+            &ids,
+            json!({
+                "@Redfish.Settings": {
+                    "SettingsObject": { ODATA_ID: &settings_id }
+                },
+                "Boot": { "BootOrder": ["Boot0001"] }
+            }),
+        ),
+    )
+    .await?;
+
+    bmc.expect(Expect::update(
+        &settings_id,
+        json!({ "Boot": { "BootOrder": ["Boot0002"] } }),
+        json!({ ODATA_ID: &settings_id }),
+    ));
+    bmc.expect(Expect::get(
+        &settings_id,
+        json!({
+            ODATA_ID: &settings_id,
+            ODATA_TYPE: SYSTEM_DATA_TYPE,
+            "Id": "SD",
+            "Name": "System Settings",
+            "Boot": { "BootOrder": ["Boot0002"] }
+        }),
+    ));
+
+    assert!(matches!(
+        system
+            .set_boot_order(vec![BootOptionReference::new("Boot0002".into())])
+            .await?,
+        ModificationResponse::Entity(_)
+    ));
+    Ok(())
+}
+
+#[test]
+async fn boot_option_settings_routes_to_advertised_sd_and_preserves_outcomes(
+) -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let boot_options_id = format!("{}/BootOptions", ids.system_id);
+    let boot_option_id = format!("{boot_options_id}/Boot0001");
+    let settings_id = format!("{boot_option_id}/SD");
+    let system = get_system(
+        bmc.clone(),
+        &ids,
+        computer_system(
+            &ids,
+            json!({
+                "Boot": {
+                    "BootOptions": { ODATA_ID: &boot_options_id }
+                }
+            }),
+        ),
+    )
+    .await?;
+    bmc.expect(Expect::expand(
+        &boot_options_id,
+        json!({
+            ODATA_ID: &boot_options_id,
+            ODATA_TYPE: BOOT_OPTION_COLLECTION_DATA_TYPE,
+            "Name": "Boot Options",
+            "Members": [{
+                ODATA_ID: &boot_option_id,
+                ODATA_TYPE: BOOT_OPTION_DATA_TYPE,
+                "Id": "Boot0001",
+                "Name": "Boot0001",
+                "BootOptionReference": "Boot0001",
+                "BootOptionEnabled": true,
+                "@Redfish.Settings": {
+                    "SettingsObject": { ODATA_ID: &settings_id }
+                }
+            }]
+        }),
+    ));
+    let mut options = system
+        .boot_options()
+        .await?
+        .ok_or("boot options missing")?
+        .members()
+        .await?;
+    let option = options.pop().ok_or("boot option missing")?;
+    let update = BootOptionUpdate::builder()
+        .with_boot_option_enabled(false)
+        .build();
+    bmc.expect(Expect::update(
+        &boot_option_id,
+        json!({ "BootOptionEnabled": false }),
+        json!({
+            ODATA_ID: &boot_option_id,
+            ODATA_TYPE: BOOT_OPTION_DATA_TYPE,
+            "Id": "Boot0001",
+            "Name": "Boot0001",
+            "BootOptionReference": "Boot0001",
+            "BootOptionEnabled": false
+        }),
+    ));
+    assert!(matches!(
+        option.update(&update).await?,
+        ModificationResponse::Entity(_)
+    ));
+
+    bmc.expect(Expect::get(
+        &settings_id,
+        json!({
+            ODATA_ID: &settings_id,
+            ODATA_TYPE: BOOT_OPTION_DATA_TYPE,
+            "Id": "Boot0001",
+            "Name": "Boot0001 Settings",
+            "BootOptionReference": "Boot0001",
+            "BootOptionEnabled": true
+        }),
+    ));
+    let settings = option
+        .settings()
+        .await?
+        .ok_or("boot option settings missing")?;
+
+    bmc.expect(Expect::update_task(
+        &settings_id,
+        json!({ "BootOptionEnabled": false }),
+        async_task("/redfish/v1/TaskService/Tasks/boot-option", 3),
+    ));
+    assert_task(
+        settings.update(&update).await?,
+        "/redfish/v1/TaskService/Tasks/boot-option",
+        3,
+    );
+    bmc.expect(Expect::update_empty(
+        &settings_id,
+        json!({ "BootOptionEnabled": false }),
+    ));
+    assert_empty(settings.update(&update).await?);
     Ok(())
 }
 
