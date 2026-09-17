@@ -18,20 +18,21 @@ use crate::schema::secure_boot::SecureBoot as SecureBootSchema;
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::EntityTypeRef as _;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 use std::convert::identity;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 #[doc(inline)]
-pub use crate::schema::secure_boot::SecureBootCurrentBootType;
+pub use crate::schema::secure_boot::{SecureBootCurrentBootType, SecureBootUpdate};
 
 /// Secure boot.
 ///
 /// Provides functions to access Secure Boot functions.
 pub struct SecureBoot<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<SecureBootSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> SecureBoot<B> {
@@ -44,8 +45,8 @@ impl<B: Bmc> SecureBoot<B> {
             .await
             .map_err(crate::Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
     }
 
@@ -53,6 +54,28 @@ impl<B: Bmc> SecureBoot<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<SecureBootSchema> {
         self.data.clone()
+    }
+
+    /// Update this secure boot resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &SecureBootUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<SecureBootSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
     }
 
     /// Get an indication of whether UEFI Secure Boot is enabled.

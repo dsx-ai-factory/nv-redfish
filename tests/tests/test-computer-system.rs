@@ -22,6 +22,7 @@ use nv_redfish::computer_system::BootOptionReference;
 use nv_redfish::computer_system::BootOptionUpdate;
 use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::computer_system::ComputerSystemUpdate;
+use nv_redfish::computer_system::SecureBootUpdate;
 use nv_redfish::computer_system::SystemCollection;
 use nv_redfish::resource::ResetType;
 use nv_redfish::ServiceRoot;
@@ -51,6 +52,57 @@ const SYSTEM_COLLECTION_DATA_TYPE: &str = "#ComputerSystemCollection.ComputerSys
 const SYSTEM_DATA_TYPE: &str = "#ComputerSystem.v1_20_0.ComputerSystem";
 const BOOT_OPTION_COLLECTION_DATA_TYPE: &str = "#BootOptionCollection.BootOptionCollection";
 const BOOT_OPTION_DATA_TYPE: &str = "#BootOption.v1_0_4.BootOption";
+const SECURE_BOOT_DATA_TYPE: &str = "#SecureBoot.v1_1_0.SecureBoot";
+
+#[test]
+async fn secure_boot_typed_update_uses_uri_and_maps_entity() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let secure_boot_id = format!("{}/SecureBoot", ids.system_id);
+    let system = get_system(
+        bmc.clone(),
+        &ids,
+        computer_system(&ids, json!({ "SecureBoot": { ODATA_ID: &secure_boot_id } })),
+    )
+    .await?;
+
+    bmc.expect(Expect::get(
+        &secure_boot_id,
+        json!({
+            ODATA_ID: &secure_boot_id,
+            ODATA_TYPE: SECURE_BOOT_DATA_TYPE,
+            "Id": "SecureBoot",
+            "Name": "Secure Boot",
+            "SecureBootEnable": false
+        }),
+    ));
+    let secure_boot = system
+        .secure_boot()
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing secure boot"))?;
+    let update = SecureBootUpdate::builder()
+        .with_secure_boot_enable(true)
+        .build();
+
+    bmc.expect(Expect::update(
+        &secure_boot_id,
+        json!({ "SecureBootEnable": true }),
+        json!({
+            ODATA_ID: &secure_boot_id,
+            ODATA_TYPE: SECURE_BOOT_DATA_TYPE,
+            "Id": "SecureBoot",
+            "Name": "Secure Boot",
+            "SecureBootEnable": true
+        }),
+    ));
+
+    let ModificationResponse::Entity(updated) = secure_boot.update(&update).await? else {
+        return Err(std::io::Error::other("expected secure boot entity response").into());
+    };
+    assert_eq!(updated.secure_boot_enable(), Some(true));
+
+    Ok(())
+}
 
 #[test]
 async fn reset_invokes_computer_system_reset_action() -> Result<(), Box<dyn StdError>> {

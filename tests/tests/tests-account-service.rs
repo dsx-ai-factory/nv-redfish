@@ -22,6 +22,7 @@ use std::time::Duration;
 use nv_redfish::account::AccountCollection;
 use nv_redfish::account::AccountService;
 use nv_redfish::account::AccountServiceConfig;
+use nv_redfish::account::AccountServiceUpdate;
 use nv_redfish::account::AccountTypes;
 use nv_redfish::account::ManagerAccountCreate;
 use nv_redfish::account::ManagerAccountUpdate;
@@ -236,6 +237,67 @@ async fn get_account_service_with_config(
         }),
     ));
     Ok(service_root.account_service(config).await?.unwrap())
+}
+
+#[test]
+async fn update_account_service_preserves_uri_config_and_read_patch() -> TestResult<()> {
+    let bmc = Arc::new(Bmc::default());
+    let root_id = ODataId::service_root();
+    let account_service = get_account_service(bmc.clone(), &root_id, "HPE").await?;
+    let service_id = account_service.raw().odata_id().to_string();
+    let accounts_id = format!("{service_id}/Accounts");
+    let update = AccountServiceUpdate::builder()
+        .with_account_lockout_threshold(5)
+        .build();
+
+    bmc.expect(Expect::update(
+        &service_id,
+        serde_json::to_value(&update)?,
+        json!({
+            ODATA_ID: &service_id,
+            ODATA_TYPE: ACCOUNT_SERVICE_DATA_TYPE,
+            "Id": "AccountService",
+            "Name": "AccountService",
+            "AccountLockoutThreshold": 5,
+            "Accounts": { ODATA_ID: &accounts_id }
+        }),
+    ));
+
+    let updated = into_entity(account_service.update(&update).await?);
+    assert_eq!(updated.raw().account_lockout_threshold, Some(Some(5)));
+
+    bmc.expect(Expect::expand(
+        &accounts_id,
+        json!({
+            ODATA_ID: &accounts_id,
+            ODATA_TYPE: ACCOUNTS_DATA_TYPE,
+            "Name": "User Accounts",
+            "Members": [{
+                ODATA_ID: format!("{accounts_id}/1"),
+                ODATA_TYPE: MANAGER_ACCOUNT_DATA_TYPE,
+                "Id": "1",
+                "Name": "User Account",
+                "UserName": "patched-user"
+            }]
+        }),
+    ));
+
+    let accounts = updated
+        .accounts()
+        .await?
+        .ok_or("accounts collection missing")?;
+    let account = accounts
+        .all_accounts_data()
+        .await?
+        .into_iter()
+        .next()
+        .ok_or("account missing")?;
+    assert_eq!(
+        account.raw().account_types,
+        Some(vec![AccountTypes::Redfish])
+    );
+
+    Ok(())
 }
 
 async fn get_account_collection(

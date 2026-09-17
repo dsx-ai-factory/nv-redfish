@@ -38,6 +38,8 @@ use std::sync::Arc;
 pub use item::Manager;
 #[cfg(feature = "manager-network-protocol")]
 pub use network_protocol::ManagerNetworkProtocol;
+#[cfg(feature = "manager-network-protocol")]
+pub use network_protocol::ManagerNetworkProtocolUpdate;
 
 #[doc(inline)]
 pub use crate::schema::manager::ResetToDefaultsType as ManagerResetToDefaultsType;

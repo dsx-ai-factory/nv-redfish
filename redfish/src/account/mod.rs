@@ -41,9 +41,14 @@ use crate::Error;
 use crate::NvBmc;
 use crate::ServiceRoot;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::EntityTypeRef as _;
+use nv_redfish_core::ModificationResponse;
+use nv_redfish_core::NavProperty;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+#[doc(inline)]
+pub use crate::schema::account_service::AccountServiceUpdate;
 #[doc(inline)]
 pub use crate::schema::manager_account::AccountTypes;
 #[doc(inline)]
@@ -158,6 +163,41 @@ impl<B: Bmc> AccountService<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<SchemaAccountService> {
         self.service.clone()
+    }
+
+    /// Update this account service.
+    ///
+    /// The immutable account behavior and account read-patch configuration are
+    /// retained when the response contains an updated resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &AccountServiceUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<SchemaAccountService>>(
+                self.service.odata_id(),
+                self.service.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move {
+                nav.get(self.bmc.as_ref())
+                    .await
+                    .map_err(Error::Bmc)
+                    .map(|service| Self {
+                        config: self.config.clone(),
+                        account_read_patch_fn: self.account_read_patch_fn.clone(),
+                        service,
+                        bmc: self.bmc.clone(),
+                    })
+            })
+            .await
     }
 
     /// Get the accounts collection.
