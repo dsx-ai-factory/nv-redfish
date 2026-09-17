@@ -897,11 +897,24 @@ action_patterns = [
 
 [[oem-features]]
 vendor = "lenovo"
+name = "accounts"
+oem_csdl_files = [
+    "LenovoAccountService_v1.xml",
+]
+csdl_files = []
+
+[[oem-features]]
+vendor = "lenovo"
 name = "computer-systems"
 oem_csdl_files = [
+    "LenovoBootManager_v1.xml",
+    "LenovoBootManagerCollection_v1.xml",
     "LenovoComputerSystem_v1.xml",
 ]
 csdl_files = []
+action_patterns = [
+    "LenovoComputerSystem.*",
+]
 
 [[oem-features]]
 vendor = "lenovo"

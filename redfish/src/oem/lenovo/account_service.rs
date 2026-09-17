@@ -13,14 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[allow(clippy::doc_markdown)]
-#[allow(clippy::absolute_paths)]
-#[allow(clippy::option_option)]
-#[allow(clippy::missing_const_for_fn)]
-#[allow(clippy::struct_field_names)]
-#[allow(clippy::too_long_first_doc_paragraph)]
-#[allow(clippy::unused_trait_names)]
-#[allow(missing_docs)]
-pub mod redfish {
-    include!(concat!(env!("OUT_DIR"), "/oem-lenovo.rs"));
+//! Lenovo AccountService OEM update support.
+
+use crate::oem::lenovo::oem_update;
+use crate::schema::account_service::AccountServiceUpdate;
+
+#[doc(inline)]
+pub use crate::oem::lenovo::schema::lenovo_account_service::LenovoAccountServicePropertiesUpdate as LenovoAccountServiceUpdate;
+
+/// Merge Lenovo account settings into a standard AccountService update.
+pub(crate) fn update_request(
+    mut update: AccountServiceUpdate,
+    lenovo_update: &LenovoAccountServiceUpdate,
+) -> Result<AccountServiceUpdate, serde_json::Error> {
+    update.oem = Some(oem_update(update.oem.take(), lenovo_update)?);
+    Ok(update)
 }

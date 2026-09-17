@@ -13,20 +13,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Lenovo SecurityService OEM extension.
+
 use crate::core::Bmc;
+use crate::core::EntityTypeRef as _;
+use crate::core::ModificationResponse;
 use crate::core::NavProperty;
+pub use crate::oem::lenovo::schema::lenovo_security_service::ConfiguratorStateUpdate;
 pub use crate::oem::lenovo::schema::lenovo_security_service::FwRollbackState;
 use crate::oem::lenovo::schema::lenovo_security_service::LenovoSecurityService as LenovoSecurityServiceSchema;
+pub use crate::oem::lenovo::schema::lenovo_security_service::LenovoSecurityServiceUpdate;
 use crate::Error;
 use crate::NvBmc;
 use std::convert::identity;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
-/// Dell OEM Attributes.
+/// Lenovo OEM security service.
 pub struct LenovoSecurityService<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<LenovoSecurityServiceSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> LenovoSecurityService<B> {
@@ -39,9 +44,56 @@ impl<B: Bmc> LenovoSecurityService<B> {
             .await
             .map_err(Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
+    }
+
+    /// Get the raw Lenovo security service schema data.
+    #[must_use]
+    pub fn raw(&self) -> Arc<LenovoSecurityServiceSchema> {
+        self.data.clone()
+    }
+
+    /// Update this Lenovo security service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &LenovoSecurityServiceUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<LenovoSecurityServiceSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
+    }
+
+    /// Set whether firmware rollback is allowed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn set_fw_rollback(
+        &self,
+        state: FwRollbackState,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        let update = LenovoSecurityServiceUpdate::builder()
+            .with_configurator(
+                ConfiguratorStateUpdate::builder()
+                    .with_fw_rollback(state)
+                    .build(),
+            )
+            .build();
+        self.update(&update).await
     }
 
     /// Firmware rollback is enabled.

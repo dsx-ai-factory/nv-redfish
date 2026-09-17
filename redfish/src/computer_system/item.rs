@@ -56,6 +56,8 @@ use crate::ethernet_interface::EthernetInterfaceCollection;
 use crate::log_service::LogService;
 #[cfg(feature = "oem-lenovo")]
 use crate::oem::lenovo::computer_system::LenovoComputerSystem;
+#[cfg(feature = "oem-lenovo")]
+use crate::oem::lenovo::LenovoComputerSystemActions;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaComputerSystem;
 
@@ -483,6 +485,23 @@ impl<B: Bmc> ComputerSystem<B> {
     /// Returns an error if Lenovo OEM data parsing fails.
     #[cfg(feature = "oem-lenovo")]
     pub fn oem_lenovo(&self) -> Result<Option<LenovoComputerSystem<B>>, Error<B>> {
-        LenovoComputerSystem::new(&self.bmc, &self.data)
+        LenovoComputerSystem::new(&self.bmc, &self.data, self.read_patch_fn.as_ref())
+    }
+
+    /// Get the Lenovo OEM actions advertised by this computer system.
+    ///
+    /// Returns `Ok(None)` when the system has no OEM actions object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Lenovo OEM actions cannot be parsed.
+    #[cfg(feature = "oem-lenovo")]
+    pub fn oem_lenovo_actions(&self) -> Result<Option<LenovoComputerSystemActions<B>>, Error<B>> {
+        self.data
+            .actions
+            .as_ref()
+            .and_then(|actions| actions.oem.as_ref())
+            .map(|actions| LenovoComputerSystemActions::new(&self.bmc, actions))
+            .transpose()
     }
 }

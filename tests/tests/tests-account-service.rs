@@ -24,6 +24,7 @@ use nv_redfish::account::AccountService;
 use nv_redfish::account::AccountServiceConfig;
 use nv_redfish::account::AccountServiceUpdate;
 use nv_redfish::account::AccountTypes;
+use nv_redfish::account::LenovoAccountServiceUpdate;
 use nv_redfish::account::ManagerAccountCreate;
 use nv_redfish::account::ManagerAccountUpdate;
 use nv_redfish::oem::dell::IdracVersion;
@@ -298,6 +299,70 @@ async fn update_account_service_preserves_uri_config_and_read_patch() -> TestRes
     );
 
     Ok(())
+}
+
+#[test]
+async fn update_lenovo_account_policy_uses_typed_oem_payload() -> TestResult<()> {
+    let bmc = Arc::new(Bmc::default());
+    let root_id = ODataId::service_root();
+    let account_service = get_account_service(bmc.clone(), &root_id, "Lenovo").await?;
+    let service_id = account_service.raw().odata_id().to_string();
+    let accounts_id = format!("{service_id}/Accounts");
+    let (update, lenovo_update) = lenovo_account_policy_updates();
+    let request = json!({
+        "AccountLockoutThreshold": 0,
+        "AccountLockoutDuration": 60,
+        "Oem": {
+            "OtherVendor": { "Keep": true },
+            "Lenovo": {
+                "PasswordExpirationPeriodDays": 0.0,
+                "PasswordChangeOnFirstAccess": false,
+                "MinimumPasswordChangeIntervalHours": 0.0,
+                "MinimumPasswordReuseCycle": 0.0,
+                "PasswordExpirationWarningPeriod": 0.0
+            }
+        }
+    });
+    bmc.expect(Expect::update(
+        &service_id,
+        &request,
+        json!({
+            ODATA_ID: &service_id,
+            ODATA_TYPE: ACCOUNT_SERVICE_DATA_TYPE,
+            "Id": "AccountService",
+            "Name": "AccountService",
+            "Accounts": { ODATA_ID: &accounts_id }
+        }),
+    ));
+
+    let ModificationResponse::Entity(updated) = account_service
+        .update_oem_lenovo(update, &lenovo_update)
+        .await?
+    else {
+        return Err("expected updated account service".into());
+    };
+    bmc.expect(Expect::update_empty(&service_id, &request));
+    let (update, lenovo_update) = lenovo_account_policy_updates();
+    assert_empty(updated.update_oem_lenovo(update, &lenovo_update).await?);
+    Ok(())
+}
+
+fn lenovo_account_policy_updates() -> (AccountServiceUpdate, LenovoAccountServiceUpdate) {
+    let update = AccountServiceUpdate::builder()
+        .with_account_lockout_threshold(0)
+        .with_account_lockout_duration(60)
+        .with_oem(nv_redfish::schema::resource::OemUpdate {
+            additional_properties: json!({ "OtherVendor": { "Keep": true } }),
+        })
+        .build();
+    let lenovo_update = LenovoAccountServiceUpdate::builder()
+        .with_password_expiration_period_days(0.0)
+        .with_password_change_on_first_access(false)
+        .with_minimum_password_change_interval_hours(0.0)
+        .with_minimum_password_reuse_cycle(0.0)
+        .with_password_expiration_warning_period(0.0)
+        .build();
+    (update, lenovo_update)
 }
 
 async fn get_account_collection(

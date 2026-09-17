@@ -20,32 +20,22 @@ limitations under the License.
   <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Core.V1.xml">
     <edmx:Include Namespace="Org.OData.Core.V1" Alias="OData"/>
   </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/Resource_v1.xml">
+    <edmx:Include Namespace="Resource"/>
+    <edmx:Include Namespace="Resource.v1_0_0"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/metadata/LenovoBootManager_v1.xml">
+    <edmx:Include Namespace="LenovoBootManager"/>
+  </edmx:Reference>
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoManager">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoBootManagerCollection">
       <Annotation Term="Redfish.OwningEntity" String="Lenovo"/>
-      <ComplexType Name="LenovoManagerProperties" Abstract="true">
-        <NavigationProperty Name="Security" Type="LenovoSecurityService.LenovoSecurityService">
+      <EntityType Name="LenovoBootManagerCollection" BaseType="Resource.v1_0_0.ResourceCollection">
+        <NavigationProperty Name="Members" Type="Collection(LenovoBootManager.LenovoBootManager)">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
+          <Annotation Term="OData.AutoExpandReferences"/>
         </NavigationProperty>
-      </ComplexType>
-    </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoManager.v0_1_0">
-      <ComplexType Name="LenovoManagerProperties" BaseType="LenovoManager.LenovoManagerProperties">
-        <Property Name="KCSEnabled" Type="Edm.Boolean" Nullable="false">
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
-        </Property>
-      </ComplexType>
-    </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoManager.v1_0_0">
-      <ComplexType Name="LenovoManagerProperties" BaseType="LenovoManager.LenovoManagerProperties">
-        <Property Name="KCSEnabled" Type="LenovoManager.v1_0_0.KCSState" Nullable="false">
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
-        </Property>
-      </ComplexType>
-      <EnumType Name="KCSState">
-        <Member Name="Enabled"/>
-        <Member Name="Disabled"/>
-      </EnumType>
+      </EntityType>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>

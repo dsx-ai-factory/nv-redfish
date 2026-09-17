@@ -27,11 +27,10 @@ limitations under the License.
     <edmx:Include Namespace="Resource"/>
     <edmx:Include Namespace="Resource.v1_0_0"/>
   </edmx:Reference>
-
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoSecurityService">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoBootManager">
       <Annotation Term="Redfish.OwningEntity" String="Lenovo"/>
-      <EntityType Name="LenovoSecurityService" BaseType="Resource.v1_0_0.Resource" Abstract="true">
+      <EntityType Name="LenovoBootManager" BaseType="Resource.v1_0_0.Resource" Abstract="true">
         <Annotation Term="Capabilities.UpdateRestrictions">
           <Record>
             <PropertyValue Property="Updatable" Bool="true"/>
@@ -39,21 +38,19 @@ limitations under the License.
         </Annotation>
       </EntityType>
     </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoSecurityService.v1_0_0">
-      <EntityType Name="LenovoSecurityService" BaseType="LenovoSecurityService.LenovoSecurityService">
-        <Property Name="Configurator" Type="LenovoSecurityService.v1_0_0.ConfiguratorState">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoBootManager.v1_0_0">
+      <Annotation Term="Redfish.OwningEntity" String="Lenovo"/>
+      <EntityType Name="LenovoBootManager" BaseType="LenovoBootManager.LenovoBootManager">
+        <Property Name="BootOrderNext" Type="Collection(Edm.String)">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+        <Property Name="BootOrderCurrent" Type="Collection(Edm.String)">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
+        </Property>
+        <Property Name="BootOrderSupported" Type="Collection(Edm.String)">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
         </Property>
       </EntityType>
-      <ComplexType Name="ConfiguratorState">
-        <Property Name="FWRollback" Type="LenovoSecurityService.v1_0_0.FWRollbackState">
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
-        </Property>
-      </ComplexType>
-      <EnumType Name="FWRollbackState">
-        <Member Name="Enabled"/>
-        <Member Name="Disabled"/>
-      </EnumType>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>
