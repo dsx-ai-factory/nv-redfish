@@ -301,6 +301,87 @@ async fn bios_settings_uses_advertised_reference_and_handles_absence(
     Ok(())
 }
 
+#[test]
+async fn bios_actions_use_advertised_targets() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = bios_ids();
+    let reset_target = format!("{}/Actions/Bios.ResetBios", ids.bios_id);
+    let password_target = format!("{}/Actions/Bios.ChangePassword", ids.bios_id);
+    let system = get_computer_system(bmc.clone(), &ids, "Lenovo").await?;
+    bmc.expect(Expect::get(
+        &ids.bios_id,
+        bios_payload(
+            &ids.bios_id,
+            json!({
+                "Actions": {
+                    "#Bios.ResetBios": {
+                        "target": &reset_target,
+                        "title": "ResetBios"
+                    },
+                    "#Bios.ChangePassword": {
+                        "target": &password_target,
+                        "title": "ChangePassword"
+                    }
+                }
+            }),
+        ),
+    ));
+    let bios = system.bios().await?.ok_or("BIOS missing")?;
+
+    bmc.expect(Expect::action(&reset_target, json!({}), json!(null)));
+    assert!(matches!(
+        bios.reset().await?,
+        ModificationResponse::Entity(())
+    ));
+
+    bmc.expect(Expect::action(
+        &password_target,
+        json!({
+            "PasswordName": "UefiAdminPassword",
+            "OldPassword": "old-secret",
+            "NewPassword": "new-secret"
+        }),
+        json!(null),
+    ));
+    assert!(matches!(
+        bios.change_password(
+            "UefiAdminPassword".into(),
+            Some("old-secret".into()),
+            "new-secret".into(),
+        )
+        .await?,
+        ModificationResponse::Entity(())
+    ));
+    Ok(())
+}
+
+#[test]
+async fn bios_actions_must_be_advertised() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = bios_ids();
+    let system = get_computer_system(bmc.clone(), &ids, "Lenovo").await?;
+    bmc.expect(Expect::get(
+        &ids.bios_id,
+        bios_payload(&ids.bios_id, json!({ "Actions": {} })),
+    ));
+    let bios = system.bios().await?.ok_or("BIOS missing")?;
+
+    assert!(matches!(
+        bios.reset().await,
+        Err(nv_redfish::Error::ActionNotAvailable)
+    ));
+    assert!(matches!(
+        bios.change_password(
+            "UefiAdminPassword".into(),
+            Some("old-secret".into()),
+            "new-secret".into(),
+        )
+        .await,
+        Err(nv_redfish::Error::ActionNotAvailable)
+    ));
+    Ok(())
+}
+
 fn bios_update(name: &str, value: &str) -> BiosUpdate {
     BiosUpdate::builder()
         .with_attributes(

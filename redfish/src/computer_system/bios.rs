@@ -93,6 +93,67 @@ impl<B: Bmc> Bios<B> {
             .await
     }
 
+    /// Reset BIOS attributes to their defaults.
+    ///
+    /// This invokes the advertised `Bios.ResetBios` action, equivalent to:
+    ///
+    /// ```text
+    /// POST <advertised Bios.ResetBios target>
+    /// {}
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the action is unavailable or invocation fails.
+    pub async fn reset(&self) -> Result<ModificationResponse<()>, Error<B>>
+    where
+        B::Error: nv_redfish_core::ActionError,
+    {
+        let actions = self
+            .data
+            .actions
+            .as_ref()
+            .ok_or(Error::ActionNotAvailable)?;
+        if actions.reset_bios.is_none() {
+            return Err(Error::ActionNotAvailable);
+        }
+        actions
+            .reset_bios(self.bmc.as_ref())
+            .await
+            .map_err(Error::Bmc)
+    }
+
+    /// Change or clear a BIOS password.
+    ///
+    /// This invokes the advertised `Bios.ChangePassword` action with
+    /// `PasswordName`, optional `OldPassword`, and `NewPassword`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the action is unavailable or invocation fails.
+    pub async fn change_password(
+        &self,
+        password_name: String,
+        old_password: Option<String>,
+        new_password: String,
+    ) -> Result<ModificationResponse<()>, Error<B>>
+    where
+        B::Error: nv_redfish_core::ActionError,
+    {
+        let actions = self
+            .data
+            .actions
+            .as_ref()
+            .ok_or(Error::ActionNotAvailable)?;
+        if actions.change_password.is_none() {
+            return Err(Error::ActionNotAvailable);
+        }
+        actions
+            .change_password(self.bmc.as_ref(), password_name, old_password, new_password)
+            .await
+            .map_err(Error::Bmc)
+    }
+
     /// Get bios attribute by key value.
     #[must_use]
     pub fn attribute<'a>(&'a self, name: &str) -> Option<BiosAttributeRef<'a>> {

@@ -19,16 +19,32 @@ limitations under the License.
   <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Core.V1.xml">
     <edmx:Include Namespace="Org.OData.Core.V1" Alias="OData"/>
   </edmx:Reference>
+  <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Capabilities.V1.xml">
+    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
+  </edmx:Reference>
   <edmx:DataServices>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="AmiManager">
       <EntityType Name="ConfigBMC" Abstract="true"/>
     </Schema>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="AmiManager.v1_0_0">
       <EntityType Name="ConfigBMC" BaseType="AmiManager.ConfigBMC">
-        <Property Name="LockoutHostControl" Type="AmiManager.v1_0_0.LockoutHostControlState" Nullable="false"/>
-        <Property Name="LockoutBiosVariableWriteMode" Type="AmiManager.v1_0_0.LockoutBiosVariableWriteMode" Nullable="false"/>
-        <Property Name="LockdownBiosSettingsChange" Type="AmiManager.v1_0_0.LockdownBiosSettingsChangeState" Nullable="false"/>
-        <Property Name="LockdownBiosUpgradeDowngrade" Type="AmiManager.v1_0_0.LockdownBiosUpgradeDowngradeState" Nullable="false"/>
+        <Annotation Term="Capabilities.UpdateRestrictions">
+          <Record>
+            <PropertyValue Property="Updatable" Bool="true"/>
+          </Record>
+        </Annotation>
+        <Property Name="LockoutHostControl" Type="AmiManager.v1_0_0.LockoutHostControlState" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+        <Property Name="LockoutBiosVariableWriteMode" Type="AmiManager.v1_0_0.LockoutBiosVariableWriteMode" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+        <Property Name="LockdownBiosSettingsChange" Type="AmiManager.v1_0_0.LockdownBiosSettingsChangeState" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+        <Property Name="LockdownBiosUpgradeDowngrade" Type="AmiManager.v1_0_0.LockdownBiosUpgradeDowngradeState" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
       </EntityType>
       <EnumType Name="LockoutHostControlState">
         <Member Name="Enable"/>

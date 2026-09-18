@@ -15,11 +15,13 @@
 //! Integration tests for AMI Manager OEM ConfigBMC support.
 
 use nv_redfish::manager::Manager;
+use nv_redfish::oem::ami::config_bmc::ConfigBmcUpdate;
 use nv_redfish::oem::ami::config_bmc::LockdownBiosSettingsChangeState;
 use nv_redfish::oem::ami::config_bmc::LockdownBiosUpgradeDowngradeState;
 use nv_redfish::oem::ami::config_bmc::LockoutBiosVariableWriteMode;
 use nv_redfish::oem::ami::config_bmc::LockoutHostControlState;
 use nv_redfish::ServiceRoot;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::json_merge;
 use nv_redfish_tests::Bmc;
@@ -71,6 +73,32 @@ async fn manager_oem_ami_config_bmc_supported() -> Result<(), Box<dyn StdError>>
         raw.lockdown_bios_upgrade_downgrade,
         Some(LockdownBiosUpgradeDowngradeState::Disable)
     );
+    let update = ConfigBmcUpdate::builder()
+        .with_lockout_host_control(LockoutHostControlState::Enable)
+        .with_lockout_bios_variable_write_mode(LockoutBiosVariableWriteMode::Enable)
+        .with_lockdown_bios_settings_change(LockdownBiosSettingsChangeState::Enable)
+        .with_lockdown_bios_upgrade_downgrade(LockdownBiosUpgradeDowngradeState::Enable)
+        .build();
+    let request = json!({
+        "LockoutHostControl": "Enable",
+        "LockoutBiosVariableWriteMode": "Enable",
+        "LockdownBiosSettingsChange": "Enable",
+        "LockdownBiosUpgradeDowngrade": "Enable"
+    });
+    bmc.expect(Expect::create(
+        &ids.config_bmc_id,
+        &request,
+        json!({ "Result": "Success" }),
+    ));
+    assert!(matches!(
+        config.apply(&update).await?,
+        ModificationResponse::Entity(())
+    ));
+    bmc.expect(Expect::create_empty(&ids.config_bmc_id, &request));
+    assert!(matches!(
+        config.apply(&update).await?,
+        ModificationResponse::Empty
+    ));
 
     Ok(())
 }

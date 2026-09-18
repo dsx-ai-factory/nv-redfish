@@ -145,7 +145,7 @@ nv-redfish-bmc-http = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 futures-core = { workspace = true }
-futures-util = { workspace = true }
+futures-util = { workspace = true, features = ["io"] }
 tagged-types = { workspace = true }
 
 [build-dependencies]

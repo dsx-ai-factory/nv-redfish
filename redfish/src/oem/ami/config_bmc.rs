@@ -16,6 +16,8 @@
 //! Support AMI Manager ConfigBMC OEM extension.
 
 use crate::core::Bmc;
+use crate::core::EntityTypeRef as _;
+use crate::core::ModificationResponse;
 use crate::core::NavProperty;
 use crate::core::ODataId;
 use crate::oem::ami::schema::ami_manager::ConfigBmc as ConfigBmcSchema;
@@ -23,9 +25,11 @@ use crate::oem::oem_value;
 use crate::schema::manager::Manager as ManagerSchema;
 use crate::Error;
 use crate::NvBmc;
-use std::marker::PhantomData;
+use serde_json::Value;
 use std::sync::Arc;
 
+#[doc(inline)]
+pub use crate::oem::ami::schema::ami_manager::ConfigBmcUpdate;
 #[doc(inline)]
 pub use crate::oem::ami::schema::ami_manager::LockdownBiosSettingsChangeState;
 #[doc(inline)]
@@ -37,8 +41,8 @@ pub use crate::oem::ami::schema::ami_manager::LockoutHostControlState;
 
 /// Represents a AMI OEM exstension to Manager schema. BMC Config object.
 pub struct ConfigBmc<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<ConfigBmcSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> ConfigBmc<B> {
@@ -65,8 +69,8 @@ impl<B: Bmc> ConfigBmc<B> {
                 bmc.expand_property(&NavProperty::new_reference(odata_id))
                     .await
                     .map(|data| Self {
+                        bmc: bmc.clone(),
                         data,
-                        _marker: PhantomData,
                     })
                     .map(Some)
             } else {
@@ -84,5 +88,35 @@ impl<B: Bmc> ConfigBmc<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<ConfigBmcSchema> {
         self.data.clone()
+    }
+
+    /// Apply AMI BMC lockdown configuration.
+    ///
+    /// AMI exposes this mutation as a `POST` to the ConfigBMC resource rather
+    /// than a conventional Redfish `PATCH`:
+    ///
+    /// ```text
+    /// POST <ConfigBMC @odata.id>
+    /// {
+    ///   "LockoutHostControl": "...",
+    ///   "LockoutBiosVariableWriteMode": "...",
+    ///   "LockdownBiosSettingsChange": "...",
+    ///   "LockdownBiosUpgradeDowngrade": "..."
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn apply(
+        &self,
+        update: &ConfigBmcUpdate,
+    ) -> Result<ModificationResponse<()>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .create::<_, Value>(self.data.odata_id(), update)
+            .await
+            .map(|response| response.map_entity(drop))
+            .map_err(Error::Bmc)
     }
 }

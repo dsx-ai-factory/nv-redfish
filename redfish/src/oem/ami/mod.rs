@@ -17,6 +17,8 @@
 
 #[cfg(feature = "managers")]
 pub mod config_bmc;
+#[cfg(feature = "update-service")]
+pub mod update_service;
 
 pub mod ami_service_root;
 
