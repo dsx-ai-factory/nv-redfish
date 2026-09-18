@@ -89,6 +89,8 @@ compile-only-feature-sets = computer-systems,processors,controls \
              environment-metrics,memory,oem-nvidia \
              oem-dell \
              oem-ami \
+             managers,oem-ami \
+             update-service,oem-ami \
              oem-lenovo \
              accounts,oem-lenovo \
              computer-systems,oem-lenovo \

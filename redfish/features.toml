@@ -1019,6 +1019,14 @@ csdl_files = []
 
 [[oem-features]]
 vendor = "ami"
+name = "update-service"
+oem_csdl_files = [
+    "AmiUpdateService_v1.xml",
+]
+csdl_files = []
+
+[[oem-features]]
+vendor = "ami"
 name = "oem-ami"
 oem_csdl_files = [
     "AMIServiceRoot_v1.xml",

@@ -35,7 +35,6 @@ use crate::ServiceRoot;
 
 use nv_redfish_core::Bmc;
 use nv_redfish_core::DataStream;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::EntityTypeRef as _;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
@@ -51,7 +50,6 @@ use software_inventory::SoftwareInventoryCollection;
 pub use crate::schema::update_service::TransferProtocolType;
 #[doc(inline)]
 pub use crate::schema::update_service::UpdateParametersUpdate as MultipartUpdateParameters;
-#[cfg(feature = "update-service-deprecated")]
 #[doc(inline)]
 pub use crate::schema::update_service::UpdateServiceUpdate;
 #[doc(inline)]
@@ -266,15 +264,13 @@ impl<B: Bmc> UpdateService<B> {
             .map_err(Error::Bmc)
     }
 
-    /// Update this service with deprecated generated `UpdateServiceUpdate` fields.
+    /// Update this service with generated `UpdateServiceUpdate` fields.
     ///
-    /// Use this for standard `HttpPushUriOptions`, `HttpPushUriTargets`, and
-    /// related busy flags before or after an `HttpPushUri` upload.
+    /// This also supports composing OEM fields into the standard update.
     ///
     /// # Errors
     ///
     /// Returns an error if the update request fails.
-    #[cfg(feature = "update-service-deprecated")]
     pub async fn update(
         &self,
         update: &UpdateServiceUpdate,
