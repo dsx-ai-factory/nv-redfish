@@ -13,14 +13,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[allow(clippy::doc_markdown)]
-#[allow(clippy::absolute_paths)]
-#[allow(clippy::option_option)]
-#[allow(clippy::missing_const_for_fn)]
-#[allow(clippy::struct_field_names)]
-#[allow(clippy::too_long_first_doc_paragraph)]
-#[allow(clippy::unused_trait_names)]
-#[allow(missing_docs)]
-pub mod redfish {
-    include!(concat!(env!("OUT_DIR"), "/oem-lenovo.rs"));
+//! Shared Lenovo OEM update composition.
+
+use crate::schema::resource::OemUpdate;
+use serde::Serialize;
+use serde_json::Value;
+
+const OEM_KEY: &str = "Lenovo";
+
+/// Wrap a typed Lenovo value in the standard Redfish OEM update container.
+pub fn oem_update<T: Serialize>(
+    existing: Option<OemUpdate>,
+    update: &T,
+) -> Result<OemUpdate, serde_json::Error> {
+    let mut additional_properties = existing
+        .and_then(|oem| oem.additional_properties.as_object().cloned())
+        .unwrap_or_default();
+    additional_properties.insert(OEM_KEY.to_string(), serde_json::to_value(update)?);
+    Ok(OemUpdate {
+        additional_properties: Value::Object(additional_properties),
+    })
 }

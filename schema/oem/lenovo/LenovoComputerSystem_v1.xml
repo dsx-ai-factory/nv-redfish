@@ -19,20 +19,43 @@ limitations under the License.
   <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Core.V1.xml">
     <edmx:Include Namespace="Org.OData.Core.V1" Alias="OData"/>
   </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/Schemas/ComputerSystem_v1.xml">
+    <edmx:Include Namespace="ComputerSystem"/>
+    <edmx:Include Namespace="ComputerSystem.v1_0_0"/>
+  </edmx:Reference>
+  <edmx:Reference Uri="/redfish/v1/metadata/LenovoBootManagerCollection_v1.xml">
+    <edmx:Include Namespace="LenovoBootManagerCollection"/>
+  </edmx:Reference>
   <edmx:DataServices>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoComputerSystem">
       <Annotation Term="Redfish.OwningEntity" String="Lenovo"/>
-      <ComplexType Name="LenovoSystemProperties" Abstract="true"/>
+      <ComplexType Name="LenovoSystemProperties" Abstract="true">
+        <NavigationProperty Name="BootSettings" Type="LenovoBootManagerCollection.LenovoBootManagerCollection">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
+        </NavigationProperty>
+      </ComplexType>
+      <Action Name="SystemReset" IsBound="true">
+        <Parameter Name="ComputerSystem" Type="ComputerSystem.v1_0_0.OemActions"/>
+        <Parameter Name="ResetType" Type="LenovoComputerSystem.v1_0_0.SystemResetType" Nullable="false"/>
+      </Action>
     </Schema>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoComputerSystem.v1_0_0">
       <Annotation Term="Redfish.OwningEntity" String="Lenovo"/>
       <ComplexType Name="LenovoSystemProperties" BaseType="LenovoComputerSystem.LenovoSystemProperties">
-        <Property Name="FrontPanelUSB" Type="LenovoComputerSystem.v1_0_0.USBManagementPortAssignment"/>
-        <Property Name="USBManagementPortAssignment" Type="LenovoComputerSystem.v1_0_0.USBManagementPortAssignment"/>
+        <Property Name="FrontPanelUSB" Type="LenovoComputerSystem.v1_0_0.USBManagementPortAssignment">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+        <Property Name="USBManagementPortAssignment" Type="LenovoComputerSystem.v1_0_0.USBManagementPortAssignment">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
       </ComplexType>
       <ComplexType Name="USBManagementPortAssignment">
-        <Property Name="FPMode" Type="LenovoComputerSystem.v1_0_0.FPMode"/>
-        <Property Name="PortSwitchingTo" Type="LenovoComputerSystem.v1_0_0.PortSwitchingTo"/>
+        <Property Name="FPMode" Type="LenovoComputerSystem.v1_0_0.FPMode">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
+        <Property Name="PortSwitchingTo" Type="LenovoComputerSystem.v1_0_0.PortSwitchingTo">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
       </ComplexType>
       <EnumType Name="FPMode">
         <Member Name="Server"/>
@@ -42,6 +65,9 @@ limitations under the License.
       <EnumType Name="PortSwitchingTo">
         <Member Name="BMC"/>
         <Member Name="Server"/>
+      </EnumType>
+      <EnumType Name="SystemResetType">
+        <Member Name="ACPowerCycle"/>
       </EnumType>
     </Schema>
   </edmx:DataServices>

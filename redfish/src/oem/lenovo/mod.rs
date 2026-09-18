@@ -17,6 +17,20 @@
 
 mod compiled_schema;
 
+#[cfg(any(
+    feature = "accounts",
+    feature = "computer-systems",
+    feature = "managers"
+))]
+mod update;
+
+#[cfg(any(
+    feature = "accounts",
+    feature = "computer-systems",
+    feature = "managers"
+))]
+pub(crate) use update::oem_update;
+
 /// Support of Lenovo Manager OEM attributes.
 #[cfg(feature = "managers")]
 pub mod manager;
@@ -29,9 +43,28 @@ pub mod security_service;
 #[cfg(feature = "computer-systems")]
 pub mod computer_system;
 
+/// Support of Lenovo persistent boot-order resources.
+#[cfg(feature = "computer-systems")]
+pub mod boot_manager;
+
+/// Support of Lenovo ComputerSystem OEM actions.
+#[cfg(feature = "computer-systems")]
+pub mod computer_system_actions;
+
+/// Support of Lenovo AccountService OEM attributes.
+#[cfg(feature = "accounts")]
+pub mod account_service;
+
 /// Support of Lenovo Port OEM attributes.
 #[cfg(feature = "ports")]
 pub mod port;
+
+#[cfg(feature = "computer-systems")]
+#[doc(inline)]
+pub use computer_system_actions::LenovoComputerSystemActions;
+#[cfg(feature = "computer-systems")]
+#[doc(inline)]
+pub use computer_system_actions::SystemResetType;
 
 /// Lenovo OEM Schema.
 pub use compiled_schema::redfish as schema;

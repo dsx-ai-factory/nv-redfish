@@ -4,8 +4,6 @@
 
 pwd := $(shell pwd)
 
-maybe-lenovo-check = $(if $(wildcard $(pwd)/oem/lenovo/*.xml),cargo check --features oem-lenovo)
-
 space := $(empty) $(empty)
 comma :=,
 indent := $(empty)	$(empty)
@@ -91,6 +89,11 @@ compile-only-feature-sets = computer-systems,processors,controls \
              environment-metrics,memory,oem-nvidia \
              oem-dell \
              oem-ami \
+             oem-lenovo \
+             accounts,oem-lenovo \
+             computer-systems,oem-lenovo \
+             managers,oem-lenovo \
+             chassis,network-adapters,ports,oem-lenovo \
              accounts,oem-dell \
              accounts,managers,oem-dell \
              managers,oem-dell \
@@ -111,7 +114,6 @@ define build-and-test
 	cargo clippy -p nv-redfish-dispatcher --all-targets --all-features
 	cargo clippy -p nv-redfish-bmc-http --bench cache
 	$(foreach f,$(compile-only-feature-sets),$(call check-one-feature,$f))
-	$(maybe-lenovo-check)
 	cargo check -p nv-redfish
 	cargo check -p nv-redfish-bmc-http --no-default-features --features http-extras
 	cargo check -p nv-redfish-tests --tests
