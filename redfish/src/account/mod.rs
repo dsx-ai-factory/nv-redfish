@@ -34,8 +34,6 @@ mod collection;
 /// Account inside account service.
 mod item;
 
-#[cfg(feature = "oem-lenovo")]
-use crate::oem::lenovo::account_service::update_request as lenovo_update_request;
 use crate::patch_support::JsonValue;
 use crate::patch_support::ReadPatchFn;
 use crate::schema::account_service::AccountService as SchemaAccountService;
@@ -49,9 +47,6 @@ use nv_redfish_core::NavProperty;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
-#[doc(inline)]
-#[cfg(feature = "oem-lenovo")]
-pub use crate::oem::lenovo::account_service::LenovoAccountServiceUpdate;
 #[doc(inline)]
 pub use crate::schema::account_service::AccountServiceUpdate;
 #[doc(inline)]
@@ -203,22 +198,6 @@ impl<B: Bmc> AccountService<B> {
                     })
             })
             .await
-    }
-
-    /// Update standard and Lenovo-specific account policy settings together.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the OEM update cannot be serialized or if updating
-    /// or fetching the returned account service fails.
-    #[cfg(feature = "oem-lenovo")]
-    pub async fn update_oem_lenovo(
-        &self,
-        update: AccountServiceUpdate,
-        lenovo_update: &LenovoAccountServiceUpdate,
-    ) -> Result<ModificationResponse<Self>, Error<B>> {
-        let update = lenovo_update_request(update, lenovo_update).map_err(Error::Json)?;
-        self.update(&update).await
     }
 
     /// Get the accounts collection.

@@ -21,11 +21,25 @@ use crate::schema::account_service::AccountServiceUpdate;
 #[doc(inline)]
 pub use crate::oem::lenovo::schema::lenovo_account_service::LenovoAccountServicePropertiesUpdate as LenovoAccountServiceUpdate;
 
-/// Merge Lenovo account settings into a standard AccountService update.
-pub(crate) fn update_request(
-    mut update: AccountServiceUpdate,
-    lenovo_update: &LenovoAccountServiceUpdate,
-) -> Result<AccountServiceUpdate, serde_json::Error> {
-    update.oem = Some(oem_update(update.oem.take(), lenovo_update)?);
-    Ok(update)
+/// Adds Lenovo OEM settings to a standard AccountService update.
+pub trait LenovoAccountServiceUpdateExt: Sized {
+    /// Merge Lenovo OEM settings while preserving other OEM values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Lenovo update cannot be serialized.
+    fn with_oem_lenovo(
+        self,
+        lenovo_update: LenovoAccountServiceUpdate,
+    ) -> Result<Self, serde_json::Error>;
+}
+
+impl LenovoAccountServiceUpdateExt for AccountServiceUpdate {
+    fn with_oem_lenovo(
+        mut self,
+        lenovo_update: LenovoAccountServiceUpdate,
+    ) -> Result<Self, serde_json::Error> {
+        self.oem = Some(oem_update(self.oem.take(), &lenovo_update)?);
+        Ok(self)
+    }
 }
