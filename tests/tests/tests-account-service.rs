@@ -748,6 +748,66 @@ async fn create_account_slot_defined_rechecks_stale_candidate() -> TestResult<()
 }
 
 #[test]
+async fn create_account_slot_defined_skips_unreadable_slots() -> TestResult<()> {
+    let bmc = Arc::new(Bmc::default());
+    let root_id = ODataId::service_root();
+
+    let account_service = get_account_service_with_config(
+        bmc.clone(),
+        &root_id,
+        "Dell",
+        IdracVersion::IDRAC9.account_service_config(),
+    )
+    .await?;
+
+    let accounts_id = format!("{}/Accounts", account_service.raw().odata_id());
+    let unreadable_member_id = format!("{accounts_id}/3");
+    let unreadable_candidate_id = format!("{accounts_id}/4");
+    let available_account_id = format!("{accounts_id}/5");
+
+    let accounts = get_account_collection(
+        bmc.clone(),
+        &account_service,
+        json!([
+            { ODATA_ID: &unreadable_member_id },
+            slot_member(&accounts_id, 4, false, "", None),
+            slot_member(&accounts_id, 5, false, "", None),
+        ]),
+    )
+    .await?;
+
+    bmc.expect(Expect::get(
+        &unreadable_member_id,
+        json!({ "malformed": true }),
+    ));
+
+    bmc.expect(Expect::get(
+        &unreadable_candidate_id,
+        json!({ "malformed": true }),
+    ));
+
+    bmc.expect(Expect::get(
+        &available_account_id,
+        slot_member(&accounts_id, 5, false, "", Some("slot-5-current")),
+    ));
+
+    bmc.expect(Expect::update(
+        &available_account_id,
+        serde_json::to_value(slot_update())?,
+        json_merge([
+            &slot_member(&accounts_id, 5, true, "user", None),
+            &json!({ "RoleId": "Operator" }),
+        ]),
+    ));
+
+    let account = into_entity(accounts.create_account(create_request("user")).await?);
+
+    assert_eq!(account.raw().id, "5");
+
+    Ok(())
+}
+
+#[test]
 async fn create_account_slot_defined_requires_etag() -> TestResult<()> {
     let (bmc, accounts_id, accounts) = slot_account_fixture(&[(3, false, "")]).await?;
     let account_id = format!("{accounts_id}/3");

@@ -170,12 +170,17 @@ impl<B: Bmc> AccountCollection<B> {
         create: ManagerAccountCreate,
     ) -> Result<ModificationResponse<Account<B>>, Error<B>> {
         if let Some(cfg) = &self.config.fixed_slots {
-            // Collection order is not a stable allocation policy. Fetch every
-            // member first, then consider disabled numeric slots in ascending
-            // order within the configured bounds.
+            // Collection order is not a stable allocation policy. Inspect each
+            // readable member, then consider disabled numeric slots in ascending
+            // order within the configured bounds. An unreadable slot cannot be
+            // reused safely, but it must not hide later usable slots.
             let mut candidates = Vec::new();
+
             for nav in &self.collection.members {
-                let account = Account::new(&self.bmc, nav, &self.config.account).await?;
+                let Ok(account) = Account::new(&self.bmc, nav, &self.config.account).await else {
+                    continue;
+                };
+
                 let Ok(id) = account.raw().id.parse::<u32>() else {
                     continue;
                 };
@@ -191,12 +196,16 @@ impl<B: Bmc> AccountCollection<B> {
                 // candidate immediately before updating it so concurrent
                 // account creation cannot reuse stale slot state. Require a
                 // fresh ETag so the HTTP BMC cannot fall back to `If-Match: *`.
-                let account = Account::new(
+                let Ok(account) = Account::new(
                     &self.bmc,
                     &NavProperty::new_reference(account.raw().odata_id().clone()),
                     &self.config.account,
                 )
-                .await?;
+                .await
+                else {
+                    continue;
+                };
+
                 if account.is_enabled() || account.raw().etag().is_none() {
                     continue;
                 }
