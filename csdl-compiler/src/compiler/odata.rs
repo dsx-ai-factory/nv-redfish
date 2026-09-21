@@ -56,6 +56,8 @@ pub struct OData<'a> {
     pub long_description: Option<LongDescriptionRef<'a>>,
     /// Permissions for the element.
     pub permissions: Option<Permissions>,
+    /// Whether the value is serialized as a URI string.
+    pub is_url: bool,
     /// Additional properties can be added.
     pub additional_properties: Option<AdditionalProperties>,
     /// Insertability (Capabilities.InsertRestrictions).
@@ -75,6 +77,7 @@ impl<'a> OData<'a> {
             description: src.odata_description(),
             long_description: src.odata_long_description(),
             permissions: src.odata_permissions(),
+            is_url: src.odata_is_url(),
             additional_properties: src.odata_additional_properties(),
             insertable: src.capabilities_insertable(),
             updatable: src.capabilities_updatable(),
@@ -88,6 +91,7 @@ impl<'a> OData<'a> {
         self.description.is_none()
             && self.long_description.is_none()
             && self.permissions.is_none()
+            && !self.is_url
             && self.insertable.is_none()
             && self.updatable.is_none()
             && self.deletable.is_none()

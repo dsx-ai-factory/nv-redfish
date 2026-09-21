@@ -358,6 +358,7 @@ impl<'a> ModDef<'a> {
             tokens.extend(quote! {
                 #doc
                 #[allow(unused_imports)]
+                #[allow(clippy::unused_trait_names)]
                 pub mod #name {
                     #content
                 }

@@ -169,6 +169,13 @@ pub trait ODataAnnotations {
             })
     }
 
+    fn odata_is_url(&self) -> bool {
+        self.annotations()
+            .iter()
+            .find(|annotation| annotation.is_odata_annotation("IsURL"))
+            .is_some_and(|annotation| annotation.bool_value.unwrap_or(true))
+    }
+
     fn capabilities_insertable(&self) -> Option<Insertable<'_>> {
         self.annotations()
             .iter()
