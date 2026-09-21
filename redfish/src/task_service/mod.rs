@@ -49,7 +49,7 @@ pub type TaskLink<B> = EntityLink<B, TaskSchema>;
 ///     return Ok(());
 /// };
 ///
-/// let task_link = task_service.task_link(async_task)?;
+/// let task_link = task_service.task_link(&async_task)?;
 /// let task = task_link.fetch().await?;
 ///
 /// println!("{:?}", task.task_state);
@@ -102,7 +102,7 @@ impl<B: Bmc> TaskService<B> {
     ///
     /// Returns error if the task location is not a child of this service's Tasks
     /// collection.
-    pub fn task_link(&self, task: AsyncTask) -> Result<TaskLink<B>, Error<B>> {
+    pub fn task_link(&self, task: &AsyncTask) -> Result<TaskLink<B>, Error<B>> {
         let Some(tasks) = self.data.tasks.as_ref() else {
             return Err(Error::TaskServiceTasksUnavailable);
         };

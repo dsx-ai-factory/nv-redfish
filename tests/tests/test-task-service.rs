@@ -102,7 +102,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
         retry_after: None,
     };
 
-    let Err(error) = task_service.task_link(invalid_task) else {
+    let Err(error) = task_service.task_link(&invalid_task) else {
         return Err(String::from("expected invalid task location").into());
     };
 
@@ -117,7 +117,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
         retry_after: None,
     };
 
-    let Err(error) = task_service.task_link(collection_task) else {
+    let Err(error) = task_service.task_link(&collection_task) else {
         return Err(String::from("expected collection location to be invalid").into());
     };
 
@@ -132,7 +132,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
         retry_after: None,
     };
 
-    let task_link = task_service.task_link(async_task)?;
+    let task_link = task_service.task_link(&async_task)?;
     assert_eq!(task_link.odata_id().to_string(), TASK_PATH);
 
     let task = task_link.fetch().await?;
