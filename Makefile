@@ -18,7 +18,9 @@ all-std-features = accounts \
                    assembly \
                    bios \
                    boot-options \
+                   certificates \
                    chassis \
+                   component-integrity \
                    computer-systems \
                    ethernet-interfaces \
                    job-service \

@@ -88,9 +88,15 @@ pub mod mac_address;
 /// Accounts Service.
 #[cfg(feature = "accounts")]
 pub mod account;
+/// Certificates.
+#[cfg(feature = "certificates")]
+pub mod certificate;
 /// Chassis.
 #[cfg(feature = "chassis")]
 pub mod chassis;
+/// Component integrity and attestation.
+#[cfg(feature = "component-integrity")]
+pub mod component_integrity;
 /// Computer System.
 #[cfg(feature = "computer-systems")]
 pub mod computer_system;

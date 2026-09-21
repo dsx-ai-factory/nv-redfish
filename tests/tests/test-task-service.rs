@@ -98,6 +98,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
             "/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/Jobs/1".to_string(),
         )
         .into(),
+        task_resource: None,
         retry_after: None,
     };
 
@@ -112,6 +113,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
 
     let collection_task = AsyncTask {
         location: ODataId::from("/redfish/v1/TaskService/Tasks".to_string()).into(),
+        task_resource: None,
         retry_after: None,
     };
 
@@ -125,7 +127,8 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
     );
 
     let async_task = AsyncTask {
-        location: ODataId::from(TASK_PATH.to_string()).into(),
+        location: ODataId::from("/redfish/v1/TaskService/TaskMonitors/task-1".to_string()).into(),
+        task_resource: Some(ODataId::from(TASK_PATH.to_string())),
         retry_after: None,
     };
 

@@ -158,6 +158,13 @@ impl BmcQuirks {
         self.platform == Some(Platform::AmiViking)
     }
 
+    /// H100 Viking reports the standard `PEMchain` certificate type as
+    /// `PEMChain`.
+    #[cfg(feature = "component-integrity")]
+    pub(crate) const fn certificate_type_wrong_pem_chain_case(&self) -> bool {
+        matches!(self.platform, Some(Platform::AmiViking))
+    }
+
     /// In some implementations BMC ReleaseDate is incorrectly set to
     /// "0000-00-00T00:00:00+00:00" in ComputerSystem/LastResetTime
     /// This prevents ComputerSystem to be correctly parsed because

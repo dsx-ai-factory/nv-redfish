@@ -73,7 +73,8 @@ Common feature groups:
   excerpt models.
 - `std-redfish`: enable a broad standard Redfish surface.
 - Service features: `accounts`, `assembly`, `bios`, `boot-options`,
-  `chassis`, `computer-systems`, `ethernet-interfaces`, `event-service`,
+  `certificates`, `chassis`, `component-integrity`, `computer-systems`,
+  `ethernet-interfaces`, `event-service`,
   `host-interfaces`, `log-services`, `managers`, `manager-network-protocol`, `memory`,
   `network-adapters`, `network-device-functions`, `pcie-devices`, `ports`, `power`,
   `power-supplies`, `processors`, `secure-boot`, `sensors`,

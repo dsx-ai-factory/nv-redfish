@@ -47,6 +47,30 @@ patterns = [
 ]
 
 [[features]]
+name = "certificates"
+csdl_files = [
+    "Certificate_v1.xml",
+]
+patterns = [
+    "Certificate.*",
+    "Certificate.*.*",
+]
+root_patterns = [
+    "Certificate.*.*",
+]
+
+[[features]]
+name = "component-integrity"
+csdl_files = [
+    "ComponentIntegrity_v1.xml",
+    "ComponentIntegrityCollection_v1.xml",
+]
+patterns = [
+    "ComponentIntegrity.*",
+    "ComponentIntegrityCollection.*",
+]
+
+[[features]]
 name = "chassis"
 csdl_files = [
     "Chassis_v1.xml",

@@ -89,11 +89,14 @@ impl<B: Bmc> TaskService<B> {
         self.data.clone()
     }
 
-    /// Create a task link from an asynchronous operation result.
+    /// Create a Task resource link from an asynchronous operation result.
     ///
-    /// The task location must be a child of this service's Tasks collection,
-    /// such as `/redfish/v1/TaskService/Tasks/{id}`. The returned link does not
-    /// fetch the task until [`TaskLink::fetch`] is called.
+    /// The Task resource from the response body is preferred when present,
+    /// because the response `Location` can identify a task monitor rather than
+    /// a Task resource. The selected URI must be a child of this service's
+    /// Tasks collection, such as `/redfish/v1/TaskService/Tasks/{id}`. The
+    /// returned link does not fetch the task until [`TaskLink::fetch`] is
+    /// called.
     ///
     /// # Errors
     ///
@@ -105,7 +108,7 @@ impl<B: Bmc> TaskService<B> {
         };
 
         let task_collection = tasks.odata_id();
-        let task_location = task.location.0;
+        let task_location = task.task_status_uri().clone();
         if task_collection == &task_location || !task_collection.is_path_prefix(&task_location) {
             return Err(Error::TaskLocationNotInTaskService {
                 task_location,

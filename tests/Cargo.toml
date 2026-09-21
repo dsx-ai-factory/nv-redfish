@@ -29,6 +29,7 @@ nv-redfish = { workspace = true, features = [
     "boot-options",
     "storages",
     "chassis",
+    "component-integrity",
     "controls",
     "computer-systems",
     "ethernet-interfaces",

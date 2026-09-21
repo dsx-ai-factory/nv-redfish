@@ -211,8 +211,25 @@ pub struct AsyncTask {
     /// Location to use for polling completion.
     pub location: AsyncTaskLocation,
 
+    /// Persistent Task resource returned in the response body, when present.
+    ///
+    /// This can differ from `location`, which may identify an ephemeral task
+    /// monitor rather than a resource containing `TaskState`.
+    pub task_resource: Option<ODataId>,
+
     /// Recommended duration to wait before polling again.
     pub retry_after: Option<Duration>,
+}
+
+impl AsyncTask {
+    /// Get the URI that exposes the Task resource state.
+    ///
+    /// Falls back to the operation monitor location when the response did not
+    /// include a separate Task resource.
+    #[must_use]
+    pub fn task_status_uri(&self) -> &ODataId {
+        self.task_resource.as_ref().unwrap_or(&self.location.0)
+    }
 }
 
 /// Outcome of a mutating Redfish operation.
@@ -403,6 +420,7 @@ mod tests {
     fn task_response() -> ModificationResponse<()> {
         ModificationResponse::Task(AsyncTask {
             location: ODataId::from("/redfish/v1/TaskService/Tasks/1".to_string()).into(),
+            task_resource: None,
             retry_after: None,
         })
     }

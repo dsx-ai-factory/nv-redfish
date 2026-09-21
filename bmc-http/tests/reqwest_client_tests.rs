@@ -994,6 +994,168 @@ mod reqwest_client_tests {
     }
 
     #[tokio::test]
+    async fn test_action_body_task_is_normalized_for_200_and_201(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for status in [200, 201] {
+            let mock_server = MockServer::start().await;
+            let action_path = "/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements";
+            let task_path = format!("/redfish/v1/TaskService/Tasks/body-{status}");
+            let monitor_path = format!("/redfish/v1/TaskService/TaskMonitors/{status}");
+            let action_request = ActionRequest {
+                parameter: "Nonce".to_string(),
+            };
+
+            Mock::given(method("POST"))
+                .and(path(action_path))
+                .and(body_json(&action_request))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .insert_header("Location", &monitor_path)
+                        .insert_header("Retry-After", "4")
+                        .set_body_json(serde_json::json!({
+                            "@odata.id": task_path,
+                            "@odata.type": "#Task.v1_4_3.Task",
+                            "Id": status.to_string()
+                        })),
+                )
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let bmc = create_test_bmc(&mock_server);
+            let action = create_test_action(action_path);
+            let response = bmc.action(&action, &action_request).await?;
+            let ModificationResponse::Task(task) = response else {
+                return Err(format!("expected task response for HTTP {status}").into());
+            };
+            assert_eq!(task.location.0.to_string(), monitor_path);
+            assert_eq!(
+                task.task_resource.as_ref().map(ToString::to_string),
+                Some(task_path)
+            );
+            assert_eq!(task.retry_after, Some(Duration::from_secs(4)));
+            mock_server.verify().await;
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_action_202_preserves_monitor_and_task_resource(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let action_path = "/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements";
+        let monitor_path = "/redfish/v1/TaskService/TaskMonitors/HGX_0";
+        let task_path = "/redfish/v1/TaskService/Tasks/HGX_0";
+        let action_request = ActionRequest {
+            parameter: "Nonce".to_string(),
+        };
+
+        Mock::given(method("POST"))
+            .and(path(action_path))
+            .and(body_json(&action_request))
+            .respond_with(
+                ResponseTemplate::new(202)
+                    .insert_header("Location", monitor_path)
+                    .insert_header("Retry-After", "30")
+                    .set_body_json(serde_json::json!({
+                        "@odata.id": task_path,
+                        "@odata.type": "#Task.v1_4_3.Task",
+                        "Id": "HGX_0",
+                        "TaskState": "Running"
+                    })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let action = create_test_action(action_path);
+        let response = bmc.action(&action, &action_request).await?;
+        let ModificationResponse::Task(task) = response else {
+            return Err(String::from("expected task response").into());
+        };
+        assert_eq!(task.location.0.to_string(), monitor_path);
+        assert_eq!(
+            task.task_resource.as_ref().map(ToString::to_string),
+            Some(task_path.to_string())
+        );
+        assert_eq!(task.task_status_uri().to_string(), task_path);
+        assert_eq!(task.retry_after, Some(Duration::from_secs(30)));
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_action_task_body_without_location_remains_invalid() {
+        let mock_server = MockServer::start().await;
+        let action_path = "/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements";
+        let action_request = ActionRequest {
+            parameter: "Nonce".to_string(),
+        };
+
+        Mock::given(method("POST"))
+            .and(path(action_path))
+            .and(body_json(&action_request))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.id": "/redfish/v1/TaskService/Tasks/42",
+                "@odata.type": "#Task.v1_4_3.Task",
+                "Id": "42"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let action = create_test_action(action_path);
+        let error = bmc
+            .action(&action, &action_request)
+            .await
+            .expect_err("Task body without Location must be rejected");
+        let BmcError::InvalidResponse { status, text, .. } = error else {
+            panic!("unexpected error: {}", error);
+        };
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(text, "successful Task body without Location header");
+        mock_server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_action_202_task_body_without_location_remains_invalid() {
+        let mock_server = MockServer::start().await;
+        let action_path = "/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements";
+        let action_request = ActionRequest {
+            parameter: "Nonce".to_string(),
+        };
+
+        Mock::given(method("POST"))
+            .and(path(action_path))
+            .and(body_json(&action_request))
+            .respond_with(ResponseTemplate::new(202).set_body_json(serde_json::json!({
+                "@odata.id": "/redfish/v1/TaskService/Tasks/42",
+                "@odata.type": "#Task.v1_4_3.Task",
+                "Id": "42"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let action = create_test_action(action_path);
+        let error = bmc
+            .action(&action, &action_request)
+            .await
+            .expect_err("202 without Location must be rejected");
+        let BmcError::InvalidResponse { status, text, .. } = error else {
+            panic!("unexpected error: {}", error);
+        };
+        assert_eq!(status, reqwest::StatusCode::ACCEPTED);
+        assert_eq!(text, "202 Accepted without Location header");
+        mock_server.verify().await;
+    }
+
+    #[tokio::test]
     async fn test_action_request_absolute_target() -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;
         let action_path = "/redfish/v1/systems/1/Actions/ComputerSystem.Reset";
