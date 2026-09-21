@@ -21,12 +21,11 @@ use std::sync::Arc;
 use nv_redfish::certificate::CertificateType;
 use nv_redfish::component_integrity::ComponentIntegrity;
 use nv_redfish::component_integrity::ComponentIntegrityType;
+use nv_redfish::core::AsyncTask;
 use nv_redfish::Error;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
-use nv_redfish_tests::assert_task;
-use nv_redfish_tests::async_task;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Expect;
 use nv_redfish_tests::ODATA_ID;
@@ -136,13 +135,13 @@ async fn viking_certificate_normalizes_pem_chain_spelling() -> Result<(), Box<dy
 }
 
 #[tokio::test]
-async fn spdm_signed_measurements_use_advertised_viking_target() -> Result<(), Box<dyn StdError>> {
+async fn spdm_signed_measurements_return_synchronous_evidence() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
-    let component = component(bmc.clone(), VIKING_ACTION_TARGET).await?;
+    let component = component(bmc.clone(), NVIDIA_ACTION_TARGET).await?;
     let nonce = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     bmc.expect(Expect::action(
-        VIKING_ACTION_TARGET,
+        NVIDIA_ACTION_TARGET,
         json!({
             "Nonce": nonce,
             "SlotId": 0,
@@ -169,6 +168,36 @@ async fn spdm_signed_measurements_use_advertised_viking_target() -> Result<(), B
 }
 
 #[tokio::test]
+async fn viking_signed_measurements_use_advertised_target_and_preserve_task(
+) -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let component = component(bmc.clone(), VIKING_ACTION_TARGET).await?;
+    let nonce = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let task_id = "/redfish/v1/TaskService/Tasks/89";
+
+    bmc.expect(Expect::action_task(
+        VIKING_ACTION_TARGET,
+        json!({ "Nonce": nonce }),
+        AsyncTask {
+            location: ODataId::from(task_id.to_string()).into(),
+            task_resource: Some(ODataId::from(task_id.to_string())),
+            retry_after: None,
+        },
+    ));
+
+    let ModificationResponse::Task(task) = component
+        .spdm_get_signed_measurements(Some(nonce.to_string()), None, None)
+        .await?
+    else {
+        return Err("expected asynchronous signed measurements".into());
+    };
+    assert_eq!(task.location.0.to_string(), task_id);
+    assert_eq!(task.task_status_uri().to_string(), task_id);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn spdm_signed_measurements_fetch_nvidia_data_endpoint() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let component = component(bmc.clone(), NVIDIA_ACTION_TARGET).await?;
@@ -187,29 +216,6 @@ async fn spdm_signed_measurements_fetch_nvidia_data_endpoint() -> Result<(), Box
     let evidence = component.spdm_signed_measurements_data().await?;
     assert_eq!(evidence.raw().signed_measurements, "signed-evidence");
     assert_eq!(evidence.raw().version, "1.1.0");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn spdm_signed_measurements_preserve_async_task() -> Result<(), Box<dyn StdError>> {
-    let bmc = Arc::new(Bmc::default());
-    let component = component(bmc.clone(), NVIDIA_ACTION_TARGET).await?;
-    let task_id = "/redfish/v1/TaskService/Tasks/42";
-
-    bmc.expect(Expect::action_task(
-        NVIDIA_ACTION_TARGET,
-        json!({}),
-        async_task(task_id, 4),
-    ));
-
-    assert_task(
-        component
-            .spdm_get_signed_measurements(None, None, None)
-            .await?,
-        task_id,
-        4,
-    );
 
     Ok(())
 }
