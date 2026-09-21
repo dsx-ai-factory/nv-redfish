@@ -15,6 +15,7 @@
 //! Integration tests for NVIDIA chassis OEM extensions.
 
 use nv_redfish::chassis::Chassis;
+use nv_redfish::oem::nvidia::AuxPowerResetType;
 use nv_redfish::oem::nvidia::NvidiaChassisResetType;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
@@ -134,6 +135,38 @@ async fn oem_nvidia_reset_invokes_advertised_action() -> Result<(), Box<dyn StdE
 }
 
 #[test]
+async fn oem_nvidia_aux_power_reset_invokes_advertised_action() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = chassis_ids();
+    let action_target = format!("{}/Actions/Oem/NvidiaChassis.AuxPowerReset", ids.chassis_id);
+    let chassis = chassis_member(
+        &ids,
+        json!({
+            "Actions": {
+                "Oem": {
+                    "#NvidiaChassis.AuxPowerReset": {
+                        "target": &action_target
+                    }
+                }
+            }
+        }),
+    );
+    let chassis = get_chassis(bmc.clone(), &ids, chassis).await?;
+
+    expect_redfish_reset_action(&bmc, &action_target, Some("AuxPowerCycle"));
+
+    let actions = chassis.oem_nvidia_actions()?.unwrap();
+    assert!(matches!(
+        actions
+            .aux_power_reset(AuxPowerResetType::AuxPowerCycle)
+            .await?,
+        ModificationResponse::Entity(())
+    ));
+
+    Ok(())
+}
+
+#[test]
 async fn oem_nvidia_actions_missing_oem_returns_not_available() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = chassis_ids();
@@ -162,6 +195,12 @@ async fn oem_nvidia_reset_returns_action_not_available_when_reset_is_absent(
     let actions = chassis.oem_nvidia_actions()?.unwrap();
     assert!(matches!(
         actions.reset(NvidiaChassisResetType::ForceDpuReset).await,
+        Err(nv_redfish::Error::ActionNotAvailable)
+    ));
+    assert!(matches!(
+        actions
+            .aux_power_reset(AuxPowerResetType::AuxPowerCycle)
+            .await,
         Err(nv_redfish::Error::ActionNotAvailable)
     ));
 

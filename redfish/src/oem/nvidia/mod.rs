@@ -53,9 +53,16 @@ pub mod computer_system;
 #[cfg(feature = "processors")]
 pub mod processor_metrics;
 
+#[cfg(feature = "update-service")]
+pub mod update_service_actions;
+
 #[cfg(feature = "chassis")]
 #[doc(inline)]
 pub use cbc_chassis::NvidiaCbcChassis;
+
+#[cfg(feature = "chassis")]
+#[doc(inline)]
+pub use chassis_actions::AuxPowerResetType;
 
 #[cfg(feature = "chassis")]
 #[doc(inline)]
@@ -72,3 +79,7 @@ pub use computer_system::NvidiaComputerSystem;
 #[cfg(feature = "processors")]
 #[doc(inline)]
 pub use processor_metrics::NvidiaProcessorMetrics;
+
+#[cfg(feature = "update-service")]
+#[doc(inline)]
+pub use update_service_actions::NvidiaUpdateServiceActions;

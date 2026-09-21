@@ -24,6 +24,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::core::NavProperty;
+#[cfg(feature = "oem-nvidia")]
+use crate::oem::nvidia::NvidiaUpdateServiceActions;
 use crate::patch_support::Payload;
 use crate::patch_support::ReadPatchFn;
 use crate::schema::update_service::UpdateService as UpdateServiceSchema;
@@ -125,6 +127,23 @@ impl<B: Bmc> UpdateService<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<UpdateServiceSchema> {
         self.data.clone()
+    }
+
+    /// Get the NVIDIA OEM actions advertised by this update service.
+    ///
+    /// Returns `Ok(None)` when the service has no OEM actions object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if NVIDIA OEM actions cannot be parsed.
+    #[cfg(feature = "oem-nvidia")]
+    pub fn oem_nvidia_actions(&self) -> Result<Option<NvidiaUpdateServiceActions<B>>, Error<B>> {
+        self.data
+            .actions
+            .as_ref()
+            .and_then(|actions| actions.oem.as_ref())
+            .map(|actions| NvidiaUpdateServiceActions::new(&self.bmc, actions))
+            .transpose()
     }
 
     /// List all firmware inventory items.

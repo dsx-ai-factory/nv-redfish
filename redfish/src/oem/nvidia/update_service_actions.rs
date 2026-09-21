@@ -13,32 +13,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Support NVIDIA Chassis OEM actions.
+//! NVIDIA UpdateService OEM actions.
 
-use crate::oem::nvidia::schema::chassis::OemActions as NvidiaChassisActionsSchema;
-use crate::schema::chassis::OemActions as ChassisOemActionsSchema;
+use std::sync::Arc;
+
+use crate::oem::nvidia::schema::update_service::OemActions as NvidiaUpdateServiceActionsSchema;
+use crate::schema::update_service::OemActions as UpdateServiceOemActionsSchema;
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::ActionError;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::ModificationResponse;
 use serde::Deserialize as _;
-use std::sync::Arc;
 
-pub use crate::oem::nvidia::schema::nvidia_chassis::AuxPowerResetType;
-pub use crate::oem::nvidia::schema::nvidia_chassis::NvidiaChassisResetType;
-
-/// NVIDIA actions advertised by a Chassis resource.
-///
-/// The handle owns the BMC connection used to invoke its actions.
-pub struct NvidiaChassisActions<B: Bmc> {
+/// NVIDIA actions advertised by an UpdateService resource.
+pub struct NvidiaUpdateServiceActions<B: Bmc> {
     bmc: NvBmc<B>,
-    data: Arc<NvidiaChassisActionsSchema>,
+    data: Arc<NvidiaUpdateServiceActionsSchema>,
 }
 
-impl<B: Bmc> NvidiaChassisActions<B> {
-    pub(crate) fn new(bmc: &NvBmc<B>, actions: &ChassisOemActionsSchema) -> Result<Self, Error<B>> {
-        let data = NvidiaChassisActionsSchema::deserialize(&actions.additional_properties)
+impl<B: Bmc> NvidiaUpdateServiceActions<B> {
+    pub(crate) fn new(
+        bmc: &NvBmc<B>,
+        actions: &UpdateServiceOemActionsSchema,
+    ) -> Result<Self, Error<B>> {
+        let data = NvidiaUpdateServiceActionsSchema::deserialize(&actions.additional_properties)
             .map_err(Error::Json)?;
         Ok(Self {
             bmc: bmc.clone(),
@@ -46,55 +45,53 @@ impl<B: Bmc> NvidiaChassisActions<B> {
         })
     }
 
-    /// Cycle this chassis's auxiliary power.
+    /// Clear NVRAM for the selected firmware inventory targets.
     ///
     /// # Errors
     ///
-    /// Returns an error if the chassis does not advertise the NVIDIA
-    /// `AuxPowerReset` action or if invoking the action fails.
-    pub async fn aux_power_reset(
+    /// Returns an error if the action is unavailable or invocation fails.
+    pub async fn clear_nvram(
         &self,
-        reset_type: AuxPowerResetType,
+        targets: Vec<String>,
     ) -> Result<ModificationResponse<()>, Error<B>>
     where
         B::Error: ActionError,
     {
-        if self.data.aux_power_reset.is_none() {
+        if self.data.clear_nvram.is_none() {
             return Err(Error::ActionNotAvailable);
         }
 
         self.data
-            .aux_power_reset(self.bmc.as_ref(), reset_type)
+            .clear_nvram(self.bmc.as_ref(), targets)
             .await
             .map_err(Error::Bmc)
     }
 
-    /// Reset this chassis or its DPU with an NVIDIA reset type.
+    /// Commit staged images for the selected firmware inventory targets.
     ///
     /// # Errors
     ///
-    /// Returns an error if the chassis does not advertise the NVIDIA `Reset`
-    /// action or if invoking the action fails.
-    pub async fn reset(
+    /// Returns an error if the action is unavailable or invocation fails.
+    pub async fn commit_image(
         &self,
-        reset_type: NvidiaChassisResetType,
+        targets: Option<Vec<String>>,
     ) -> Result<ModificationResponse<()>, Error<B>>
     where
         B::Error: ActionError,
     {
-        if self.data.reset.is_none() {
+        if self.data.commit_image.is_none() {
             return Err(Error::ActionNotAvailable);
         }
 
         self.data
-            .reset(self.bmc.as_ref(), reset_type)
+            .commit_image(self.bmc.as_ref(), targets)
             .await
             .map_err(Error::Bmc)
     }
 
-    /// Get the raw NVIDIA Chassis OEM actions schema.
+    /// Get the raw NVIDIA UpdateService OEM actions schema.
     #[must_use]
-    pub fn raw(&self) -> Arc<NvidiaChassisActionsSchema> {
+    pub fn raw(&self) -> Arc<NvidiaUpdateServiceActionsSchema> {
         self.data.clone()
     }
 }
