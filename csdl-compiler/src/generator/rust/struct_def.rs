@@ -682,13 +682,12 @@ impl<'a> StructDef<'a> {
             }
             ParameterType::Entity(e) => {
                 let top = &config.top_module_alias;
-                Self::gen_action_parameter_field(
-                    &e,
-                    quote! { #top::Reference },
-                    &rename,
-                    p.nullable,
-                    p.required,
-                )
+                let field_type = if p.odata.is_url {
+                    quote! { #top::edm::String }
+                } else {
+                    quote! { #top::Reference }
+                };
+                Self::gen_action_parameter_field(&e, field_type, &rename, p.nullable, p.required)
             }
         };
         let serde = field.serde_annotation;
@@ -863,7 +862,11 @@ impl<'a> StructDef<'a> {
                         )
                     }
                     ParameterType::Entity(e) => {
-                        let full_type = quote! { #top::Reference };
+                        let full_type = if p.odata.is_url {
+                            quote! { #top::edm::String }
+                        } else {
+                            quote! { #top::Reference }
+                        };
                         Self::gen_de_struct_field_type(
                             &e,
                             full_type,

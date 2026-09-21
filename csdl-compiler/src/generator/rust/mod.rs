@@ -398,6 +398,12 @@ mod tests {
                 <Parameter Name="Chassis" Type="Chassis.v1_0_0.OemActions"/>
                 <Parameter Name="Mode" Type="Edm.String"/>
               </Action>
+              <Action Name="CommitImage" IsBound="true">
+                <Parameter Name="Chassis" Type="Chassis.v1_0_0.OemActions"/>
+                <Parameter Name="Targets" Type="Collection(SoftwareInventory.SoftwareInventory)" Nullable="false">
+                  <Annotation Term="OData.IsURL"/>
+                </Parameter>
+              </Action>
             </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="OtherOem">
               <Action Name="Ignored" IsBound="true">
@@ -421,6 +427,9 @@ mod tests {
               <Action Name="Ignored" IsBound="true">
                 <Parameter Name="ResolveOnly" Type="ResolveOnly.OemActions"/>
               </Action>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="SoftwareInventory">
+              <EntityType Name="SoftwareInventory"/>
             </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
               <EntityType Name="Resource" Abstract="true"/>
@@ -482,6 +491,7 @@ mod tests {
         };
         assert!(action("Reset").parameters[0].required.into_inner());
         assert!(!action("AuxPowerReset").parameters[0].required.into_inner());
+        assert!(action("CommitImage").parameters[0].odata.is_url);
         let compiled = optimize(compiled, &OptimizerConfig::default());
         let generated = RustGenerator::new(&compiled, Config::default())
             .map_err(|error| error.to_string())?
@@ -497,6 +507,11 @@ mod tests {
             .map(|(_, rest)| rest)
             .and_then(|rest| rest.split_once('}').map(|(body, _)| body))
             .expect("the action binding type is generated");
+        let commit_image_action = generated
+            .split_once("pub struct ChassisCommitImageAction")
+            .map(|(_, rest)| rest)
+            .and_then(|rest| rest.split_once('}').map(|(body, _)| body))
+            .expect("the URL action request type is generated");
 
         assert!(generated.contains("pub enum NvidiaChassisResetType"));
         assert!(generated.contains("pub struct ChassisAuxPowerResetAction"));
@@ -507,6 +522,14 @@ mod tests {
         assert!(oem_actions.contains("pub aux_power_reset"));
         assert!(generated.contains("pub async fn reset"));
         assert!(generated.contains("pub async fn aux_power_reset"));
+        assert!(commit_image_action.contains("Vec < redfish :: edm :: String >"));
+        assert!(!commit_image_action.contains("redfish :: Reference"));
+        assert_eq!(
+            generated
+                .matches("targets : Vec < redfish :: edm :: String >")
+                .count(),
+            2
+        );
         assert!(!generated.contains("ChassisIgnoredAction"));
         assert!(!generated.contains("ResolveOnlyIgnoredAction"));
 
