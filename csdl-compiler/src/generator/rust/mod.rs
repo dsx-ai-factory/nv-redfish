@@ -403,6 +403,9 @@ mod tests {
                 <Parameter Name="Targets" Type="Collection(SoftwareInventory.SoftwareInventory)" Nullable="false">
                   <Annotation Term="OData.IsURL"/>
                 </Parameter>
+                <Parameter Name="FallbackTargets" Type="Collection(SoftwareInventory.SoftwareInventory)" Nullable="false">
+                  <Annotation Term="OData.IsURL" Bool="false"/>
+                </Parameter>
               </Action>
             </Schema>
             <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="OtherOem">
@@ -492,6 +495,7 @@ mod tests {
         assert!(action("Reset").parameters[0].required.into_inner());
         assert!(!action("AuxPowerReset").parameters[0].required.into_inner());
         assert!(action("CommitImage").parameters[0].odata.is_url);
+        assert!(!action("CommitImage").parameters[1].odata.is_url);
         let compiled = optimize(compiled, &OptimizerConfig::default());
         let generated = RustGenerator::new(&compiled, Config::default())
             .map_err(|error| error.to_string())?
@@ -523,7 +527,7 @@ mod tests {
         assert!(generated.contains("pub async fn reset"));
         assert!(generated.contains("pub async fn aux_power_reset"));
         assert!(commit_image_action.contains("Vec < redfish :: edm :: String >"));
-        assert!(!commit_image_action.contains("redfish :: Reference"));
+        assert!(commit_image_action.contains("Vec < redfish :: Reference >"));
         assert_eq!(
             generated
                 .matches("targets : Vec < redfish :: edm :: String >")
