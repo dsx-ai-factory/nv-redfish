@@ -38,6 +38,16 @@
         <Annotation Term="OData.LongDescription" String="This property shall represent the NVIDIA OEM properties for a UpdateService resource."/>
       </ComplexType>
       <ComplexType Name="UpdateParameters" Abstract="true"/>
+      <Action Name="ClearNVRAM" IsBound="true">
+        <Annotation Term="OData.Description" String="This action clears NVRAM for the selected firmware inventory targets."/>
+        <Annotation Term="OData.LongDescription" String="This action shall clear NVRAM for the selected firmware inventory targets."/>
+        <Parameter Name="NvidiaUpdateService" Type="UpdateService.v1_0_0.OemActions"/>
+        <Parameter Name="Targets" Type="Collection(SoftwareInventory.SoftwareInventory)" Nullable="false">
+          <Annotation Term="OData.Description" String="An array of firmware inventory resources whose NVRAM is cleared."/>
+          <Annotation Term="OData.LongDescription" String="This parameter shall contain firmware inventory resources whose NVRAM is cleared."/>
+          <Annotation Term="OData.IsURL"/>
+        </Parameter>
+      </Action>
       <Action Name="CommitImage" IsBound="true">
         <Annotation Term="OData.Description" String="This action is used to commit all applicable image components into storage."/>
         <Annotation Term="OData.LongDescription" String="This action shall commit all applicable image components into storage.  This action cannot be executed when firmware update or background copy policy is enabled and in progress by ERoTs."/>

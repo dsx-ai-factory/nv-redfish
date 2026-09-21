@@ -662,7 +662,10 @@ patterns = [
     "NvidiaFirmwarePackageCollection.*.*",
     "NvidiaPersistentStorage.*.*",
 ]
-action_patterns = ["NvidiaPersistentStorage.*"]
+action_patterns = [
+    "NvidiaPersistentStorage.*",
+    "NvidiaUpdateService.*",
+]
 
 [[oem-features]]
 # NVIDIA log service, log entries and conditions.
