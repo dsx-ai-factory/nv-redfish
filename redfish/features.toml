@@ -518,6 +518,20 @@ patterns = [
 # Each schema must therefore appear in exactly one block.
 
 [[oem-features]]
+# NVIDIA extensions of standard Fabric and Switch resources.
+vendor = "nvidia"
+name = "fabrics"
+oem_csdl_files = [
+    "NvidiaFabric_v1.xml",
+    "NvidiaSwitch_v1.xml",
+]
+csdl_files = []
+patterns = [
+    "NvidiaFabric.*.*",
+    "NvidiaSwitch.*.*",
+]
+
+[[oem-features]]
 # NVIDIA chassis, root-of-trust chassis, cables and PCIe slots.
 vendor = "nvidia"
 name = "chassis"
@@ -777,12 +791,12 @@ patterns = [
 ]
 
 [[oem-features]]
-# NVLink fabric, switches and ports.
+# Additional schemas in the legacy NVLink fabric bundle.
+# build.rs also selects the fabrics OEM block when this feature is enabled,
+# preserving Fabric/Switch schemas without enabling standard fabrics.
 vendor = "nvidia"
 name = "oem-nvidia-fabrics"
 oem_csdl_files = [
-    "NvidiaFabric_v1.xml",
-    "NvidiaSwitch_v1.xml",
     "NvidiaSwitchPowerCapMode_v1.xml",
     "NvidiaSwitchPowerMode_v1.xml",
     "NvidiaPort_v1.xml",
@@ -791,8 +805,6 @@ oem_csdl_files = [
 ]
 csdl_files = []
 patterns = [
-    "NvidiaFabric.*.*",
-    "NvidiaSwitch.*.*",
     "NvidiaSwitchPowerCapMode.*.*",
     "NvidiaSwitchPowerMode.*.*",
     "NvidiaPort.*.*",

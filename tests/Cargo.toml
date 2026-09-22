@@ -46,7 +46,6 @@ nv-redfish = { workspace = true, features = [
     "oem-hpe",
     "oem-lenovo",
     "oem-nvidia",
-    "oem-nvidia-fabrics",
     "oem-supermicro",
     "oem-liteon",
     "oem-delta",

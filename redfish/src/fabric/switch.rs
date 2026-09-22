@@ -37,7 +37,7 @@ use std::future::Future;
 use std::sync::Arc;
 use tagged_types::TaggedType;
 
-#[cfg(feature = "oem-nvidia-fabrics")]
+#[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaSwitch;
 #[cfg(feature = "ports")]
 use crate::port::PortCollection;
@@ -301,7 +301,7 @@ impl<B: Bmc> Switch<B> {
     /// # Errors
     ///
     /// Returns an error if parsing NVIDIA switch OEM data fails.
-    #[cfg(feature = "oem-nvidia-fabrics")]
+    #[cfg(feature = "oem-nvidia")]
     pub fn oem_nvidia(&self) -> Result<Option<NvidiaSwitch<B>>, Error<B>> {
         self.data
             .oem

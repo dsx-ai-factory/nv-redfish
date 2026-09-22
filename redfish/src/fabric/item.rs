@@ -28,7 +28,7 @@ use std::convert::identity;
 use std::future::Future;
 use std::sync::Arc;
 
-#[cfg(feature = "oem-nvidia-fabrics")]
+#[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaFabric;
 
 /// Lazy link to a fabric.
@@ -102,7 +102,7 @@ impl<B: Bmc> Fabric<B> {
     /// # Errors
     ///
     /// Returns an error if parsing NVIDIA fabric OEM data fails.
-    #[cfg(feature = "oem-nvidia-fabrics")]
+    #[cfg(feature = "oem-nvidia")]
     pub fn oem_nvidia(&self) -> Result<Option<NvidiaFabric<B>>, Error<B>> {
         self.data
             .oem

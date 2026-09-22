@@ -128,7 +128,14 @@ fn run() -> Result<(), Box<dyn StdError>> {
         let vendor_features = manifest
             .all_vendor_features(v)
             .into_iter()
-            .filter(|name| cargo_feature_enabled(name))
+            .filter(|name| {
+                cargo_feature_enabled(name)
+                    // Keep the legacy schema-only bundle working without
+                    // enabling the standard Fabric/Switch resource types.
+                    || (v == "nvidia"
+                        && name.as_str() == "fabrics"
+                        && cargo_feature_enabled("oem-nvidia-fabrics"))
+            })
             .collect::<Vec<_>>();
 
         let output = out_dir.join(format!("oem-{v}.rs"));
