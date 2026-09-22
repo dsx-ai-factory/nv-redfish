@@ -56,6 +56,12 @@ pub mod processor_metrics;
 #[cfg(feature = "update-service")]
 pub mod update_service_actions;
 
+#[cfg(all(feature = "fabrics", feature = "oem-nvidia-fabrics"))]
+pub mod fabric;
+
+#[cfg(all(feature = "fabrics", feature = "oem-nvidia-fabrics"))]
+pub mod switch;
+
 #[cfg(feature = "chassis")]
 #[doc(inline)]
 pub use cbc_chassis::NvidiaCbcChassis;
@@ -83,3 +89,11 @@ pub use processor_metrics::NvidiaProcessorMetrics;
 #[cfg(feature = "update-service")]
 #[doc(inline)]
 pub use update_service_actions::NvidiaUpdateServiceActions;
+
+#[cfg(all(feature = "fabrics", feature = "oem-nvidia-fabrics"))]
+#[doc(inline)]
+pub use fabric::NvidiaFabric;
+
+#[cfg(all(feature = "fabrics", feature = "oem-nvidia-fabrics"))]
+#[doc(inline)]
+pub use switch::NvidiaSwitch;

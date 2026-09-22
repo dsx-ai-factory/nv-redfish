@@ -102,6 +102,24 @@ patterns = [
 ]
 
 [[features]]
+name = "fabrics"
+csdl_files = [
+    "Fabric_v1.xml",
+    "FabricCollection_v1.xml",
+    "Protocol_v1.xml",
+    "Redundancy_v1.xml",
+    "SoftwareInventory_v1.xml",
+    "Switch_v1.xml",
+    "SwitchCollection_v1.xml",
+]
+patterns = [
+    "Fabric.*",
+    "FabricCollection.*",
+    "Switch.*",
+    "SwitchCollection.*",
+]
+
+[[features]]
 name = "host-interfaces"
 csdl_files = [
     "HostInterface_v1.xml",
