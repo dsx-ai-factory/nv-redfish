@@ -15,6 +15,7 @@
 
 //! Switch entities and collections.
 
+use super::Protocol;
 use crate::entity_link::EntityLink;
 use crate::entity_link::FromLink;
 use crate::hardware_id::HardwareIdRef;
@@ -24,8 +25,6 @@ use crate::hardware_id::PartNumber as HardwareIdPartNumber;
 use crate::hardware_id::SerialNumber as HardwareIdSerialNumber;
 use crate::patch_support::CollectionWithPatch;
 use crate::resource::PowerState;
-#[doc(inline)]
-pub use crate::schema::protocol::Protocol;
 use crate::schema::resource::ResourceCollection;
 use crate::schema::switch::Switch as SwitchSchema;
 use crate::schema::switch_collection::SwitchCollection as SwitchCollectionSchema;

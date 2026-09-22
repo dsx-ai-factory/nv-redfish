@@ -27,10 +27,10 @@ use std::convert::identity;
 use std::future::Future;
 use std::sync::Arc;
 
+#[cfg(feature = "switches")]
+use super::SwitchCollection;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaFabric;
-#[cfg(feature = "switches")]
-use crate::switch::SwitchCollection;
 
 /// Lazy link to a fabric.
 pub type FabricLink<B> = EntityLink<B, FabricSchema>;

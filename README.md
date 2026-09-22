@@ -104,7 +104,9 @@ schemas directly.
 
 `fabrics` and `switches` are independent features, both included in `std-redfish`.
 Enable both to traverse `Fabric::switches()`. Switch types live in
-`nv_redfish::switch`; enable `ports` as well to use `Switch::ports()`.
+`nv_redfish::fabric` alongside Fabric types. The module is available with either
+feature; Fabric types require `fabrics`, while Switch types require `switches`.
+Enable `ports` as well to use `Switch::ports()`.
 
 `oem-nvidia-cper` is separate because that one schema accounts for
 roughly half of the generated NVIDIA code; enable it only if you decode
