@@ -62,6 +62,7 @@ use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::without_event_ids;
 use nv_redfish_core::Action;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::BmcError;
 use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::Expandable;
@@ -96,7 +97,7 @@ pub use nv_redfish_core::MultipartUpdateRequest;
 /// implements this [`HttpClient`] trait.
 pub trait HttpClient: Send + Sync {
     /// HTTP client error.
-    type Error: Send + StdError;
+    type Error: BmcError;
 
     /// Perform an HTTP GET request with optional conditional headers.
     fn get<T>(
@@ -667,7 +668,7 @@ where
 
 impl<C: HttpClient> Bmc for HttpBmc<C>
 where
-    C::Error: CacheableError + RequestError + StdError + Send + Sync,
+    C::Error: CacheableError + RequestError,
 {
     type Error = C::Error;
 

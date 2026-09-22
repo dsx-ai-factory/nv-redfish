@@ -65,6 +65,8 @@ impl Display for Error {
 
 impl StdError for Error {}
 
+impl nv_redfish_core::BmcError for Error {}
+
 #[derive(Debug, Default)]
 pub struct MockBmc {}
 

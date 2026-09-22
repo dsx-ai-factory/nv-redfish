@@ -33,6 +33,7 @@ use nv_redfish_core::action::ActionTarget;
 use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::ActionError;
 use nv_redfish_core::Bmc as NvRedfishBmc;
+use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::Expandable;
 #[cfg(feature = "update-service-deprecated")]
@@ -133,6 +134,15 @@ impl Display for Error {
 }
 
 impl StdError for Error {}
+
+impl nv_redfish_core::BmcError for Error {
+    fn error_class(&self) -> BmcErrorClass {
+        match self {
+            Self::BadResponseJson(_) => BmcErrorClass::ResponseParse,
+            _ => BmcErrorClass::Other,
+        }
+    }
+}
 
 impl Error {
     pub fn mutex_lock<T>(err: PoisonError<T>) -> Self {

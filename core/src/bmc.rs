@@ -76,11 +76,45 @@ use futures_core::Stream;
 use crate::MultipartUpdateRequest;
 use crate::UploadReader;
 
+/// Classification of a BMC operation error for resource-level policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum BmcErrorClass {
+    /// The operation received an HTTP response that was treated as an error.
+    HttpResponse {
+        /// HTTP response status code.
+        status: u16,
+    },
+
+    /// The response could not be parsed into the requested model.
+    ResponseParse,
+
+    /// The request failed before a usable response was received.
+    Transport,
+
+    /// The error has no more specific classification.
+    Other,
+}
+
+/// Error returned by a [`Bmc`] implementation.
+///
+/// Implementations can classify errors for resource-level policy without
+/// exposing transport-specific error types to Redfish resource code.
+pub trait BmcError: StdError + Send + Sync {
+    /// Classifies the error for resource-level policy decisions.
+    ///
+    /// The default returns [`BmcErrorClass::Other`] when the implementation
+    /// does not expose a more specific classification.
+    fn error_class(&self) -> BmcErrorClass {
+        BmcErrorClass::Other
+    }
+}
+
 /// BMC trait defines access to a Baseboard Management Controller using
 /// the Redfish protocol.
 pub trait Bmc: Send + Sync {
     /// BMC Error.
-    type Error: StdError + Send + Sync;
+    type Error: BmcError;
 
     /// Expand any expandable object (navigation property or entity).
     ///

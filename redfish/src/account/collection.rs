@@ -51,6 +51,8 @@ use crate::schema::resource::ResourceCollection;
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::BmcError as _;
+use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
@@ -126,6 +128,19 @@ impl<B: Bmc> CreateWithPatch<ManagerAccountCollection, ManagerAccount, ManagerAc
 }
 
 impl<B: Bmc> AccountCollection<B> {
+    fn fixed_slot_read_error_is_skippable(error: &Error<B>) -> bool {
+        match error {
+            Error::Json(_) => true,
+            Error::Bmc(error) => matches!(
+                error.error_class(),
+                BmcErrorClass::HttpResponse { status: 404 | 410 }
+                    | BmcErrorClass::ResponseParse
+                    | BmcErrorClass::Other
+            ),
+            _ => false,
+        }
+    }
+
     pub(crate) async fn new(
         bmc: NvBmc<B>,
         collection_ref: &NavProperty<ManagerAccountCollection>,
@@ -170,12 +185,19 @@ impl<B: Bmc> AccountCollection<B> {
         create: ManagerAccountCreate,
     ) -> Result<ModificationResponse<Account<B>>, Error<B>> {
         if let Some(cfg) = &self.config.fixed_slots {
-            // Collection order is not a stable allocation policy. Fetch every
-            // member first, then consider disabled numeric slots in ascending
-            // order within the configured bounds.
+            // Collection order is not a stable allocation policy. Consider
+            // disabled numeric slots in ascending order within the configured
+            // bounds. Missing, malformed, or unclassified slot reads cannot hide
+            // later slots; known transport and server failures abort the scan.
             let mut candidates = Vec::new();
+
             for nav in &self.collection.members {
-                let account = Account::new(&self.bmc, nav, &self.config.account).await?;
+                let account = match Account::new(&self.bmc, nav, &self.config.account).await {
+                    Ok(account) => account,
+                    Err(error) if Self::fixed_slot_read_error_is_skippable(&error) => continue,
+                    Err(error) => return Err(error),
+                };
+
                 let Ok(id) = account.raw().id.parse::<u32>() else {
                     continue;
                 };
@@ -191,12 +213,18 @@ impl<B: Bmc> AccountCollection<B> {
                 // candidate immediately before updating it so concurrent
                 // account creation cannot reuse stale slot state. Require a
                 // fresh ETag so the HTTP BMC cannot fall back to `If-Match: *`.
-                let account = Account::new(
+                let account = match Account::new(
                     &self.bmc,
                     &NavProperty::new_reference(account.raw().odata_id().clone()),
                     &self.config.account,
                 )
-                .await?;
+                .await
+                {
+                    Ok(account) => account,
+                    Err(error) if Self::fixed_slot_read_error_is_skippable(&error) => continue,
+                    Err(error) => return Err(error),
+                };
+
                 if account.is_enabled() || account.raw().etag().is_none() {
                     continue;
                 }

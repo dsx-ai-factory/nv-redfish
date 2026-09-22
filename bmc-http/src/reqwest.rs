@@ -40,6 +40,7 @@ use futures_util::TryStreamExt as _;
 use http::header;
 use http::HeaderMap;
 use nv_redfish_core::AsyncTask;
+use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::DataStream;
 use nv_redfish_core::ModificationResponse;
@@ -175,6 +176,19 @@ impl StdErr for BmcError {
             Self::SseStreamError(e) => Some(e),
             Self::DecodeError(e) | Self::EncodeError(e) => Some(e),
             _ => None,
+        }
+    }
+}
+
+impl nv_redfish_core::BmcError for BmcError {
+    fn error_class(&self) -> BmcErrorClass {
+        match self {
+            Self::InvalidResponse { status, .. } => BmcErrorClass::HttpResponse {
+                status: status.as_u16(),
+            },
+            Self::JsonError(_) | Self::DecodeError(_) => BmcErrorClass::ResponseParse,
+            Self::ReqwestError(_) => BmcErrorClass::Transport,
+            _ => BmcErrorClass::Other,
         }
     }
 }
@@ -769,7 +783,10 @@ impl Client {
 
         let etag_header = etag_from_headers(&headers);
 
-        let mut value: serde_json::Value = response.json().await.map_err(BmcError::ReqwestError)?;
+        let body = response.bytes().await.map_err(BmcError::ReqwestError)?;
+
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&body).map_err(BmcError::DecodeError)?;
 
         if let Some(etag) = etag_header {
             inject_etag(&etag, &mut value);
@@ -1476,6 +1493,9 @@ mod tests {
 
     use futures_util::io::Cursor;
     use http::HeaderValue;
+    use nv_redfish_core::BmcError as _;
+    use tokio::io::AsyncWriteExt as _;
+    use tokio::net::TcpListener;
     use wiremock::matchers::header;
     use wiremock::matchers::method;
     use wiremock::matchers::path;
@@ -1601,6 +1621,94 @@ mod tests {
 
         let created_miss = BmcError::cache_miss();
         assert!(matches!(created_miss, BmcError::CacheMiss));
+    }
+
+    #[tokio::test]
+    async fn client_classifies_absent_resources_and_response_parse_failures() {
+        let client = Client::new().expect("test client must be created");
+
+        for (status, expected) in [
+            (
+                reqwest::StatusCode::NOT_FOUND,
+                BmcErrorClass::HttpResponse { status: 404 },
+            ),
+            (
+                reqwest::StatusCode::GONE,
+                BmcErrorClass::HttpResponse { status: 410 },
+            ),
+            (
+                reqwest::StatusCode::UNAUTHORIZED,
+                BmcErrorClass::HttpResponse { status: 401 },
+            ),
+        ] {
+            let response_error = BmcError::InvalidResponse {
+                url: "http://example.com/redfish/v1/Accounts/3"
+                    .parse()
+                    .expect("valid test URL"),
+                status,
+                text: String::new(),
+            };
+
+            assert_eq!(response_error.error_class(), expected);
+        }
+
+        let response = reqwest::Response::from(
+            http::Response::builder()
+                .status(200)
+                .body("not JSON")
+                .expect("valid test response"),
+        );
+
+        let decode_error = client
+            .handle_response::<serde_json::Value>(response)
+            .await
+            .expect_err("invalid JSON must fail to decode");
+
+        assert_eq!(decode_error.error_class(), BmcErrorClass::ResponseParse);
+
+        let transport_error = reqwest::Client::new()
+            .get("://")
+            .build()
+            .expect_err("invalid URL must fail request construction");
+
+        let transport_error = BmcError::ReqwestError(transport_error);
+
+        assert_eq!(transport_error.error_class(), BmcErrorClass::Transport);
+    }
+
+    #[tokio::test]
+    async fn incomplete_response_body_is_transport() -> Result<(), Box<dyn StdError>> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await?;
+
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{",
+                )
+                .await
+        });
+
+        let client = Client::new()?;
+        let credentials = BmcCredentials::username_password("user".into(), None);
+
+        let error = client
+            .get::<serde_json::Value>(
+                Url::parse(&format!("http://{address}"))?,
+                &credentials,
+                None,
+                &HeaderMap::new(),
+            )
+            .await
+            .expect_err("the truncated response body must fail");
+
+        server.await??;
+
+        assert_eq!(error.error_class(), BmcErrorClass::Transport);
+
+        Ok(())
     }
 
     #[tokio::test]
