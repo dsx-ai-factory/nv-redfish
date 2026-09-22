@@ -24,6 +24,7 @@ use nv_redfish::core::AsyncTask;
 use nv_redfish::core::ODataId;
 use nv_redfish::schema::resource::Health as TaskStatus;
 use nv_redfish::schema::task::TaskState;
+use nv_redfish::task_service::task_payload_location;
 use nv_redfish::ServiceRoot;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Expect;
@@ -80,6 +81,12 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
             "TaskState": "Running",
             "TaskStatus": "OK",
             "PercentComplete": 55,
+            "Payload": {
+                "HttpHeaders": [
+                    "Content-Type: application/json",
+                    "Location: /redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements/Data"
+                ]
+            },
             "Messages": [{
                 "MessageId": "Base.1.0.TaskMessage",
                 "Message": "Task message."
@@ -140,6 +147,10 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
     assert_eq!(task.task_state, Some(TaskState::Running));
     assert_eq!(task.task_status, Some(TaskStatus::Ok));
     assert_eq!(task.percent_complete.flatten(), Some(55));
+    assert_eq!(
+        task_payload_location(&task).map(|location| location.to_string()),
+        Some("/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements/Data".to_string())
+    );
 
     let messages = task
         .messages

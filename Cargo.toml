@@ -14,6 +14,7 @@ members = [
    "examples/event-stream-console",
    "examples/readme-minimal",
    "examples/session-token",
+   "examples/spdm-attestation",
    "examples/task-service",
    "examples/metrics-oem-nvidia",
    "examples/update-multipart",

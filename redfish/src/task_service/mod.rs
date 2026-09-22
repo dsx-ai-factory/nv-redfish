@@ -26,6 +26,7 @@ use std::sync::Arc;
 use crate::core::Bmc;
 use crate::core::EntityTypeRef as _;
 use crate::core::NavProperty;
+use crate::core::ODataId;
 use crate::entity_link::EntityLink;
 use crate::schema::task::Task as TaskSchema;
 use crate::schema::task_service::TaskService as TaskServiceSchema;
@@ -37,6 +38,24 @@ use nv_redfish_core::AsyncTask;
 
 /// Link to a Redfish Task returned by an asynchronous operation.
 pub type TaskLink<B> = EntityLink<B, TaskSchema>;
+
+/// Get the last `Location` header recorded in a Task payload.
+#[must_use]
+pub fn task_payload_location(task: &TaskSchema) -> Option<ODataId> {
+    task.payload
+        .as_ref()?
+        .http_headers
+        .as_ref()?
+        .iter()
+        .rev()
+        .find_map(|header| {
+            let (name, value) = header.split_once(':')?;
+            (name.trim().eq_ignore_ascii_case("Location"))
+                .then(|| value.trim())
+                .filter(|value| !value.is_empty())
+                .map(|value| ODataId::from(value.to_string()))
+        })
+}
 
 /// Task service.
 ///

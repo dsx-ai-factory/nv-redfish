@@ -228,9 +228,6 @@ impl<B: Bmc> ComponentIntegrity<B> {
     }
 
     /// Get the target advertised for the SPDM signed-measurements action.
-    ///
-    /// This is useful for services that expose the completed asynchronous
-    /// response at a URI derived from the advertised action target.
     #[must_use]
     pub fn spdm_get_signed_measurements_target(&self) -> Option<&ActionTarget> {
         self.data
@@ -241,29 +238,30 @@ impl<B: Bmc> ComponentIntegrity<B> {
             .map(|action| &action.target)
     }
 
-    /// Fetch completed signed measurements from the action's data endpoint.
-    ///
-    /// Some NVIDIA services complete the asynchronous action by exposing the
-    /// standard `SPDMGetSignedMeasurementsResponse` at:
-    ///
-    /// ```text
-    /// GET <advertised ComponentIntegrity.SPDMGetSignedMeasurements target>/data
-    /// ```
-    ///
-    /// The action target itself is always taken from the resource.
+    /// Fetch completed signed measurements.
     ///
     /// # Errors
     ///
-    /// Returns an error if the action is unavailable or fetching the data
-    /// endpoint fails.
-    pub async fn spdm_signed_measurements_data(&self) -> Result<SpdmSignedMeasurements, Error<B>> {
-        let target = self
-            .spdm_get_signed_measurements_target()
-            .ok_or(Error::ActionNotAvailable)?;
-        let data_id = ODataId::from(format!("{}/data", target.as_str().trim_end_matches('/')));
+    /// Returns an error if no result URI can be determined or fetching the
+    /// result fails.
+    pub async fn spdm_signed_measurements_data(
+        &self,
+        result_location: Option<&ODataId>,
+    ) -> Result<SpdmSignedMeasurements, Error<B>> {
+        let fallback_location;
+        let result_location = if let Some(result_location) = result_location {
+            result_location
+        } else {
+            let target = self
+                .spdm_get_signed_measurements_target()
+                .ok_or(Error::ActionNotAvailable)?;
+            fallback_location =
+                ODataId::from(format!("{}/data", target.as_str().trim_end_matches('/')));
+            &fallback_location
+        };
         self.bmc
             .as_ref()
-            .get::<ResponseBody<SpdmGetSignedMeasurementsResponse>>(&data_id)
+            .get::<ResponseBody<SpdmGetSignedMeasurementsResponse>>(result_location)
             .await
             .map(|data| SpdmSignedMeasurements { data })
             .map_err(Error::Bmc)

@@ -201,7 +201,7 @@ async fn viking_signed_measurements_use_advertised_target_and_preserve_task(
 async fn spdm_signed_measurements_fetch_nvidia_data_endpoint() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let component = component(bmc.clone(), NVIDIA_ACTION_TARGET).await?;
-    let data_id = format!("{NVIDIA_ACTION_TARGET}/data");
+    let data_id = ODataId::from(format!("{NVIDIA_ACTION_TARGET}/data"));
 
     bmc.expect(Expect::get(
         &data_id,
@@ -213,9 +213,25 @@ async fn spdm_signed_measurements_fetch_nvidia_data_endpoint() -> Result<(), Box
         }),
     ));
 
-    let evidence = component.spdm_signed_measurements_data().await?;
+    let evidence = component.spdm_signed_measurements_data(None).await?;
     assert_eq!(evidence.raw().signed_measurements, "signed-evidence");
     assert_eq!(evidence.raw().version, "1.1.0");
+
+    let task_result_id = ODataId::from(format!("{NVIDIA_ACTION_TARGET}/Data"));
+    bmc.expect(Expect::get(
+        &task_result_id,
+        json!({
+            "HashingAlgorithm": "TPM_ALG_SHA_384",
+            "SignedMeasurements": "task-signed-evidence",
+            "SigningAlgorithm": "TPM_ALG_ECDSA_ECC_NIST_P384",
+            "Version": "1.2.0"
+        }),
+    ));
+    let evidence = component
+        .spdm_signed_measurements_data(Some(&task_result_id))
+        .await?;
+    assert_eq!(evidence.raw().signed_measurements, "task-signed-evidence");
+    assert_eq!(evidence.raw().version, "1.2.0");
 
     Ok(())
 }

@@ -39,6 +39,7 @@ use futures_util::StreamExt as _;
 use futures_util::TryStreamExt as _;
 use http::header;
 use http::HeaderMap;
+use nv_redfish_core::ActionError;
 use nv_redfish_core::AsyncTask;
 use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::DataStream;
@@ -130,6 +131,12 @@ impl CacheableError for BmcError {
 impl RequestError for BmcError {
     fn rejected_uri_reference(error: RejectedUriReferenceError) -> Self {
         Self::InvalidRequest(error.reason)
+    }
+}
+
+impl ActionError for BmcError {
+    fn not_supported() -> Self {
+        Self::InvalidRequest("action is not supported".to_string())
     }
 }
 
