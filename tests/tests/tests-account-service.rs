@@ -748,7 +748,7 @@ async fn create_account_slot_defined_rechecks_stale_candidate() -> TestResult<()
 }
 
 #[test]
-async fn create_account_slot_defined_skips_unreadable_slots() -> TestResult<()> {
+async fn create_account_slot_defined_skips_response_parse_errors() -> TestResult<()> {
     let bmc = Arc::new(Bmc::default());
     let root_id = ODataId::service_root();
 
@@ -803,6 +803,41 @@ async fn create_account_slot_defined_skips_unreadable_slots() -> TestResult<()> 
     let account = into_entity(accounts.create_account(create_request("user")).await?);
 
     assert_eq!(account.raw().id, "5");
+
+    Ok(())
+}
+
+#[test]
+async fn create_account_slot_defined_skips_unclassified_refetch_errors() -> TestResult<()> {
+    let (bmc, accounts_id, accounts) =
+        slot_account_fixture(&[(3, false, ""), (4, false, "")]).await?;
+
+    let available_account_id = format!("{accounts_id}/4");
+
+    // The first expectation intentionally mismatches slot 3, producing an
+    // unclassified backend error before slot 4 is retried successfully.
+    bmc.expect(Expect::get(
+        &available_account_id,
+        slot_member(&accounts_id, 4, false, "", Some("slot-4-current")),
+    ));
+
+    bmc.expect(Expect::get(
+        &available_account_id,
+        slot_member(&accounts_id, 4, false, "", Some("slot-4-current")),
+    ));
+
+    bmc.expect(Expect::update(
+        &available_account_id,
+        serde_json::to_value(slot_update())?,
+        json_merge([
+            &slot_member(&accounts_id, 4, true, "user", None),
+            &json!({ "RoleId": "Operator" }),
+        ]),
+    ));
+
+    let account = into_entity(accounts.create_account(create_request("user")).await?);
+
+    assert_eq!(account.raw().id, "4");
 
     Ok(())
 }

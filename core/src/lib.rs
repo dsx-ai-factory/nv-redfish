@@ -103,6 +103,10 @@ pub use bmc::without_event_ids;
 #[doc(inline)]
 pub use bmc::Bmc;
 #[doc(inline)]
+pub use bmc::BmcError;
+#[doc(inline)]
+pub use bmc::BmcErrorClass;
+#[doc(inline)]
 pub use bmc::StreamEvent;
 #[doc(inline)]
 pub use deserialize::de_optional_nullable;
