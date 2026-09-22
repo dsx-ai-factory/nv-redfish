@@ -26,6 +26,7 @@ use std::sync::Arc;
 use crate::core::Bmc;
 use crate::core::EntityTypeRef as _;
 use crate::core::NavProperty;
+use crate::core::ODataId;
 use crate::entity_link::EntityLink;
 use crate::schema::task::Task as TaskSchema;
 use crate::schema::task_service::TaskService as TaskServiceSchema;
@@ -38,6 +39,24 @@ use nv_redfish_core::AsyncTask;
 /// Link to a Redfish Task returned by an asynchronous operation.
 pub type TaskLink<B> = EntityLink<B, TaskSchema>;
 
+/// Get the last `Location` header recorded in a Task payload.
+#[must_use]
+pub fn task_payload_location(task: &TaskSchema) -> Option<ODataId> {
+    task.payload
+        .as_ref()?
+        .http_headers
+        .as_ref()?
+        .iter()
+        .rev()
+        .find_map(|header| {
+            let (name, value) = header.split_once(':')?;
+            (name.trim().eq_ignore_ascii_case("Location"))
+                .then(|| value.trim())
+                .filter(|value| !value.is_empty())
+                .map(|value| ODataId::from(value.to_string()))
+        })
+}
+
 /// Task service.
 ///
 /// Provides task links for task locations returned by asynchronous operations.
@@ -49,7 +68,7 @@ pub type TaskLink<B> = EntityLink<B, TaskSchema>;
 ///     return Ok(());
 /// };
 ///
-/// let task_link = task_service.task_link(async_task)?;
+/// let task_link = task_service.task_link(&async_task)?;
 /// let task = task_link.fetch().await?;
 ///
 /// println!("{:?}", task.task_state);
@@ -89,23 +108,26 @@ impl<B: Bmc> TaskService<B> {
         self.data.clone()
     }
 
-    /// Create a task link from an asynchronous operation result.
+    /// Create a Task resource link from an asynchronous operation result.
     ///
-    /// The task location must be a child of this service's Tasks collection,
-    /// such as `/redfish/v1/TaskService/Tasks/{id}`. The returned link does not
-    /// fetch the task until [`TaskLink::fetch`] is called.
+    /// The Task resource from the response body is preferred when present,
+    /// because the response `Location` can identify a task monitor rather than
+    /// a Task resource. The selected URI must be a child of this service's
+    /// Tasks collection, such as `/redfish/v1/TaskService/Tasks/{id}`. The
+    /// returned link does not fetch the task until [`TaskLink::fetch`] is
+    /// called.
     ///
     /// # Errors
     ///
     /// Returns error if the task location is not a child of this service's Tasks
     /// collection.
-    pub fn task_link(&self, task: AsyncTask) -> Result<TaskLink<B>, Error<B>> {
+    pub fn task_link(&self, task: &AsyncTask) -> Result<TaskLink<B>, Error<B>> {
         let Some(tasks) = self.data.tasks.as_ref() else {
             return Err(Error::TaskServiceTasksUnavailable);
         };
 
         let task_collection = tasks.odata_id();
-        let task_location = task.location.0;
+        let task_location = task.task_status_uri().clone();
         if task_collection == &task_location || !task_collection.is_path_prefix(&task_location) {
             return Err(Error::TaskLocationNotInTaskService {
                 task_location,

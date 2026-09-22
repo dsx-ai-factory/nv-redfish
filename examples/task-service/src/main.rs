@@ -76,10 +76,11 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 
     let async_task = AsyncTask {
         location: ODataId::from(args.location).into(),
+        task_resource: None,
         retry_after: None,
     };
 
-    let task_link = task_service.task_link(async_task)?;
+    let task_link = task_service.task_link(&async_task)?;
 
     for poll in 1..=args.poll_count {
         if poll > 1 {

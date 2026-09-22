@@ -24,6 +24,7 @@ use nv_redfish::core::AsyncTask;
 use nv_redfish::core::ODataId;
 use nv_redfish::schema::resource::Health as TaskStatus;
 use nv_redfish::schema::task::TaskState;
+use nv_redfish::task_service::task_payload_location;
 use nv_redfish::ServiceRoot;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Expect;
@@ -80,6 +81,12 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
             "TaskState": "Running",
             "TaskStatus": "OK",
             "PercentComplete": 55,
+            "Payload": {
+                "HttpHeaders": [
+                    "Content-Type: application/json",
+                    "Location: /redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements/Data"
+                ]
+            },
             "Messages": [{
                 "MessageId": "Base.1.0.TaskMessage",
                 "Message": "Task message."
@@ -98,10 +105,11 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
             "/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/Jobs/1".to_string(),
         )
         .into(),
+        task_resource: None,
         retry_after: None,
     };
 
-    let Err(error) = task_service.task_link(invalid_task) else {
+    let Err(error) = task_service.task_link(&invalid_task) else {
         return Err(String::from("expected invalid task location").into());
     };
 
@@ -112,10 +120,11 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
 
     let collection_task = AsyncTask {
         location: ODataId::from("/redfish/v1/TaskService/Tasks".to_string()).into(),
+        task_resource: None,
         retry_after: None,
     };
 
-    let Err(error) = task_service.task_link(collection_task) else {
+    let Err(error) = task_service.task_link(&collection_task) else {
         return Err(String::from("expected collection location to be invalid").into());
     };
 
@@ -125,11 +134,12 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
     );
 
     let async_task = AsyncTask {
-        location: ODataId::from(TASK_PATH.to_string()).into(),
+        location: ODataId::from("/redfish/v1/TaskService/TaskMonitors/task-1".to_string()).into(),
+        task_resource: Some(ODataId::from(TASK_PATH.to_string())),
         retry_after: None,
     };
 
-    let task_link = task_service.task_link(async_task)?;
+    let task_link = task_service.task_link(&async_task)?;
     assert_eq!(task_link.odata_id().to_string(), TASK_PATH);
 
     let task = task_link.fetch().await?;
@@ -137,6 +147,10 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
     assert_eq!(task.task_state, Some(TaskState::Running));
     assert_eq!(task.task_status, Some(TaskStatus::Ok));
     assert_eq!(task.percent_complete.flatten(), Some(55));
+    assert_eq!(
+        task_payload_location(&task).map(|location| location.to_string()),
+        Some("/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements/Data".to_string())
+    );
 
     let messages = task
         .messages

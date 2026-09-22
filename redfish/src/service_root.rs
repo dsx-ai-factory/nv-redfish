@@ -32,6 +32,8 @@ use crate::account::{AccountService, AccountServiceConfig};
 use crate::chassis::ChassisCollection;
 #[cfg(feature = "chassis")]
 use crate::chassis::ChassisLink;
+#[cfg(feature = "component-integrity")]
+use crate::component_integrity::ComponentIntegrityCollection;
 #[cfg(feature = "computer-systems")]
 use crate::computer_system::SystemCollection;
 #[cfg(feature = "event-service")]
@@ -197,6 +199,20 @@ impl<B: Bmc> ServiceRoot<B> {
     #[cfg(feature = "chassis")]
     pub async fn chassis(&self) -> Result<Option<ChassisCollection<B>>, Error<B>> {
         ChassisCollection::new(&self.bmc, self).await
+    }
+
+    /// Get the component-integrity collection advertised by this BMC.
+    ///
+    /// Returns `Ok(None)` when the BMC does not expose ComponentIntegrity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if retrieving the collection fails.
+    #[cfg(feature = "component-integrity")]
+    pub async fn component_integrity(
+        &self,
+    ) -> Result<Option<ComponentIntegrityCollection<B>>, Error<B>> {
+        ComponentIntegrityCollection::new(&self.bmc, self).await
     }
 
     /// Get chassis links

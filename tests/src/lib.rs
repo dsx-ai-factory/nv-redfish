@@ -51,6 +51,7 @@ pub type Expect = MockExpect<TestError>;
 pub fn async_task(location: &str, retry_after_secs: u64) -> AsyncTask {
     AsyncTask {
         location: ODataId::from(location.to_string()).into(),
+        task_resource: None,
         retry_after: Some(Duration::from_secs(retry_after_secs)),
     }
 }
@@ -61,6 +62,7 @@ pub fn assert_task<T>(response: ModificationResponse<T>, location: &str, retry_a
     };
 
     assert_eq!(task.location.0.to_string(), location);
+    assert!(task.task_resource.is_none());
 
     assert_eq!(
         task.retry_after,

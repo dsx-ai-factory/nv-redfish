@@ -34,8 +34,10 @@ std-redfish = [
     "accounts",
     "assembly",
     "boot-options",
+    "certificates",
     "bios",
     "chassis",
+    "component-integrity",
     "computer-systems",
     "controls",
     "ethernet-interfaces",
@@ -68,7 +70,9 @@ assembly = []
 accounts = ["patch-payload-get", "patch-payload-update", "patch-collection-create"]
 bios = []
 boot-options = []
+certificates = []
 chassis = ["patch-payload-get", "patch-collection", "impl-nv-bmc-expand", "impl-entity-link"]
+component-integrity = ["certificates", "patch-payload-get"]
 computer-systems = ["patch-payload-get", "patch-collection"]
 controls = ["environment-metrics"]
 ethernet-interfaces = []

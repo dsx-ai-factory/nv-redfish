@@ -403,6 +403,23 @@ where
                 let result: R = from_value(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
+            Expect {
+                request:
+                    ExpectedRequest::ActionTask {
+                        target,
+                        request,
+                        task,
+                    },
+                ..
+            } if target == action.target && request == in_request => {
+                Ok(ModificationResponse::Task(task))
+            }
+            Expect {
+                request: ExpectedRequest::ActionEmpty { target, request },
+                ..
+            } if target == action.target && request == in_request => {
+                Ok(ModificationResponse::Empty)
+            }
             _ => Err(Error::UnexpectedAction(
                 action.target.clone(),
                 in_request.to_string(),

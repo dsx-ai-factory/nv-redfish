@@ -66,6 +66,7 @@ impl<B: Bmc> DellJobs<B> {
                     // reference; expose it as asynchronous work to callers.
                     ModificationResponse::Task(AsyncTask {
                         location: job.odata_id().clone().into(),
+                        task_resource: None,
                         retry_after: None,
                     })
                 }

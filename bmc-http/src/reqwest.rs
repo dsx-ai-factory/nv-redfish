@@ -39,6 +39,7 @@ use futures_util::StreamExt as _;
 use futures_util::TryStreamExt as _;
 use http::header;
 use http::HeaderMap;
+use nv_redfish_core::ActionError;
 use nv_redfish_core::AsyncTask;
 use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
@@ -131,6 +132,12 @@ impl CacheableError for BmcError {
 impl RequestError for BmcError {
     fn rejected_uri_reference(error: RejectedUriReferenceError) -> Self {
         Self::InvalidRequest(error.reason)
+    }
+}
+
+impl ActionError for BmcError {
+    fn not_supported() -> Self {
+        Self::InvalidRequest("action is not supported".to_string())
     }
 }
 
@@ -831,9 +838,14 @@ impl Client {
                         text: String::from("202 Accepted without Location header"),
                     });
                 };
+                let bytes = response.bytes().await.map_err(BmcError::ReqwestError)?;
+                let task_resource = serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .ok()
+                    .and_then(|value| task_resource_from_body(&value));
 
                 Ok(ModificationResponse::Task(AsyncTask {
                     location: task_location.into(),
+                    task_resource,
                     retry_after: retry_after_from_headers(&headers),
                 }))
             }
@@ -860,6 +872,22 @@ impl Client {
                         // Non-empty 200/201 body matched the caller-selected type.
                         Ok(entity) => Ok(ModificationResponse::Entity(entity)),
                         Err(err) => {
+                            if is_task_body(&value) {
+                                let Some(task_location) = location? else {
+                                    return Err(BmcError::InvalidResponse {
+                                        url,
+                                        status,
+                                        text: String::from(
+                                            "successful Task body without Location header",
+                                        ),
+                                    });
+                                };
+                                return Ok(ModificationResponse::Task(AsyncTask {
+                                    location: task_location.into(),
+                                    task_resource: task_resource_from_body(&value),
+                                    retry_after: retry_after_from_headers(&headers),
+                                }));
+                            }
                             if is_redfish_success_response(&value) {
                                 // A success envelope is not the requested
                                 // representation. Preserve an accompanying
@@ -1078,6 +1106,44 @@ fn retry_after_from_headers(headers: &HeaderMap) -> Option<Duration> {
         // This helper handles that form and leaves HTTP-date support out of scope.
         .and_then(|v| v.trim().parse::<u64>().ok())
         .map(Duration::from_secs)
+}
+
+/// Identify a Task body returned by non-conforming services.
+///
+/// Standard asynchronous responses use `202 Accepted` with a `Location`
+/// header. Some services instead return a Task resource with `200` or `201`,
+/// while still providing `Location`. Restrict this compatibility path to
+/// bodies identified as a Task by type or by their TaskService collection
+/// path; the header remains the authoritative polling URI.
+fn is_task_body(value: &serde_json::Value) -> bool {
+    let is_task_type = value
+        .get("@odata.type")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|odata_type| {
+            odata_type
+                .strip_prefix('#')
+                .is_some_and(|name| name.starts_with("Task."))
+        });
+    let is_task_path = value
+        .get("@odata.id")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|id| {
+            id.split_once('?')
+                .map_or(id, |(path, _)| path)
+                .contains("/TaskService/Tasks/")
+        });
+
+    is_task_type || is_task_path
+}
+
+fn task_resource_from_body(value: &serde_json::Value) -> Option<ODataId> {
+    if !is_task_body(value) {
+        return None;
+    }
+    value
+        .get("@odata.id")
+        .and_then(serde_json::Value::as_str)
+        .map(|id| ODataId::from(id.to_string()))
 }
 
 fn inject_etag(etag: &ODataETag, body: &mut serde_json::Value) {

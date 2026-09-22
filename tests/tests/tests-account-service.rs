@@ -462,6 +462,7 @@ async fn account_fixture_with_config(
 fn async_task(location: &str, retry_after_secs: u64) -> AsyncTask {
     AsyncTask {
         location: ODataId::from(location.to_string()).into(),
+        task_resource: None,
         retry_after: Some(Duration::from_secs(retry_after_secs)),
     }
 }

@@ -76,6 +76,19 @@ pub enum ExpectedRequest {
         request: JsonValue,
     },
 
+    /// Expected asynchronous ActionTarget.
+    ActionTask {
+        target: ActionTarget,
+        request: JsonValue,
+        task: AsyncTask,
+    },
+
+    /// Expected ActionTarget with no response body.
+    ActionEmpty {
+        target: ActionTarget,
+        request: JsonValue,
+    },
+
     /// Expected multipart update.
     MultipartUpdate {
         uri: String,
@@ -215,6 +228,29 @@ impl<E> Expect<E> {
                 request: from_str(&request.to_string()).expect("invalid json"),
             },
             response: Ok(from_str(&response.to_string()).expect("invalid json")),
+        }
+    }
+
+    /// Expect an action that returns an asynchronous task.
+    pub fn action_task(uri: impl Display, request: impl Display, task: AsyncTask) -> Self {
+        Expect {
+            request: ExpectedRequest::ActionTask {
+                target: ActionTarget::new(uri.to_string()),
+                request: from_str(&request.to_string()).expect("invalid json"),
+                task,
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    /// Expect an action that returns no response body.
+    pub fn action_empty(uri: impl Display, request: impl Display) -> Self {
+        Expect {
+            request: ExpectedRequest::ActionEmpty {
+                target: ActionTarget::new(uri.to_string()),
+                request: from_str(&request.to_string()).expect("invalid json"),
+            },
+            response: Ok(JsonValue::Null),
         }
     }
 
