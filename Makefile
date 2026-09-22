@@ -37,6 +37,7 @@ all-std-features = accounts \
                    sensors \
                    session-service \
                    storages \
+                   switches \
                    thermal \
                    update-service \
                    event-service \
@@ -84,10 +85,16 @@ compile-only-feature-sets = computer-systems,processors,controls \
              oem-hpe \
              oem-nvidia \
              fabrics,oem-nvidia \
-             fabrics,ports,oem-nvidia \
+             switches,oem-nvidia \
+             switches,ports,oem-nvidia \
+             fabrics,switches \
+             fabrics,switches,ports,oem-nvidia \
+             chassis,switches \
+             managers,switches \
              std-redfish,oem-nvidia \
              oem-nvidia-fabrics \
              fabrics,oem-nvidia-fabrics \
+             switches,oem-nvidia-fabrics \
              computer-systems,oem-nvidia \
              chassis,oem-nvidia \
              computer-systems,processors,memory,sensors,telemetry-service,oem-nvidia \

@@ -17,12 +17,12 @@
 
 use nv_redfish::fabric::Fabric;
 use nv_redfish::fabric::Protocol;
-use nv_redfish::fabric::Switch;
 use nv_redfish::oem::nvidia::switch::FabricManagerState;
 use nv_redfish::oem::nvidia::switch::SwitchIsolationMode;
 use nv_redfish::resource::Health;
 use nv_redfish::resource::PowerState;
 use nv_redfish::resource::State;
+use nv_redfish::switch::Switch;
 use nv_redfish::ResourceProvidesStatus as _;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ODataId;

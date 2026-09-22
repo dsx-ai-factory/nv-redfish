@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::switch::SwitchCollection;
 use super::Protocol;
 use crate::entity_link::EntityLink;
 use crate::entity_link::FromLink;
@@ -30,6 +29,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaFabric;
+#[cfg(feature = "switches")]
+use crate::switch::SwitchCollection;
 
 /// Lazy link to a fabric.
 pub type FabricLink<B> = EntityLink<B, FabricSchema>;
@@ -38,6 +39,7 @@ pub type FabricLink<B> = EntityLink<B, FabricSchema>;
 ///
 /// Provides access to fabric information and the switches it contains.
 pub struct Fabric<B: Bmc> {
+    #[allow(dead_code)] // Used when switches are enabled.
     bmc: NvBmc<B>,
     data: Arc<FabricSchema>,
 }
@@ -85,6 +87,7 @@ impl<B: Bmc> Fabric<B> {
     /// # Errors
     ///
     /// Returns an error if fetching the switch collection fails.
+    #[cfg(feature = "switches")]
     pub async fn switches(&self) -> Result<Option<SwitchCollection<B>>, Error<B>> {
         if let Some(switches_ref) = &self.data.switches {
             SwitchCollection::new(&self.bmc, switches_ref)

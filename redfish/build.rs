@@ -133,7 +133,7 @@ fn run() -> Result<(), Box<dyn StdError>> {
                     // Keep the legacy schema-only bundle working without
                     // enabling the standard Fabric/Switch resource types.
                     || (v == "nvidia"
-                        && name.as_str() == "fabrics"
+                        && matches!(name.as_str(), "fabrics" | "switches")
                         && cargo_feature_enabled("oem-nvidia-fabrics"))
             })
             .collect::<Vec<_>>();

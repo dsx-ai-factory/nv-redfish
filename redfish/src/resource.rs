@@ -29,7 +29,7 @@ pub use crate::schema::resource::Health;
 pub use crate::schema::resource::State;
 
 #[doc(inline)]
-#[cfg(any(feature = "computer-systems", feature = "fabrics"))]
+#[cfg(any(feature = "computer-systems", feature = "switches"))]
 pub use crate::schema::resource::PowerState;
 
 #[doc(inline)]

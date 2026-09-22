@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::Protocol;
+//! Switch entities and collections.
+
 use crate::entity_link::EntityLink;
 use crate::entity_link::FromLink;
 use crate::hardware_id::HardwareIdRef;
@@ -23,6 +24,8 @@ use crate::hardware_id::PartNumber as HardwareIdPartNumber;
 use crate::hardware_id::SerialNumber as HardwareIdSerialNumber;
 use crate::patch_support::CollectionWithPatch;
 use crate::resource::PowerState;
+#[doc(inline)]
+pub use crate::schema::protocol::Protocol;
 use crate::schema::resource::ResourceCollection;
 use crate::schema::switch::Switch as SwitchSchema;
 use crate::schema::switch_collection::SwitchCollection as SwitchCollectionSchema;
@@ -88,6 +91,7 @@ pub struct SwitchCollection<B: Bmc> {
 
 impl<B: Bmc> SwitchCollection<B> {
     /// Create a new switch collection handle.
+    #[allow(dead_code)] // Used by fabric traversal when fabrics are enabled.
     pub(crate) async fn new(
         bmc: &NvBmc<B>,
         nav: &NavProperty<SwitchCollectionSchema>,

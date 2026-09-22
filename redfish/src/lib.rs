@@ -123,7 +123,7 @@ pub mod ethernet_interface;
 /// Event Service.
 #[cfg(feature = "event-service")]
 pub mod event_service;
-/// Fabrics and switches.
+/// Fabrics.
 #[cfg(feature = "fabrics")]
 pub mod fabric;
 /// Host interfaces.
@@ -152,6 +152,9 @@ pub mod sensor;
 /// Session Service.
 #[cfg(feature = "session-service")]
 pub mod session_service;
+/// Switches.
+#[cfg(feature = "switches")]
+pub mod switch;
 /// Task Service.
 #[cfg(feature = "task-service")]
 pub mod task_service;

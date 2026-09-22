@@ -19,7 +19,6 @@
 //! resources and the switches they contain.
 
 mod item;
-mod switch;
 
 use crate::core::NavProperty;
 use crate::patch_support::CollectionWithPatch;
@@ -36,26 +35,6 @@ use std::sync::Arc;
 pub use item::Fabric;
 #[doc(inline)]
 pub use item::FabricLink;
-#[doc(inline)]
-pub use switch::FirmwareVersion;
-#[doc(inline)]
-pub use switch::Manufacturer;
-#[doc(inline)]
-pub use switch::Model;
-#[doc(inline)]
-pub use switch::PartNumber;
-#[doc(inline)]
-pub use switch::SerialNumber;
-#[doc(inline)]
-pub use switch::Sku;
-#[doc(inline)]
-pub use switch::Switch;
-#[doc(inline)]
-pub use switch::SwitchCollection;
-#[doc(inline)]
-pub use switch::SwitchLink;
-#[doc(inline)]
-pub use switch::SwitchTag;
 
 #[doc(inline)]
 pub use crate::schema::protocol::Protocol;

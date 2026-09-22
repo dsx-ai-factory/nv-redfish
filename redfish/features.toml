@@ -107,16 +107,29 @@ csdl_files = [
     "Fabric_v1.xml",
     "FabricCollection_v1.xml",
     "Protocol_v1.xml",
+]
+patterns = [
+    "Fabric.*",
+    "FabricCollection.*",
+]
+
+[[features]]
+name = "switches"
+csdl_files = [
+    "Protocol_v1.xml",
     "Redundancy_v1.xml",
     "SoftwareInventory_v1.xml",
     "Switch_v1.xml",
     "SwitchCollection_v1.xml",
 ]
 patterns = [
-    "Fabric.*",
-    "FabricCollection.*",
     "Switch.*",
     "SwitchCollection.*",
+]
+# Switches can be used without traversing Fabrics.
+root_patterns = [
+    "Switch.Switch",
+    "SwitchCollection.SwitchCollection",
 ]
 
 [[features]]
@@ -518,16 +531,26 @@ patterns = [
 # Each schema must therefore appear in exactly one block.
 
 [[oem-features]]
-# NVIDIA extensions of standard Fabric and Switch resources.
+# NVIDIA extensions of standard Fabric resources.
 vendor = "nvidia"
 name = "fabrics"
 oem_csdl_files = [
     "NvidiaFabric_v1.xml",
-    "NvidiaSwitch_v1.xml",
 ]
 csdl_files = []
 patterns = [
     "NvidiaFabric.*.*",
+]
+
+[[oem-features]]
+# NVIDIA extensions of standard Switch resources.
+vendor = "nvidia"
+name = "switches"
+oem_csdl_files = [
+    "NvidiaSwitch_v1.xml",
+]
+csdl_files = []
+patterns = [
     "NvidiaSwitch.*.*",
 ]
 
@@ -792,7 +815,7 @@ patterns = [
 
 [[oem-features]]
 # Additional schemas in the legacy NVLink fabric bundle.
-# build.rs also selects the fabrics OEM block when this feature is enabled,
+# build.rs also selects the fabrics and switches OEM blocks for this feature,
 # preserving Fabric/Switch schemas without enabling standard fabrics.
 vendor = "nvidia"
 name = "oem-nvidia-fabrics"

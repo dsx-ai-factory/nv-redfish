@@ -59,6 +59,7 @@ std-redfish = [
     "sensors",
     "session-service",
     "storages",
+    "switches",
     "task-service",
     "telemetry-service",
     "thermal",
@@ -96,6 +97,7 @@ secure-boot = []
 sensors = ["impl-entity-link", "environment-metrics"]
 session-service = ["impl-nv-bmc-expand"]
 storages = []
+switches = ["patch-collection", "resource-status", "impl-entity-link"]
 task-service = ["impl-entity-link"]
 thermal = []  # Support of legacy ThermalSubsystem
 update-service = ["patch-payload-get", "patch-collection"]
@@ -122,7 +124,7 @@ oem-delta = ["oem"]
 # chassis schemas without a further flag.
 oem-nvidia-cper = ["oem-nvidia"]
 # Legacy schema bundle, including port metrics and switch power modes.
-# Fabric/Switch wrappers need only fabrics + oem-nvidia.
+# Fabric/Switch wrappers use fabrics/switches + oem-nvidia respectively.
 oem-nvidia-fabrics = ["oem-nvidia"]
 oem-nvidia-power-management = ["oem-nvidia"]
 oem-nvidia-profiles = ["oem-nvidia"]

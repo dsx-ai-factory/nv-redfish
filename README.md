@@ -77,7 +77,7 @@ Common feature groups:
   `host-interfaces`, `log-services`, `managers`, `manager-network-protocol`, `memory`,
   `network-adapters`, `network-device-functions`, `pcie-devices`, `ports`, `power`,
   `power-supplies`, `processors`, `secure-boot`, `sensors`,
-  `session-service`, `storages`, `task-service`, `telemetry-service`, `thermal`,
+  `session-service`, `storages`, `switches`, `task-service`, `telemetry-service`, `thermal`,
   `update-service`.
 - OEM features: `oem-ami`, `oem-dell`, `oem-hpe`, `oem-lenovo`,
   `oem-supermicro`, `oem-nvidia`, `oem-liteon`.
@@ -90,15 +90,21 @@ Common feature groups:
 and covers every NVIDIA platform including the BlueField DPU. It
 compiles only the schemas belonging to the service features you already
 enabled: with `chassis` you get the NVIDIA chassis schemas, with
-`managers` the NVIDIA manager schemas, and with `fabrics` the NVIDIA Fabric/Switch
-schemas and wrappers. Thus `std-redfish` + `oem-nvidia` includes NVIDIA
+`managers` the NVIDIA manager schemas, with `fabrics` the NVIDIA Fabric schemas
+and wrappers, and with `switches` the NVIDIA Switch schemas and wrappers.
+Thus `std-redfish` + `oem-nvidia` includes NVIDIA
 Fabric/Switch support without an additional flag. Families that extend
 no standard service have their own `oem-nvidia-*` feature. `oem-nvidia`
 on its own generates nothing.
 
 The existing `oem-nvidia-fabrics` feature remains available as a schema bundle
 for Fabric/Switch, switch power modes, ports, and port/NVLink metrics. It also
-works without the standard `fabrics` feature for consumers using schemas directly.
+works without the standard `fabrics` or `switches` features for consumers using
+schemas directly.
+
+`fabrics` and `switches` are independent features, both included in `std-redfish`.
+Enable both to traverse `Fabric::switches()`. Switch types live in
+`nv_redfish::switch`; enable `ports` as well to use `Switch::ports()`.
 
 `oem-nvidia-cper` is separate because that one schema accounts for
 roughly half of the generated NVIDIA code; enable it only if you decode
