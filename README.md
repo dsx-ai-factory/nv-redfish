@@ -98,11 +98,11 @@ no standard service have their own `oem-nvidia-*` feature. `oem-nvidia`
 on its own generates nothing.
 
 The `oem-nvidia-fabrics` feature provides additional schemas for switch power
-modes, ports, and port/NVLink metrics. It no longer selects Fabric/Switch schemas;
-consumers of those schemas must enable `fabrics` + `oem-nvidia`.
+modes, ports, and port/NVLink metrics.
 
 The `fabrics` feature, included in `std-redfish`, enables both Fabric and Switch
 types in `nv_redfish::fabric`, including `Fabric::switches()` traversal.
+Add `oem-nvidia` for NVIDIA extensions.
 Enable `ports` as well to use `Switch::ports()`.
 
 `oem-nvidia-cper` is separate because that one schema accounts for
