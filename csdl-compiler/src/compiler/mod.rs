@@ -661,6 +661,46 @@ mod test {
     }
 
     #[test]
+    fn structural_properties_keep_resolved_complex_type() {
+        let bundle = scaffolded(
+            r#"<Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Fabric">
+                 <EntityType Name="Fabric">
+                   <Property Name="Links" Type="Fabric.v1_0_0.Links"/>
+                   <Property Name="LinkSets" Type="Collection(Fabric.v1_0_0.Links)"/>
+                 </EntityType>
+               </Schema>
+               <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Fabric.v1_0_0">
+                 <ComplexType Name="Links"/>
+               </Schema>
+               <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Fabric.v1_4_0">
+                 <ComplexType Name="Links" BaseType="Fabric.v1_0_0.Links">
+                   <NavigationProperty Name="ManagedBy" Type="Collection(Manager.Manager)"/>
+                 </ComplexType>
+               </Schema>
+               <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Manager">
+                 <EntityType Name="Manager"/>
+               </Schema>"#,
+        );
+        let compiled = bundle.compile_all(Config::default()).expect("valid schema");
+        let name: QualifiedTypeName = "Fabric.Fabric".parse().expect("qualified name");
+        let fabric = compiled.entity_types.get(&(&name).into()).expect("fabric");
+        assert_eq!(fabric.properties.properties.len(), 2);
+        for property in &fabric.properties.properties {
+            let resolved = match &property.ptype {
+                crate::OneOrCollection::One((_, name)) => {
+                    assert_eq!(property.name.to_string(), "Links");
+                    name
+                }
+                crate::OneOrCollection::Collection((_, name)) => {
+                    assert_eq!(property.name.to_string(), "LinkSets");
+                    name
+                }
+            };
+            assert_eq!(resolved.to_string(), "Fabric.v1_4_0.Links");
+        }
+    }
+
+    #[test]
     fn a_self_referential_complex_type_compiles() {
         // A collection of the enclosing type terminates: the guard hands
         // the self-referential property provisional type info instead of

@@ -47,6 +47,33 @@ const NVIDIA_FABRIC_DATA_TYPE: &str = "#NvidiaFabric.v1_0_0.NvidiaFabric";
 const NVIDIA_SWITCH_DATA_TYPE: &str = "#NvidiaSwitch.v1_5_0.NvidiaSwitch";
 
 #[test]
+async fn fabric_preserves_managed_by_links() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = Ids::new();
+    let manager_id = "/redfish/v1/Managers/FabricManager";
+    let fabric = get_fabric(
+        bmc,
+        &ids,
+        json!({
+            "@odata.type": "#Fabric.v1_4_0.Fabric",
+            "Links": { "ManagedBy": [{ "@odata.id": manager_id }] }
+        }),
+    )
+    .await?;
+    let raw = fabric.raw();
+    let managed_by = raw
+        .links
+        .as_ref()
+        .expect("links")
+        .managed_by
+        .as_ref()
+        .expect("managed by");
+    assert_eq!(managed_by.len(), 1);
+    assert_eq!(managed_by[0].id().to_string(), manager_id);
+    Ok(())
+}
+
+#[test]
 async fn traverses_fabrics_switches_and_ports() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = Ids::new();
