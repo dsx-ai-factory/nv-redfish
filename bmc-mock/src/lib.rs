@@ -32,6 +32,7 @@ use futures_util::TryStreamExt as _;
 use nv_redfish_core::action::ActionTarget;
 use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::ActionError;
+use nv_redfish_core::AsyncTask;
 use nv_redfish_core::Bmc as NvRedfishBmc;
 use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::EntityTypeRef;
@@ -42,6 +43,7 @@ use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
+use nv_redfish_core::OperationResponseBmc;
 use nv_redfish_core::SessionCreateResponse;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
@@ -57,7 +59,9 @@ pub enum Error {
     MutexLock(String),
     NothingIsExpected,
     BadResponseJson(JsonError),
+    HttpStatus(u16),
     UnexpectedGet(ODataId, ExpectedRequest),
+    UnexpectedOperationResponse(ODataId, ExpectedRequest),
     UnexpectedExpand(ODataId, ExpectedRequest),
     UnexpectedUpdate(ODataId, String, ExpectedRequest),
     UnexpectedCreate(ODataId, String, ExpectedRequest),
@@ -80,8 +84,15 @@ impl Display for Error {
                 write!(f, "nothing is expected to happen but something happened")
             }
             Self::BadResponseJson(err) => write!(f, "bad json response: {err}"),
+            Self::HttpStatus(status) => write!(f, "HTTP status {status}"),
             Self::UnexpectedGet(id, expected) => {
                 write!(f, "unexpected get: {id}; expected: {expected:?}")
+            }
+            Self::UnexpectedOperationResponse(id, expected) => {
+                write!(
+                    f,
+                    "unexpected operation response: {id}; expected: {expected:?}"
+                )
             }
             Self::UnexpectedExpand(id, expected) => {
                 write!(f, "unexpected expand: {id}; expected: {expected:?}")
@@ -139,6 +150,7 @@ impl nv_redfish_core::BmcError for Error {
     fn error_class(&self) -> BmcErrorClass {
         match self {
             Self::BadResponseJson(_) => BmcErrorClass::ResponseParse,
+            Self::HttpStatus(status) => BmcErrorClass::HttpResponse { status: *status },
             _ => BmcErrorClass::Other,
         }
     }
@@ -403,6 +415,23 @@ where
                 let result: R = from_value(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
+            Expect {
+                request:
+                    ExpectedRequest::ActionTask {
+                        target,
+                        request,
+                        task,
+                    },
+                ..
+            } if target == action.target && request == in_request => {
+                Ok(ModificationResponse::Task(task))
+            }
+            Expect {
+                request: ExpectedRequest::ActionEmpty { target, request },
+                ..
+            } if target == action.target && request == in_request => {
+                Ok(ModificationResponse::Empty)
+            }
             _ => Err(Error::UnexpectedAction(
                 action.target.clone(),
                 in_request.to_string(),
@@ -566,6 +595,60 @@ where
                 };
                 Err(Error::UnexpectedStream(request, expect.request))
             }
+        }
+    }
+}
+
+impl<E> OperationResponseBmc for Bmc<E>
+where
+    E: StdError + Send + Sync + 'static,
+{
+    async fn get_operation_response<T>(
+        &self,
+        location: &ODataId,
+    ) -> Result<ModificationResponse<T>, Self::Error>
+    where
+        T: Send + Sync + Sized + for<'de> serde::Deserialize<'de>,
+    {
+        let expect = self
+            .expect
+            .lock()
+            .map_err(Error::mutex_lock)?
+            .pop_front()
+            .ok_or(Error::NothingIsExpected)?;
+        match expect {
+            Expect {
+                request: ExpectedRequest::OperationResponseResult { id },
+                response,
+            } if id == *location => {
+                let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
+                let result: T = from_value(response).map_err(Error::BadResponseJson)?;
+                Ok(ModificationResponse::Entity(result))
+            }
+            Expect {
+                request:
+                    ExpectedRequest::OperationResponsePending {
+                        id,
+                        location: next_location,
+                        retry_after,
+                    },
+                ..
+            } if id == *location => Ok(ModificationResponse::Task(AsyncTask {
+                location: next_location.unwrap_or_else(|| location.clone()).into(),
+                retry_after,
+            })),
+            Expect {
+                request: ExpectedRequest::OperationResponseEmpty { id },
+                ..
+            } if id == *location => Ok(ModificationResponse::Empty),
+            Expect {
+                request: ExpectedRequest::OperationResponseStatus { id, status },
+                ..
+            } if id == *location => Err(Error::HttpStatus(status)),
+            _ => Err(Error::UnexpectedOperationResponse(
+                location.clone(),
+                expect.request,
+            )),
         }
     }
 }

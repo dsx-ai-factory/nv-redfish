@@ -21,11 +21,16 @@
 //! against this service's Tasks collection and returns lazy task links that can
 //! be fetched when polling is needed.
 
+use std::mem;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::core::Bmc;
 use crate::core::EntityTypeRef as _;
+use crate::core::ModificationResponse;
 use crate::core::NavProperty;
+use crate::core::ODataId;
+use crate::core::OperationResponseBmc;
 use crate::entity_link::EntityLink;
 use crate::schema::task::Task as TaskSchema;
 use crate::schema::task_service::TaskService as TaskServiceSchema;
@@ -37,6 +42,126 @@ use nv_redfish_core::AsyncTask;
 
 /// Link to a Redfish Task returned by an asynchronous operation.
 pub type TaskLink<B> = EntityLink<B, TaskSchema>;
+
+enum State<R> {
+    /// The result arrived with the original response.
+    Ready(R),
+    /// The operation is running.
+    Pending(AsyncTask),
+    /// The operation finished; its result must be read from the
+    /// compatibility result URI.
+    Finished,
+    /// An earlier poll returned the outcome.
+    Done,
+}
+
+/// A modification response known to return a typed result, possibly
+/// asynchronously.
+#[must_use = "typed modification responses must be polled"]
+pub struct TypedModificationResponse<R> {
+    state: State<R>,
+    compatibility_result: Option<ODataId>,
+}
+
+impl<R> TypedModificationResponse<R> {
+    /// Create a typed response from an action with a response payload.
+    pub fn from_typed_action(response: ModificationResponse<R>) -> Self {
+        Self::new(response, None)
+    }
+
+    /// Create a typed response whose result is read from `result_location`
+    /// when the service completes without returning it.
+    pub fn with_compatibility_result(
+        response: ModificationResponse<R>,
+        result_location: ODataId,
+    ) -> Self {
+        Self::new(response, Some(result_location))
+    }
+
+    fn new(response: ModificationResponse<R>, compatibility_result: Option<ODataId>) -> Self {
+        let state = match response {
+            ModificationResponse::Entity(result) => State::Ready(result),
+            ModificationResponse::Task(task) => State::Pending(task),
+            ModificationResponse::Empty => State::Finished,
+        };
+        Self {
+            state,
+            compatibility_result,
+        }
+    }
+
+    /// Recommended delay before the next poll, from the latest pending
+    /// response.
+    ///
+    /// `None` when the operation is not pending or the service sent no
+    /// `Retry-After`.
+    #[must_use]
+    pub const fn retry_after(&self) -> Option<Duration> {
+        match &self.state {
+            State::Pending(task) => task.retry_after,
+            State::Ready(_) | State::Finished | State::Done => None,
+        }
+    }
+
+    /// Perform one polling step, returning the result once the operation
+    /// completes and `None` while it is still running.
+    ///
+    /// A result read from a URI other than the Task Monitor can be left over
+    /// from an earlier run, so callers should check request-specific data such
+    /// as a nonce.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a request fails, the operation completes without
+    /// exposing its result, or an earlier poll already returned the result.
+    /// After a request error the same step can be retried.
+    pub async fn poll<B>(&mut self, task_service: &TaskService<B>) -> Result<Option<R>, Error<B>>
+    where
+        B: OperationResponseBmc,
+        R: Send + Sync + for<'de> serde::Deserialize<'de>,
+    {
+        let bmc = task_service.bmc.as_ref();
+        match mem::replace(&mut self.state, State::Done) {
+            State::Ready(result) => Ok(Some(result)),
+            State::Pending(mut task) => match bmc.get_operation_response(&task.location.0).await {
+                Ok(ModificationResponse::Task(pending)) => {
+                    task.location = pending.location;
+                    task.retry_after = pending.retry_after;
+                    self.state = State::Pending(task);
+                    Ok(None)
+                }
+                Ok(ModificationResponse::Entity(result)) => Ok(Some(result)),
+                Ok(ModificationResponse::Empty) => self.read_result(bmc).await,
+                Err(error) => {
+                    self.state = State::Pending(task);
+                    Err(Error::Bmc(error))
+                }
+            },
+            State::Finished => self.read_result(bmc).await,
+            State::Done => Err(Error::TaskAlreadyFinished),
+        }
+    }
+
+    async fn read_result<B>(&mut self, bmc: &B) -> Result<Option<R>, Error<B>>
+    where
+        B: OperationResponseBmc,
+        R: Send + Sync + for<'de> serde::Deserialize<'de>,
+    {
+        let Some(result) = &self.compatibility_result else {
+            return Err(Error::TaskResultUnavailable);
+        };
+        match bmc.get_operation_response(result).await {
+            Ok(ModificationResponse::Entity(value)) => Ok(Some(value)),
+            Ok(ModificationResponse::Task(_) | ModificationResponse::Empty) => {
+                Err(Error::TaskResultUnavailable)
+            }
+            Err(error) => {
+                self.state = State::Finished;
+                Err(Error::Bmc(error))
+            }
+        }
+    }
+}
 
 /// Task service.
 ///

@@ -107,6 +107,8 @@ pub use bmc::BmcError;
 #[doc(inline)]
 pub use bmc::BmcErrorClass;
 #[doc(inline)]
+pub use bmc::OperationResponseBmc;
+#[doc(inline)]
 pub use bmc::StreamEvent;
 #[doc(inline)]
 pub use deserialize::de_optional_nullable;

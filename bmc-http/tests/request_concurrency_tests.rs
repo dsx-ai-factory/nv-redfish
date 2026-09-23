@@ -131,6 +131,18 @@ mod tests {
             }
         }
 
+        fn get_operation_response<T>(
+            &self,
+            url: Url,
+            _credentials: &BmcCredentials,
+            _custom_headers: &HeaderMap,
+        ) -> impl Future<Output = Result<ModificationResponse<T>, Self::Error>> + Send
+        where
+            T: DeserializeOwned + Send + Sync,
+        {
+            self.modification_response(url.path().to_owned())
+        }
+
         fn post<B, T>(
             &self,
             url: Url,
