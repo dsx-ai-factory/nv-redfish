@@ -23,9 +23,7 @@ use crate::hardware_id::Manufacturer as HardwareIdManufacturer;
 use crate::hardware_id::Model as HardwareIdModel;
 use crate::hardware_id::PartNumber as HardwareIdPartNumber;
 use crate::hardware_id::SerialNumber as HardwareIdSerialNumber;
-use crate::patch_support::CollectionWithPatch;
 use crate::resource::PowerState;
-use crate::schema::resource::ResourceCollection;
 use crate::schema::switch::Switch as SwitchSchema;
 use crate::schema::switch_collection::SwitchCollection as SwitchCollectionSchema;
 use crate::Error;
@@ -90,12 +88,11 @@ pub struct SwitchCollection<B: Bmc> {
 
 impl<B: Bmc> SwitchCollection<B> {
     /// Create a new switch collection handle.
-    #[allow(dead_code)] // Used by fabric traversal when fabrics are enabled.
     pub(crate) async fn new(
         bmc: &NvBmc<B>,
         nav: &NavProperty<SwitchCollectionSchema>,
     ) -> Result<Self, Error<B>> {
-        let collection = Self::expand_collection(bmc, nav, None, None).await?;
+        let collection = bmc.expand_property(nav).await?;
         Ok(Self {
             bmc: bmc.clone(),
             collection,
@@ -128,24 +125,6 @@ impl<B: Bmc> SwitchCollection<B> {
                 SwitchLink::new(&self.bmc, NavProperty::new_reference(member.id().clone()))
             })
             .collect()
-    }
-}
-
-impl<B: Bmc> CollectionWithPatch<SwitchCollectionSchema, SwitchSchema, B> for SwitchCollection<B> {
-    fn convert_patched(
-        base: ResourceCollection,
-        members: Vec<NavProperty<SwitchSchema>>,
-    ) -> SwitchCollectionSchema {
-        SwitchCollectionSchema {
-            odata_id: base.odata_id,
-            odata_etag: base.odata_etag,
-            odata_type: base.odata_type,
-            settings_annotations: base.settings_annotations,
-            description: base.description,
-            name: base.name,
-            oem: base.oem,
-            members,
-        }
     }
 }
 

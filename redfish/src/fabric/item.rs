@@ -27,7 +27,6 @@ use std::convert::identity;
 use std::future::Future;
 use std::sync::Arc;
 
-#[cfg(feature = "switches")]
 use super::SwitchCollection;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaFabric;
@@ -39,7 +38,6 @@ pub type FabricLink<B> = EntityLink<B, FabricSchema>;
 ///
 /// Provides access to fabric information and the switches it contains.
 pub struct Fabric<B: Bmc> {
-    #[allow(dead_code)] // Used when switches are enabled.
     bmc: NvBmc<B>,
     data: Arc<FabricSchema>,
 }
@@ -87,7 +85,6 @@ impl<B: Bmc> Fabric<B> {
     /// # Errors
     ///
     /// Returns an error if fetching the switch collection fails.
-    #[cfg(feature = "switches")]
     pub async fn switches(&self) -> Result<Option<SwitchCollection<B>>, Error<B>> {
         if let Some(switches_ref) = &self.data.switches {
             SwitchCollection::new(&self.bmc, switches_ref)

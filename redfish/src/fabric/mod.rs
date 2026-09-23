@@ -18,40 +18,22 @@
 //! This module provides types for working with Redfish Fabric
 //! resources and the switches they contain.
 
-#[cfg(feature = "fabrics")]
 mod item;
-#[cfg(feature = "switches")]
 mod switch;
 
-#[cfg(feature = "fabrics")]
 use crate::core::NavProperty;
-#[cfg(feature = "fabrics")]
-use crate::patch_support::CollectionWithPatch;
-#[cfg(feature = "fabrics")]
-use crate::schema::fabric::Fabric as FabricSchema;
-#[cfg(feature = "fabrics")]
 use crate::schema::fabric_collection::FabricCollection as FabricCollectionSchema;
-#[cfg(feature = "fabrics")]
-use crate::schema::resource::ResourceCollection;
-#[cfg(feature = "fabrics")]
 use crate::Error;
-#[cfg(feature = "fabrics")]
 use crate::NvBmc;
-#[cfg(feature = "fabrics")]
 use crate::ServiceRoot;
-#[cfg(feature = "fabrics")]
 use nv_redfish_core::Bmc;
-#[cfg(feature = "fabrics")]
 use std::sync::Arc;
 
-#[cfg(feature = "fabrics")]
 #[doc(inline)]
 pub use item::Fabric;
-#[cfg(feature = "fabrics")]
 #[doc(inline)]
 pub use item::FabricLink;
 
-#[cfg(feature = "switches")]
 #[doc(inline)]
 pub use switch::{
     FirmwareVersion, Manufacturer, Model, PartNumber, SerialNumber, Sku, Switch, SwitchCollection,
@@ -64,13 +46,11 @@ pub use crate::schema::protocol::Protocol;
 /// Fabric collection.
 ///
 /// Provides functions to access collection members.
-#[cfg(feature = "fabrics")]
 pub struct FabricCollection<B: Bmc> {
     bmc: NvBmc<B>,
     collection: Arc<FabricCollectionSchema>,
 }
 
-#[cfg(feature = "fabrics")]
 impl<B: Bmc> FabricCollection<B> {
     /// Create a new fabric collection handle.
     pub(crate) async fn new(
@@ -80,7 +60,7 @@ impl<B: Bmc> FabricCollection<B> {
         let Some(collection_ref) = &root.root.fabrics else {
             return Ok(None);
         };
-        let collection = Self::expand_collection(bmc, collection_ref, None, None).await?;
+        let collection = bmc.expand_property(collection_ref).await?;
         Ok(Some(Self {
             bmc: bmc.clone(),
             collection,
@@ -113,24 +93,5 @@ impl<B: Bmc> FabricCollection<B> {
                 FabricLink::new(&self.bmc, NavProperty::new_reference(member.id().clone()))
             })
             .collect()
-    }
-}
-
-#[cfg(feature = "fabrics")]
-impl<B: Bmc> CollectionWithPatch<FabricCollectionSchema, FabricSchema, B> for FabricCollection<B> {
-    fn convert_patched(
-        base: ResourceCollection,
-        members: Vec<NavProperty<FabricSchema>>,
-    ) -> FabricCollectionSchema {
-        FabricCollectionSchema {
-            odata_id: base.odata_id,
-            odata_etag: base.odata_etag,
-            odata_type: base.odata_type,
-            settings_annotations: base.settings_annotations,
-            description: base.description,
-            name: base.name,
-            oem: base.oem,
-            members,
-        }
     }
 }

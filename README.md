@@ -77,7 +77,7 @@ Common feature groups:
   `host-interfaces`, `log-services`, `managers`, `manager-network-protocol`, `memory`,
   `network-adapters`, `network-device-functions`, `pcie-devices`, `ports`, `power`,
   `power-supplies`, `processors`, `secure-boot`, `sensors`,
-  `session-service`, `storages`, `switches`, `task-service`, `telemetry-service`, `thermal`,
+  `session-service`, `storages`, `task-service`, `telemetry-service`, `thermal`,
   `update-service`.
 - OEM features: `oem-ami`, `oem-dell`, `oem-hpe`, `oem-lenovo`,
   `oem-supermicro`, `oem-nvidia`, `oem-liteon`.
@@ -90,22 +90,19 @@ Common feature groups:
 and covers every NVIDIA platform including the BlueField DPU. It
 compiles only the schemas belonging to the service features you already
 enabled: with `chassis` you get the NVIDIA chassis schemas, with
-`managers` the NVIDIA manager schemas, with `fabrics` the NVIDIA Fabric schemas
-and wrappers, and with `switches` the NVIDIA Switch schemas and wrappers.
+`managers` the NVIDIA manager schemas, and with `fabrics` the NVIDIA Fabric and
+Switch schemas and wrappers.
 Thus `std-redfish` + `oem-nvidia` includes NVIDIA
 Fabric/Switch support without an additional flag. Families that extend
 no standard service have their own `oem-nvidia-*` feature. `oem-nvidia`
 on its own generates nothing.
 
-The existing `oem-nvidia-fabrics` feature remains available as a schema bundle
-for Fabric/Switch, switch power modes, ports, and port/NVLink metrics. It also
-works without the standard `fabrics` or `switches` features for consumers using
-schemas directly.
+The `oem-nvidia-fabrics` feature provides additional schemas for switch power
+modes, ports, and port/NVLink metrics. It no longer selects Fabric/Switch schemas;
+consumers of those schemas must enable `fabrics` + `oem-nvidia`.
 
-`fabrics` and `switches` are independent features, both included in `std-redfish`.
-Enable both to traverse `Fabric::switches()`. Switch types live in
-`nv_redfish::fabric` alongside Fabric types. The module is available with either
-feature; Fabric types require `fabrics`, while Switch types require `switches`.
+The `fabrics` feature, included in `std-redfish`, enables both Fabric and Switch
+types in `nv_redfish::fabric`, including `Fabric::switches()` traversal.
 Enable `ports` as well to use `Switch::ports()`.
 
 `oem-nvidia-cper` is separate because that one schema accounts for

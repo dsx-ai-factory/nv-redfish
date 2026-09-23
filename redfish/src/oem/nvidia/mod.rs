@@ -59,7 +59,7 @@ pub mod update_service_actions;
 #[cfg(feature = "fabrics")]
 pub mod fabric;
 
-#[cfg(feature = "switches")]
+#[cfg(feature = "fabrics")]
 pub mod switch;
 
 #[cfg(feature = "chassis")]
@@ -94,6 +94,6 @@ pub use update_service_actions::NvidiaUpdateServiceActions;
 #[doc(inline)]
 pub use fabric::NvidiaFabric;
 
-#[cfg(feature = "switches")]
+#[cfg(feature = "fabrics")]
 #[doc(inline)]
 pub use switch::NvidiaSwitch;

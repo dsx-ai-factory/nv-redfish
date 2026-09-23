@@ -124,7 +124,7 @@ pub mod ethernet_interface;
 #[cfg(feature = "event-service")]
 pub mod event_service;
 /// Fabrics and switches.
-#[cfg(any(feature = "fabrics", feature = "switches"))]
+#[cfg(feature = "fabrics")]
 pub mod fabric;
 /// Host interfaces.
 #[cfg(feature = "host-interfaces")]
