@@ -16,6 +16,7 @@
 //! Expectations for Bmc Mock.
 
 use std::fmt::Display;
+use std::time::Duration;
 
 use nv_redfish_core::action::ActionTarget;
 use nv_redfish_core::AsyncTask;
@@ -32,6 +33,25 @@ pub type Response<E> = Result<JsonValue, E>;
 pub enum ExpectedRequest {
     /// Expected Get.
     Get { id: ODataId },
+
+    /// Expected operation response carrying a typed result.
+    OperationResponseResult { id: ODataId },
+
+    /// Expected pending operation response.
+    OperationResponsePending {
+        id: ODataId,
+        location: Option<ODataId>,
+        retry_after: Option<Duration>,
+    },
+
+    /// Expected operation response with no body.
+    OperationResponseEmpty { id: ODataId },
+
+    /// Expected operation response failing with an HTTP status.
+    OperationResponseStatus { id: ODataId, status: u16 },
+
+    /// Expected operation response that never completes.
+    OperationResponseWait { id: ODataId },
 
     /// Expected Expand.
     Expand { id: ODataId },
@@ -72,6 +92,19 @@ pub enum ExpectedRequest {
 
     /// Expected ActionTarget
     Action {
+        target: ActionTarget,
+        request: JsonValue,
+    },
+
+    /// Expected asynchronous ActionTarget.
+    ActionTask {
+        target: ActionTarget,
+        request: JsonValue,
+        task: AsyncTask,
+    },
+
+    /// Expected ActionTarget with no response body.
+    ActionEmpty {
         target: ActionTarget,
         request: JsonValue,
     },
@@ -121,6 +154,61 @@ impl<E> Expect<E> {
             response: Ok(from_str(&response.to_string()).expect("invalid json")),
         }
     }
+
+    pub fn operation_response_result(uri: impl Display, response: impl Display) -> Self {
+        Expect {
+            request: ExpectedRequest::OperationResponseResult {
+                id: uri.to_string().into(),
+            },
+            response: Ok(from_str(&response.to_string()).expect("invalid json")),
+        }
+    }
+
+    /// Expect a pending operation response. A `None` location keeps polling
+    /// `uri`, as the HTTP transport does when `Location` is omitted.
+    pub fn operation_response_pending(
+        uri: impl Display,
+        location: Option<&str>,
+        retry_after: Option<Duration>,
+    ) -> Self {
+        Expect {
+            request: ExpectedRequest::OperationResponsePending {
+                id: uri.to_string().into(),
+                location: location.map(|value| ODataId::from(value.to_string())),
+                retry_after,
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    pub fn operation_response_empty(uri: impl Display) -> Self {
+        Expect {
+            request: ExpectedRequest::OperationResponseEmpty {
+                id: uri.to_string().into(),
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    pub fn operation_response_status(uri: impl Display, status: u16) -> Self {
+        Expect {
+            request: ExpectedRequest::OperationResponseStatus {
+                id: uri.to_string().into(),
+                status,
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    pub fn operation_response_wait(uri: impl Display) -> Self {
+        Expect {
+            request: ExpectedRequest::OperationResponseWait {
+                id: uri.to_string().into(),
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
     pub fn expand(uri: impl Display, response: impl Display) -> Self {
         Expect {
             request: ExpectedRequest::Expand {
@@ -215,6 +303,29 @@ impl<E> Expect<E> {
                 request: from_str(&request.to_string()).expect("invalid json"),
             },
             response: Ok(from_str(&response.to_string()).expect("invalid json")),
+        }
+    }
+
+    /// Expect an action that returns an asynchronous task.
+    pub fn action_task(uri: impl Display, request: impl Display, task: AsyncTask) -> Self {
+        Expect {
+            request: ExpectedRequest::ActionTask {
+                target: ActionTarget::new(uri.to_string()),
+                request: from_str(&request.to_string()).expect("invalid json"),
+                task,
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    /// Expect an action that returns no response body.
+    pub fn action_empty(uri: impl Display, request: impl Display) -> Self {
+        Expect {
+            request: ExpectedRequest::ActionEmpty {
+                target: ActionTarget::new(uri.to_string()),
+                request: from_str(&request.to_string()).expect("invalid json"),
+            },
+            response: Ok(JsonValue::Null),
         }
     }
 

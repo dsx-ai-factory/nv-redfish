@@ -795,6 +795,92 @@ impl Client {
         serde_path_to_error::deserialize(value).map_err(BmcError::JsonError)
     }
 
+    async fn handle_operation_response<T>(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<OperationStep<T>, BmcError>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
+        let status = response.status();
+        let url = response.url().clone();
+        let headers = response.headers().clone();
+        if !status.is_success() {
+            return Err(BmcError::InvalidResponse {
+                url,
+                status,
+                text: response.text().await.unwrap_or_else(|_| "<no data>".into()),
+            });
+        }
+
+        // Services often omit Location on repeated pending monitor responses.
+        let location = location_from_headers(&headers, &url, status);
+        let requested = || ODataId::from(odata_path_from_url(&url));
+        let finished =
+            |location: Result<Option<ODataId>, BmcError>| -> Result<OperationStep<T>, BmcError> {
+                Ok(location?.map_or(
+                    OperationStep::Done(ModificationResponse::Empty),
+                    OperationStep::Result,
+                ))
+            };
+
+        match status {
+            reqwest::StatusCode::NO_CONTENT => finished(location),
+            reqwest::StatusCode::ACCEPTED => {
+                Ok(OperationStep::Done(ModificationResponse::Task(AsyncTask {
+                    location: location?.unwrap_or_else(requested).into(),
+                    retry_after: retry_after_from_headers(&headers),
+                })))
+            }
+            reqwest::StatusCode::OK | reqwest::StatusCode::CREATED => {
+                let bytes = response.bytes().await.map_err(BmcError::ReqwestError)?;
+                if bytes.is_empty() {
+                    return finished(location);
+                }
+                let value: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(BmcError::DecodeError)?;
+
+                // Services without a Task Monitor are polled at the Task
+                // resource, which only reports whether the operation finished
+                // and can record where its result is.
+                if is_task_body(&value) {
+                    return match value.get("TaskState").and_then(serde_json::Value::as_str) {
+                        Some("Completed") => finished(
+                            task_payload_location(&value)
+                                .map(|raw| resolve_location(raw, &url, status))
+                                .transpose(),
+                        ),
+                        Some(state @ ("Exception" | "Killed" | "Cancelled")) => {
+                            Err(BmcError::InvalidResponse {
+                                url,
+                                status,
+                                text: format!("Task ended in state {state}"),
+                            })
+                        }
+                        _ => Ok(OperationStep::Done(ModificationResponse::Task(AsyncTask {
+                            location: location?
+                                .or_else(|| task_odata_id(&value))
+                                .unwrap_or_else(requested)
+                                .into(),
+                            retry_after: retry_after_from_headers(&headers),
+                        }))),
+                    };
+                }
+
+                match serde_path_to_error::deserialize(&value) {
+                    Ok(entity) => Ok(OperationStep::Done(ModificationResponse::Entity(entity))),
+                    Err(_) if is_redfish_success_response(&value) => finished(location),
+                    Err(err) => Err(BmcError::JsonError(err)),
+                }
+            }
+            _ => Err(BmcError::InvalidResponse {
+                url,
+                status,
+                text: format!("Unexpected successful status code: {status}"),
+            }),
+        }
+    }
+
     async fn handle_modification_response<T>(
         &self,
         response: reqwest::Response,
@@ -848,6 +934,23 @@ impl Client {
                         if let Some(etag) = etag {
                             inject_etag(&etag, &mut value);
                         }
+                    }
+
+                    if is_task_body(&value) {
+                        let Some(task_location) = location?.or_else(|| task_odata_id(&value))
+                        else {
+                            return Err(BmcError::InvalidResponse {
+                                url,
+                                status,
+                                text: String::from(
+                                    "successful Task body without Location or @odata.id",
+                                ),
+                            });
+                        };
+                        return Ok(ModificationResponse::Task(AsyncTask {
+                            location: task_location.into(),
+                            retry_after: retry_after_from_headers(&headers),
+                        }));
                     }
 
                     // Non-empty 200/201 bodies are typed responses selected by the caller.
@@ -1022,6 +1125,22 @@ fn location_from_headers(
         .to_str()
         .map_err(|_| invalid_response("Location header is not valid text"))?;
 
+    resolve_location(raw, response_url, status).map(Some)
+}
+
+/// Resolve a `Location` value against the response URL, as
+/// [`location_from_headers`] does for the header itself.
+fn resolve_location(
+    raw: &str,
+    response_url: &Url,
+    status: reqwest::StatusCode,
+) -> Result<ODataId, BmcError> {
+    let invalid_response = |text: &'static str| BmcError::InvalidResponse {
+        url: response_url.clone(),
+        status,
+        text: text.to_string(),
+    };
+
     let raw = raw.trim();
 
     // Joining either value would resolve back to the response resource, which
@@ -1044,16 +1163,20 @@ fn location_from_headers(
         ));
     }
 
-    let mut path_and_query = resolved.path().to_string();
+    Ok(odata_path_from_url(&resolved).into())
+}
+
+fn odata_path_from_url(url: &Url) -> String {
+    let mut path_and_query = url.path().to_string();
 
     // Preserve the query separately from the path so later polling or deletion
     // sends it as a query instead of percent-encoded path text.
-    if let Some(query) = resolved.query() {
+    if let Some(query) = url.query() {
         path_and_query.push('?');
         path_and_query.push_str(query);
     }
 
-    Ok(Some(path_and_query.into()))
+    path_and_query
 }
 
 fn auth_token_from_headers(headers: &HeaderMap) -> Option<String> {
@@ -1078,6 +1201,54 @@ fn retry_after_from_headers(headers: &HeaderMap) -> Option<Duration> {
         // This helper handles that form and leaves HTTP-date support out of scope.
         .and_then(|v| v.trim().parse::<u64>().ok())
         .map(Duration::from_secs)
+}
+
+/// One operation response, before following a result location.
+enum OperationStep<T> {
+    Done(ModificationResponse<T>),
+    /// The operation finished and the service named where its result is.
+    Result(ODataId),
+}
+
+/// Identify a Task body returned by non-conforming services.
+///
+/// Standard asynchronous responses use `202 Accepted` with a `Location`
+/// header. Some services instead return a Task resource with `200` or `201`.
+/// Only `@odata.type` identifies a Task; a TaskService path alone also
+/// matches responses from operations on a Task or its sub-resources.
+fn is_task_body(value: &serde_json::Value) -> bool {
+    value
+        .get("@odata.type")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|odata_type| odata_type.strip_prefix('#'))
+        .is_some_and(|name| name.starts_with("Task."))
+}
+
+fn task_odata_id(value: &serde_json::Value) -> Option<ODataId> {
+    value
+        .get("@odata.id")
+        .and_then(serde_json::Value::as_str)
+        .map(|id| ODataId::from(id.to_string()))
+}
+
+/// Get the last `Location` recorded in a Task's `Payload.HttpHeaders`.
+///
+/// Services without a Task Monitor can record the result URI there instead
+/// of returning the result.
+fn task_payload_location(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get("Payload")?
+        .get("HttpHeaders")?
+        .as_array()?
+        .iter()
+        .rev()
+        .filter_map(serde_json::Value::as_str)
+        .find_map(|header| {
+            let (name, location) = header.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("Location")
+                .then_some(location)
+        })
 }
 
 fn inject_etag(etag: &ODataETag, body: &mut serde_json::Value) {
@@ -1150,6 +1321,37 @@ impl HttpClient for Client {
 
         let response = self.send(request.build()?).await?;
         self.handle_response(response).await
+    }
+
+    async fn get_operation_response<T>(
+        &self,
+        url: Url,
+        credentials: &BmcCredentials,
+        custom_headers: &HeaderMap,
+    ) -> Result<ModificationResponse<T>, Self::Error>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
+        let request =
+            auth_headers(self.inner.get(url.clone()), credentials).headers(custom_headers.clone());
+        let response = self.send(request.build()?).await?;
+        let result_location = match self.handle_operation_response(response).await? {
+            OperationStep::Done(response) => return Ok(response),
+            OperationStep::Result(location) => location,
+        };
+
+        // A finished operation that names its result URI is followed once;
+        // a second redirection is reported as having no result.
+        let result_url = url.join(&result_location.to_string()).map_err(|_| {
+            BmcError::InvalidRequest(format!("invalid result location {result_location}"))
+        })?;
+        let request =
+            auth_headers(self.inner.get(result_url), credentials).headers(custom_headers.clone());
+        let response = self.send(request.build()?).await?;
+        match self.handle_operation_response(response).await? {
+            OperationStep::Done(response) => Ok(response),
+            OperationStep::Result(_) => Ok(ModificationResponse::Empty),
+        }
     }
 
     async fn post<B, T>(

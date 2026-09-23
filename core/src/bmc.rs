@@ -272,6 +272,19 @@ pub trait Bmc: Send + Sync {
     }
 }
 
+/// Optional BMC capability for fetching asynchronous operation responses.
+pub trait OperationResponseBmc: Bmc {
+    /// Get one response from a monitor or result URI.
+    ///
+    /// `Task` means the operation is still running; a pending response without
+    /// `Location` keeps polling `location`. `Empty` means it finished without
+    /// returning a result.
+    fn get_operation_response<R: Send + Sync + Sized + for<'de> Deserialize<'de>>(
+        &self,
+        location: &ODataId,
+    ) -> impl Future<Output = Result<ModificationResponse<R>, Self::Error>> + Send;
+}
+
 /// One event a server-sent event stream delivered.
 ///
 /// `data` is the event's payload, decoded into the type the stream was

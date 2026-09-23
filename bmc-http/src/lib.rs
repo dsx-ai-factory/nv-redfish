@@ -70,6 +70,7 @@ use nv_redfish_core::FilterQuery;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
+use nv_redfish_core::OperationResponseBmc;
 use nv_redfish_core::SessionCreateResponse;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
@@ -107,6 +108,16 @@ pub trait HttpClient: Send + Sync {
         etag: Option<ODataETag>,
         custom_headers: &HeaderMap,
     ) -> impl Future<Output = Result<T, Self::Error>> + Send
+    where
+        T: DeserializeOwned + Send + Sync;
+
+    /// Perform a GET on an asynchronous operation monitor or result URI.
+    fn get_operation_response<T>(
+        &self,
+        url: Url,
+        credentials: &BmcCredentials,
+        custom_headers: &HeaderMap,
+    ) -> impl Future<Output = Result<ModificationResponse<T>, Self::Error>> + Send
     where
         T: DeserializeOwned + Send + Sync;
 
@@ -874,6 +885,22 @@ where
                 &self.custom_headers,
                 last_event_id,
             )
+            .await
+    }
+}
+
+impl<C: HttpClient> OperationResponseBmc for HttpBmc<C>
+where
+    C::Error: CacheableError + RequestError,
+{
+    async fn get_operation_response<R: Send + Sync + for<'de> Deserialize<'de>>(
+        &self,
+        location: &ODataId,
+    ) -> Result<ModificationResponse<R>, Self::Error> {
+        let endpoint_url = self.redfish_endpoint.with_odata_id(location);
+        let credentials = self.read_credentials();
+        self.client
+            .get_operation_response(endpoint_url, credentials.as_ref(), &self.custom_headers)
             .await
     }
 }

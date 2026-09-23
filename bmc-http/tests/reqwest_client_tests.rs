@@ -37,7 +37,8 @@ mod reqwest_client_tests {
     use nv_redfish_core::UploadStream;
     use nv_redfish_core::{
         query::{ExpandQuery, FilterQuery},
-        Bmc, DataStream, ModificationResponse, MultipartUpdateRequest, ODataId,
+        Action, Bmc, DataStream, ModificationResponse, MultipartUpdateRequest, ODataId,
+        OperationResponseBmc,
     };
     use serde::{Deserialize, Serialize};
     use url::Url;
@@ -991,6 +992,442 @@ mod reqwest_client_tests {
         assert!(action_response.success);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_action_body_task_is_normalized_for_200_and_201(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for status in [200, 201] {
+            let mock_server = MockServer::start().await;
+            let action_path = "/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements";
+            let task_path = format!("/redfish/v1/TaskService/Tasks/body-{status}");
+            let monitor_path = format!("/redfish/v1/TaskService/TaskMonitors/{status}");
+            let action_request = ActionRequest {
+                parameter: "Nonce".to_string(),
+            };
+
+            Mock::given(method("POST"))
+                .and(path(action_path))
+                .and(body_json(&action_request))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .insert_header("Location", &monitor_path)
+                        .insert_header("Retry-After", "4")
+                        .set_body_json(serde_json::json!({
+                            "@odata.id": task_path,
+                            "@odata.type": "#Task.v1_4_3.Task",
+                            "Id": status.to_string()
+                        })),
+                )
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let bmc = create_test_bmc(&mock_server);
+            let action: Action<ActionRequest, serde_json::Value> =
+                serde_json::from_value(serde_json::json!({"target": action_path}))?;
+            let response = bmc.action(&action, &action_request).await?;
+            let ModificationResponse::Task(task) = response else {
+                return Err(format!("expected task response for HTTP {status}").into());
+            };
+            assert_eq!(task.location.0.to_string(), monitor_path);
+            assert_eq!(task.retry_after, Some(Duration::from_secs(4)));
+            mock_server.verify().await;
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_action_task_body_without_location_uses_odata_id(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let action_path = "/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements";
+        let task_path = "/redfish/v1/TaskService/Tasks/42";
+        let action_request = ActionRequest {
+            parameter: "Nonce".to_string(),
+        };
+
+        Mock::given(method("POST"))
+            .and(path(action_path))
+            .and(body_json(&action_request))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.id": task_path,
+                "@odata.type": "#Task.v1_4_3.Task",
+                "Id": "42"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let action = create_test_action(action_path);
+        let response = bmc.action(&action, &action_request).await?;
+        let ModificationResponse::Task(task) = response else {
+            return Err("expected task response".into());
+        };
+        assert_eq!(task.location.0.to_string(), task_path);
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_action_body_under_task_path_without_task_type_is_entity(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let action_path = "/redfish/v1/TaskService/Tasks/42/Actions/Oem.Refresh";
+        let body = serde_json::json!({
+            "@odata.id": "/redfish/v1/TaskService/Tasks/42/Oem/Detail",
+            "Detail": "refreshed"
+        });
+        let action_request = ActionRequest {
+            parameter: "Nonce".to_string(),
+        };
+
+        Mock::given(method("POST"))
+            .and(path(action_path))
+            .and(body_json(&action_request))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let action: Action<ActionRequest, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({"target": action_path}))?;
+        let response = bmc.action(&action, &action_request).await?;
+        let ModificationResponse::Entity(entity) = response else {
+            return Err("expected entity response".into());
+        };
+        assert_eq!(entity, body);
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_action_202_task_body_without_location_remains_invalid() {
+        let mock_server = MockServer::start().await;
+        let action_path = "/redfish/v1/ComponentIntegrity/1/Actions/GetMeasurements";
+        let action_request = ActionRequest {
+            parameter: "Nonce".to_string(),
+        };
+
+        Mock::given(method("POST"))
+            .and(path(action_path))
+            .and(body_json(&action_request))
+            .respond_with(ResponseTemplate::new(202).set_body_json(serde_json::json!({
+                "@odata.id": "/redfish/v1/TaskService/Tasks/42",
+                "@odata.type": "#Task.v1_4_3.Task",
+                "Id": "42"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let action = create_test_action(action_path);
+        let error = bmc
+            .action(&action, &action_request)
+            .await
+            .expect_err("202 without Location must be rejected");
+        let BmcError::InvalidResponse { status, text, .. } = error else {
+            panic!("unexpected error: {}", error);
+        };
+        assert_eq!(status, reqwest::StatusCode::ACCEPTED);
+        assert_eq!(text, "202 Accepted without Location header");
+        mock_server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn test_task_monitor_202_is_pending() -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let monitor_path = "/redfish/v1/TaskService/TaskMonitors/HGX_0";
+        let next_monitor_path = "/redfish/v1/TaskService/TaskMonitors/HGX_1";
+
+        Mock::given(method("GET"))
+            .and(path(monitor_path))
+            .respond_with(
+                ResponseTemplate::new(202)
+                    .insert_header("Location", next_monitor_path)
+                    .insert_header("Retry-After", "30")
+                    .set_body_json(serde_json::json!({
+                        "@odata.id": "/redfish/v1/TaskService/Tasks/HGX_0",
+                        "@odata.type": "#Task.v1_4_3.Task",
+                        "Id": "HGX_0",
+                        "TaskState": "Running"
+                    })),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(monitor_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        let ModificationResponse::Task(task) = response else {
+            return Err("expected pending task monitor".into());
+        };
+        assert_eq!(task.location.0.to_string(), next_monitor_path);
+        assert_eq!(task.retry_after, Some(Duration::from_secs(30)));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_monitor_200_returns_typed_result() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let mock_server = MockServer::start().await;
+        let monitor_path = "/redfish/v1/TaskService/TaskMonitors/HGX_0";
+
+        Mock::given(method("GET"))
+            .and(path(monitor_path))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"result": "measurements"})),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(monitor_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        let ModificationResponse::Entity(result) = response else {
+            return Err("expected typed task monitor result".into());
+        };
+        assert_eq!(result, serde_json::json!({"result": "measurements"}));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_monitor_204_returns_empty() -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let monitor_path = "/redfish/v1/TaskService/TaskMonitors/HGX_0";
+
+        Mock::given(method("GET"))
+            .and(path(monitor_path))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(monitor_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        assert!(matches!(response, ModificationResponse::Empty));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_monitor_202_without_location_keeps_polling_monitor(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let monitor_path = "/redfish/v1/TaskService/TaskMonitors/HGX_0";
+
+        Mock::given(method("GET"))
+            .and(path(monitor_path))
+            .respond_with(ResponseTemplate::new(202).insert_header("Retry-After", "5"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(monitor_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        let ModificationResponse::Task(task) = response else {
+            return Err("expected pending task monitor".into());
+        };
+        assert_eq!(task.location.0.to_string(), monitor_path);
+        assert_eq!(task.retry_after, Some(Duration::from_secs(5)));
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_monitor_204_follows_result_location(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let monitor_path = "/redfish/v1/TaskService/Tasks/HGX_0/Monitor";
+        let result_path =
+            "/redfish/v1/ComponentIntegrity/HGX_IRoT_GPU_0/Actions/SPDMGetSignedMeasurements/data";
+
+        Mock::given(method("GET"))
+            .and(path(monitor_path))
+            .respond_with(ResponseTemplate::new(204).insert_header("Location", result_path))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(result_path))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"result": "data"})),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(monitor_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        let ModificationResponse::Entity(result) = response else {
+            return Err("expected result from the followed Location".into());
+        };
+        assert_eq!(result, serde_json::json!({"result": "data"}));
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_completed_task_follows_payload_location() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let mock_server = MockServer::start().await;
+        let task_path = "/redfish/v1/TaskService/Tasks/92";
+        let result_path =
+            "/redfish/v1/ComponentIntegrity/EROT_BIOS_0/Actions/SPDMGetSignedMeasurements/Data";
+
+        Mock::given(method("GET"))
+            .and(path(task_path))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.id": task_path,
+                "@odata.type": "#Task.v1_4_2.Task",
+                "Id": "92",
+                "Payload": {
+                    "HttpHeaders": [format!("Location: {result_path}")]
+                },
+                "PercentComplete": 100,
+                "TaskState": "Completed",
+                "TaskStatus": "OK"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(result_path))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"result": "viking"})),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(task_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        let ModificationResponse::Entity(result) = response else {
+            return Err("expected result from the Task payload Location".into());
+        };
+        assert_eq!(result, serde_json::json!({"result": "viking"}));
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_resource_200_without_location_is_pending_at_task(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let task_path = "/redfish/v1/TaskService/Tasks/89";
+
+        Mock::given(method("GET"))
+            .and(path(task_path))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.id": task_path,
+                "@odata.type": "#Task.v1_4_3.Task",
+                "Id": "89",
+                "TaskState": "Running"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(task_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        let ModificationResponse::Task(task) = response else {
+            return Err("expected pending Task resource".into());
+        };
+        assert_eq!(task.location.0.to_string(), task_path);
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_completed_task_resource_is_empty() -> Result<(), Box<dyn std::error::Error>> {
+        let mock_server = MockServer::start().await;
+        let task_path = "/redfish/v1/TaskService/Tasks/89";
+
+        Mock::given(method("GET"))
+            .and(path(task_path))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.id": task_path,
+                "@odata.type": "#Task.v1_4_3.Task",
+                "Id": "89",
+                "TaskState": "Completed"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(task_path.to_string());
+        let response = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await?;
+        assert!(matches!(response, ModificationResponse::Empty));
+        mock_server.verify().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_failed_task_resource_is_error() {
+        let mock_server = MockServer::start().await;
+        let task_path = "/redfish/v1/TaskService/Tasks/89";
+
+        Mock::given(method("GET"))
+            .and(path(task_path))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.id": task_path,
+                "@odata.type": "#Task.v1_4_3.Task",
+                "Id": "89",
+                "TaskState": "Exception"
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let location = ODataId::from(task_path.to_string());
+        let error = bmc
+            .get_operation_response::<serde_json::Value>(&location)
+            .await
+            .expect_err("failed Task must be an error");
+        let BmcError::InvalidResponse { text, .. } = error else {
+            panic!("unexpected error: {}", error);
+        };
+        assert_eq!(text, "Task ended in state Exception");
+        mock_server.verify().await;
     }
 
     #[tokio::test]

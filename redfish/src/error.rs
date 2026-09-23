@@ -50,6 +50,13 @@ pub enum Error<B: Bmc> {
         /// Expected TaskService Tasks collection path.
         task_collection: nv_redfish_core::ODataId,
     },
+    /// An asynchronous operation completed without exposing its typed result.
+    #[cfg(feature = "task-service")]
+    TaskResultUnavailable,
+    /// An asynchronous operation was polled after an earlier poll returned
+    /// its outcome.
+    #[cfg(feature = "task-service")]
+    TaskAlreadyFinished,
     /// Metric definitions are not available for telemetry service
     #[cfg(feature = "telemetry-service")]
     MetricDefinitionsNotAvailable,
@@ -97,6 +104,14 @@ impl<B: Bmc> Display for Error<B> {
                 f,
                 "Task location {task_location} is not in TaskService Tasks collection {task_collection}"
             ),
+            #[cfg(feature = "task-service")]
+            Self::TaskResultUnavailable => {
+                write!(f, "Task completed without exposing its result")
+            }
+            #[cfg(feature = "task-service")]
+            Self::TaskAlreadyFinished => {
+                write!(f, "Task outcome was already returned by an earlier poll")
+            }
             #[cfg(feature = "telemetry-service")]
             Self::MetricDefinitionsNotAvailable => {
                 write!(f, "Metric definitions are not available")

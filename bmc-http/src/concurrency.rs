@@ -12,7 +12,8 @@ use nv_redfish_core::HttpPushUriUpdateRequest;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::{
     Action, Bmc, BoxTryStream, EntityTypeRef, Expandable, FilterQuery, ModificationResponse,
-    MultipartUpdateRequest, ODataETag, ODataId, SessionCreateResponse, UploadReader,
+    MultipartUpdateRequest, ODataETag, ODataId, OperationResponseBmc, SessionCreateResponse,
+    UploadReader,
 };
 
 use serde::{Deserialize, Serialize};
@@ -251,5 +252,18 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
     {
         let _permit = permit(&self.semaphore).await;
         self.inner.stream_events(uri, last_event_id).await
+    }
+}
+
+impl<B: OperationResponseBmc> OperationResponseBmc for ConcurrencyLimitedBmc<B> {
+    async fn get_operation_response<R>(
+        &self,
+        location: &ODataId,
+    ) -> Result<ModificationResponse<R>, Self::Error>
+    where
+        R: Send + Sync + Sized + for<'de> Deserialize<'de>,
+    {
+        let _permit = permit(&self.semaphore).await;
+        self.inner.get_operation_response(location).await
     }
 }
