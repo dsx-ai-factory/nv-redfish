@@ -128,7 +128,7 @@ oem-nvidia-security = ["oem-nvidia"]
 oem-dell-attributes = ["oem-dell"]
 
 # Patches
-patch = []
+patch = ["nv-redfish-core/patch-inflight", "nv-redfish-bmc-http/patch-inflight"]
 patch-payload = ["patch"]
 patch-payload-get = ["patch-payload"]
 patch-payload-update = ["patch-payload"]

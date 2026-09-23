@@ -73,6 +73,8 @@ use nv_redfish_core::ODataId;
 use nv_redfish_core::SessionCreateResponse;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
+#[cfg(feature = "patch-inflight")]
+use nv_redfish_patch_inflight::patch_registry::InflightPatchRegistry;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
@@ -106,6 +108,8 @@ pub trait HttpClient: Send + Sync {
         credentials: &BmcCredentials,
         etag: Option<ODataETag>,
         custom_headers: &HeaderMap,
+
+        #[cfg(feature = "patch-inflight")] patch_registry: Option<Arc<InflightPatchRegistry>>,
     ) -> impl Future<Output = Result<T, Self::Error>> + Send
     where
         T: DeserializeOwned + Send + Sync;
@@ -249,6 +253,9 @@ pub struct HttpBmc<C: HttpClient> {
     // Response bodies and ETags are enabled or disabled together because a
     // 304 Not Modified response contains no replacement body.
     cache_enabled: bool,
+
+    #[cfg(feature = "patch-inflight")]
+    patch_registry: Arc<InflightPatchRegistry>,
 }
 
 impl<C: HttpClient> HttpBmc<C>
@@ -361,6 +368,9 @@ where
             cache: RwLock::new(TypeErasedCarCache::new(cache_settings.capacity)),
             custom_headers,
             cache_enabled: cache_settings.capacity > 0,
+
+            #[cfg(feature = "patch-inflight")]
+            patch_registry: Arc::new(InflightPatchRegistry::default()),
         }
     }
 
@@ -633,6 +643,8 @@ where
                 credentials.as_ref(),
                 etag,
                 &self.custom_headers,
+                #[cfg(feature = "patch-inflight")]
+                Some(self.patch_registry.clone()),
             )
             .await
         {

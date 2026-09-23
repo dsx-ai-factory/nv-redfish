@@ -5,6 +5,7 @@ members = [
    "bmc-http",
    "bmc-mock",
    "csdl-compiler",
+   "patch-inflight",
    "schema",
    "examples/redfish-std",
    "examples/redfish-oem-contoso",
@@ -53,6 +54,7 @@ serde_json = { version = "1.0", default-features = false }
 serde_path_to_error = "0.1"
 syn = { version = "2.0" }
 tagged-types = { version = "^0.2.3" }
+regex = { version = "1.12.3"}
 reqwest = { version = "0.12", default-features = false }
 url = { version = "2.5" }
 uuid = { version = "1.18", default-features = false }
@@ -66,7 +68,9 @@ nv-redfish-dispatcher = { version = "0.1", path = "./dispatcher" }
 nv-redfish = { version = "0.1", path = "./redfish" }
 nv-redfish-csdl-compiler = { version = "0.1", path = "./csdl-compiler" }
 nv-redfish-schema = { version = "0.1", path = "./schema" }
+nv-redfish-patch-inflight = {version = "0.1", path = "./patch-inflight"}
 toml = { version = "0.9", default-features = false }
+wildmatch = {version = "2.6.1"}
 
 # Dev
 tokio = "1.30"

@@ -7,6 +7,8 @@ mod common;
 mod tests {
     use std::future::Future;
     use std::num::NonZeroUsize;
+    #[cfg(feature = "patch-inflight")]
+    use std::sync::Arc;
     use std::task::Poll;
     use std::time::Duration;
 
@@ -29,6 +31,8 @@ mod tests {
 
     use futures_util::io::Cursor;
     use http::HeaderMap;
+    #[cfg(feature = "patch-inflight")]
+    use nv_redfish_patch_inflight::patch_registry::InflightPatchRegistry;
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
     use serde_json::Value as JsonValue;
     use tokio::sync::{mpsc, oneshot};
@@ -93,6 +97,8 @@ mod tests {
             _credentials: &BmcCredentials,
             _etag: Option<ODataETag>,
             _custom_headers: &HeaderMap,
+
+            #[cfg(feature = "patch-inflight")] _patch_registry: Option<Arc<InflightPatchRegistry>>,
         ) -> impl Future<Output = Result<T, Self::Error>> + Send
         where
             T: DeserializeOwned + Send + Sync,

@@ -13,6 +13,7 @@ documentation = "https://docs.rs/nv-redfish-bmc-http"
 
 [features]
 default = ["reqwest"]
+patch-inflight = ["nv-redfish-core/patch-inflight"]
 
 # HTTP client implementations with reqwest
 reqwest = ["dep:reqwest", "dep:serde_path_to_error", "dep:futures-util", "dep:sse-stream", "dep:tokio-util", "dep:tokio", "tokio/time", "dep:bytes"]
@@ -24,6 +25,7 @@ bytes = { workspace = true, optional = true }
 futures-core = { workspace = true }
 futures-util = { workspace = true, optional = true }
 nv-redfish-core = { workspace = true }
+nv-redfish-patch-inflight = { workspace = true }
 http = { workspace = true }
 reqwest = { workspace = true, optional = true, features = [
     "json",

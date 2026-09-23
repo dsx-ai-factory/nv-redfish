@@ -19,6 +19,9 @@ pub mod expect;
 pub use expect::Expect;
 pub use expect::ExpectedRequest;
 
+#[cfg(feature = "patch-inflight")]
+use nv_redfish_patch_inflight::{patch_registry::InflightPatchRegistry, INFLIGHT_PATCH_REGISTRY};
+
 use std::collections::VecDeque;
 use std::error::Error as StdError;
 use std::fmt::Display;
@@ -198,7 +201,22 @@ where
                 request: ExpectedRequest::Expand { id },
                 response,
             } if id == *in_id => {
+                #[cfg(feature = "patch-inflight")]
+                let mut response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
+
+                #[cfg(not(feature = "patch-inflight"))]
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
+
+                #[cfg(feature = "patch-inflight")]
+                {
+                    let patch_registry = Some(Arc::new(InflightPatchRegistry::default()));
+                    INFLIGHT_PATCH_REGISTRY.with_borrow_mut(|r| {
+                        *r = patch_registry.clone();
+                    });
+                    if let Some(registry) = patch_registry {
+                        response = registry.patch_inflight(response)
+                    }
+                }
                 let result: T = from_value(response).map_err(Error::BadResponseJson)?;
                 Ok(Arc::new(result))
             }
@@ -221,7 +239,22 @@ where
                 request: ExpectedRequest::Get { id },
                 response,
             } if id == *in_id => {
+                #[cfg(feature = "patch-inflight")]
+                let mut response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
+
+                #[cfg(not(feature = "patch-inflight"))]
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
+
+                #[cfg(feature = "patch-inflight")]
+                {
+                    let patch_registry = Some(Arc::new(InflightPatchRegistry::default()));
+                    INFLIGHT_PATCH_REGISTRY.with_borrow_mut(|r| {
+                        *r = patch_registry.clone();
+                    });
+                    if let Some(registry) = patch_registry {
+                        response = registry.patch_inflight(response)
+                    }
+                }
                 let result: T = from_value(response).map_err(Error::BadResponseJson)?;
                 Ok(Arc::new(result))
             }
