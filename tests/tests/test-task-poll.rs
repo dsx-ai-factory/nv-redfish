@@ -19,6 +19,7 @@ use std::error::Error as StdError;
 use std::io::Error as IoError;
 use std::io::ErrorKind;
 use std::sync::Arc;
+use std::task::Poll;
 use std::time::Duration;
 
 use nv_redfish::core::AsyncTask;
@@ -172,6 +173,28 @@ async fn poll_retries_same_step_after_request_error() -> Result<(), Box<dyn StdE
         response.poll(&task_service).await,
         Err(Error::Bmc(_))
     ));
+    assert_eq!(
+        response.poll(&task_service).await?,
+        Some(json!({"result": "monitor"}))
+    );
+
+    Ok(())
+}
+
+#[test]
+async fn cancelling_poll_preserves_pending_step() -> Result<(), Box<dyn StdError>> {
+    let (bmc, task_service) = setup().await?;
+    bmc.expect(Expect::operation_response_wait(MONITOR_PATH));
+    bmc.expect(Expect::operation_response_result(
+        MONITOR_PATH,
+        json!({"result": "monitor"}),
+    ));
+    let mut response = TypedModificationResponse::from_typed_action(pending());
+
+    let mut poll = Box::pin(response.poll(&task_service));
+    assert!(matches!(futures_util::poll!(poll.as_mut()), Poll::Pending));
+    drop(poll);
+
     assert_eq!(
         response.poll(&task_service).await?,
         Some(json!({"result": "monitor"}))

@@ -50,6 +50,9 @@ pub enum ExpectedRequest {
     /// Expected operation response failing with an HTTP status.
     OperationResponseStatus { id: ODataId, status: u16 },
 
+    /// Expected operation response that never completes.
+    OperationResponseWait { id: ODataId },
+
     /// Expected Expand.
     Expand { id: ODataId },
 
@@ -192,6 +195,15 @@ impl<E> Expect<E> {
             request: ExpectedRequest::OperationResponseStatus {
                 id: uri.to_string().into(),
                 status,
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    pub fn operation_response_wait(uri: impl Display) -> Self {
+        Expect {
+            request: ExpectedRequest::OperationResponseWait {
+                id: uri.to_string().into(),
             },
             response: Ok(JsonValue::Null),
         }

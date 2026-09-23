@@ -24,6 +24,7 @@ use std::error::Error as StdError;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fmt::Result as FmtResult;
+use std::future::pending;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
@@ -645,6 +646,10 @@ where
                 request: ExpectedRequest::OperationResponseStatus { id, status },
                 ..
             } if id == *location => Err(Error::HttpStatus(status)),
+            Expect {
+                request: ExpectedRequest::OperationResponseWait { id },
+                ..
+            } if id == *location => pending().await,
             _ => Err(Error::UnexpectedOperationResponse(
                 location.clone(),
                 expect.request,

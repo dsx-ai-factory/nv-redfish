@@ -121,28 +121,53 @@ impl<R> TypedModificationResponse<R> {
         R: Send + Sync + for<'de> serde::Deserialize<'de>,
     {
         let bmc = task_service.bmc.as_ref();
-        match mem::replace(&mut self.state, State::Done) {
-            State::Ready(result) => Ok(Some(result)),
-            State::Pending(mut task) => match bmc.get_operation_response(&task.location.0).await {
-                Ok(ModificationResponse::Task(pending)) => {
-                    task.location = pending.location;
-                    task.retry_after = pending.retry_after;
-                    self.state = State::Pending(task);
-                    Ok(None)
-                }
-                Ok(ModificationResponse::Entity(result)) => Ok(Some(result)),
-                Ok(ModificationResponse::Empty) => self.read_result(bmc).await,
-                Err(error) => {
-                    self.state = State::Pending(task);
-                    Err(Error::Bmc(error))
-                }
-            },
-            State::Finished => self.read_result(bmc).await,
-            State::Done => Err(Error::TaskAlreadyFinished),
+        if matches!(self.state, State::Ready(_)) {
+            let State::Ready(result) = mem::replace(&mut self.state, State::Done) else {
+                return Err(Error::TaskAlreadyFinished);
+            };
+            return Ok(Some(result));
         }
+        if matches!(self.state, State::Done) {
+            return Err(Error::TaskAlreadyFinished);
+        }
+
+        if let State::Pending(task) = &self.state {
+            let location = task.location.0.clone();
+            match bmc
+                .get_operation_response(&location)
+                .await
+                .map_err(Error::Bmc)?
+            {
+                ModificationResponse::Task(pending) => {
+                    self.state = State::Pending(pending);
+                    return Ok(None);
+                }
+                ModificationResponse::Entity(result) => {
+                    self.state = State::Done;
+                    return Ok(Some(result));
+                }
+                ModificationResponse::Empty => {
+                    self.state = State::Finished;
+                }
+            }
+        }
+
+        self.poll_finished(bmc).await
     }
 
-    async fn read_result<B>(&mut self, bmc: &B) -> Result<Option<R>, Error<B>>
+    async fn poll_finished<B>(&mut self, bmc: &B) -> Result<Option<R>, Error<B>>
+    where
+        B: OperationResponseBmc,
+        R: Send + Sync + for<'de> serde::Deserialize<'de>,
+    {
+        let result = self.read_result(bmc).await;
+        if !matches!(result, Err(Error::Bmc(_))) {
+            self.state = State::Done;
+        }
+        result
+    }
+
+    async fn read_result<B>(&self, bmc: &B) -> Result<Option<R>, Error<B>>
     where
         B: OperationResponseBmc,
         R: Send + Sync + for<'de> serde::Deserialize<'de>,
@@ -155,10 +180,7 @@ impl<R> TypedModificationResponse<R> {
             Ok(ModificationResponse::Task(_) | ModificationResponse::Empty) => {
                 Err(Error::TaskResultUnavailable)
             }
-            Err(error) => {
-                self.state = State::Finished;
-                Err(Error::Bmc(error))
-            }
+            Err(error) => Err(Error::Bmc(error)),
         }
     }
 }
