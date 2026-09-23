@@ -19,6 +19,9 @@ limitations under the License.
   <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Core.V1.xml">
     <edmx:Include Namespace="Org.OData.Core.V1" Alias="OData"/>
   </edmx:Reference>
+  <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/cs01/vocabularies/Org.OData.Capabilities.V1.xml">
+    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
+  </edmx:Reference>
   <edmx:Reference Uri="/redfish/v1/Schemas/Resource_v1.xml">
     <edmx:Include Namespace="Resource"/>
     <edmx:Include Namespace="Resource.v1_0_0"/>
@@ -26,11 +29,19 @@ limitations under the License.
   <edmx:DataServices>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="KCSInterface">
       <Annotation Term="Redfish.OwningEntity" String="Supermicro"/>
-      <EntityType Name="KCSInterface" Abstract="true"/>
+      <EntityType Name="KCSInterface" BaseType="Resource.v1_0_0.Resource" Abstract="true">
+        <Annotation Term="Capabilities.UpdateRestrictions">
+          <Record>
+            <PropertyValue Property="Updatable" Bool="true"/>
+          </Record>
+        </Annotation>
+      </EntityType>
     </Schema>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="KCSInterface.v1_1_0">
       <EntityType Name="KCSInterface" BaseType="KCSInterface.KCSInterface">
-        <Property Name="Privilege" Type="KCSInterface.v1_1_0.Privilege" Nullable="false"/>
+        <Property Name="Privilege" Type="KCSInterface.v1_1_0.Privilege" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
       </EntityType>
       <EnumType Name="Privilege">
         <Member Name="Administrator"/>

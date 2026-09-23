@@ -16,11 +16,13 @@
 //! Support Supermicro KCS Interface OEM resource.
 
 use crate::core::Bmc;
+use crate::core::EntityTypeRef as _;
+use crate::core::ModificationResponse;
 use crate::core::NavProperty;
 use crate::oem::supermicro::schema::kcs_interface::KcsInterface as KcsInterfaceSchema;
+pub use crate::oem::supermicro::schema::kcs_interface::KcsInterfaceUpdate;
 use crate::Error;
 use crate::NvBmc;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 #[doc(inline)]
@@ -28,8 +30,8 @@ pub use crate::oem::supermicro::schema::kcs_interface::Privilege;
 
 /// Supermicro KCS interface resource.
 pub struct KcsInterface<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<KcsInterfaceSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> KcsInterface<B> {
@@ -46,8 +48,8 @@ impl<B: Bmc> KcsInterface<B> {
             .await
             .map_err(Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
     }
 
@@ -61,5 +63,44 @@ impl<B: Bmc> KcsInterface<B> {
     #[must_use]
     pub fn privilege(&self) -> Option<Privilege> {
         self.data.privilege
+    }
+
+    /// Update this KCS interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &KcsInterfaceUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<KcsInterfaceSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
+    }
+
+    /// Set the privilege granted through KCS.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn set_privilege(
+        &self,
+        privilege: Privilege,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.update(
+            &KcsInterfaceUpdate::builder()
+                .with_privilege(privilege)
+                .build(),
+        )
+        .await
     }
 }
