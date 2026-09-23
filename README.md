@@ -73,7 +73,7 @@ Common feature groups:
   excerpt models.
 - `std-redfish`: enable a broad standard Redfish surface.
 - Service features: `accounts`, `assembly`, `bios`, `boot-options`,
-  `chassis`, `computer-systems`, `ethernet-interfaces`, `event-service`,
+  `chassis`, `computer-systems`, `ethernet-interfaces`, `event-service`, `fabrics`,
   `host-interfaces`, `log-services`, `managers`, `manager-network-protocol`, `memory`,
   `network-adapters`, `network-device-functions`, `pcie-devices`, `ports`, `power`,
   `power-supplies`, `processors`, `secure-boot`, `sensors`,
@@ -90,9 +90,20 @@ Common feature groups:
 and covers every NVIDIA platform including the BlueField DPU. It
 compiles only the schemas belonging to the service features you already
 enabled: with `chassis` you get the NVIDIA chassis schemas, with
-`managers` the NVIDIA manager schemas, and so on. Families that extend
+`managers` the NVIDIA manager schemas, and with `fabrics` the NVIDIA Fabric and
+Switch schemas and wrappers.
+Thus `std-redfish` + `oem-nvidia` includes NVIDIA
+Fabric/Switch support without an additional flag. Families that extend
 no standard service have their own `oem-nvidia-*` feature. `oem-nvidia`
 on its own generates nothing.
+
+The `oem-nvidia-fabrics` feature provides additional schemas for switch power
+modes, ports, and port/NVLink metrics.
+
+The `fabrics` feature, included in `std-redfish`, enables both Fabric and Switch
+types in `nv_redfish::fabric`, including `Fabric::switches()` traversal.
+Add `oem-nvidia` for NVIDIA extensions.
+Enable `ports` as well to use `Switch::ports()`.
 
 `oem-nvidia-cper` is separate because that one schema accounts for
 roughly half of the generated NVIDIA code; enable it only if you decode

@@ -21,6 +21,7 @@ all-std-features = accounts \
                    chassis \
                    computer-systems \
                    ethernet-interfaces \
+                   fabrics \
                    job-service \
                    log-services \
                    managers \
@@ -82,6 +83,13 @@ compile-only-feature-sets = computer-systems,processors,controls \
              oem-hpe,accounts \
              oem-hpe \
              oem-nvidia \
+             fabrics,oem-nvidia \
+             fabrics,ports,oem-nvidia \
+             chassis,fabrics \
+             managers,fabrics \
+             std-redfish,oem-nvidia \
+             oem-nvidia-fabrics \
+             fabrics,oem-nvidia-fabrics \
              computer-systems,oem-nvidia \
              chassis,oem-nvidia \
              computer-systems,processors,memory,sensors,telemetry-service,oem-nvidia \

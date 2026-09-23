@@ -33,6 +33,7 @@ nv-redfish = { workspace = true, features = [
     "computer-systems",
     "ethernet-interfaces",
     "event-service",
+    "fabrics",
     "host-interfaces",
     "job-service",
     "managers",

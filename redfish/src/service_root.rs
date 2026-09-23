@@ -36,6 +36,8 @@ use crate::chassis::ChassisLink;
 use crate::computer_system::SystemCollection;
 #[cfg(feature = "event-service")]
 use crate::event_service::EventService;
+#[cfg(feature = "fabrics")]
+use crate::fabric::FabricCollection;
 #[cfg(feature = "job-service")]
 use crate::job_service::JobService;
 #[cfg(feature = "managers")]
@@ -237,6 +239,18 @@ impl<B: Bmc> ServiceRoot<B> {
     #[cfg(feature = "computer-systems")]
     pub async fn systems(&self) -> Result<Option<SystemCollection<B>>, Error<B>> {
         SystemCollection::new(&self.bmc, self).await
+    }
+
+    /// Get fabric collection in BMC
+    ///
+    /// Returns `Ok(None)` when the BMC does not expose Fabrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if retrieving fabric collection data fails.
+    #[cfg(feature = "fabrics")]
+    pub async fn fabrics(&self) -> Result<Option<FabricCollection<B>>, Error<B>> {
+        FabricCollection::new(&self.bmc, self).await
     }
 
     /// Get update service in BMC

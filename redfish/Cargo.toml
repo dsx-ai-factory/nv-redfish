@@ -40,6 +40,7 @@ std-redfish = [
     "controls",
     "ethernet-interfaces",
     "event-service",
+    "fabrics",
     "host-interfaces",
     "job-service",
     "log-services",
@@ -73,6 +74,7 @@ computer-systems = ["patch-payload-get", "patch-collection"]
 controls = ["environment-metrics"]
 ethernet-interfaces = []
 environment-metrics = []
+fabrics = ["impl-nv-bmc-expand", "resource-status", "impl-entity-link"]
 host-interfaces = []
 job-service = ["impl-entity-link"]
 network-adapters = []
@@ -119,6 +121,8 @@ oem-delta = ["oem"]
 # resource it extends, so `oem-nvidia` + `chassis` compiles the NVIDIA
 # chassis schemas without a further flag.
 oem-nvidia-cper = ["oem-nvidia"]
+# Additional schemas for ports, port/NVLink metrics, and switch power modes.
+# Fabric/Switch schemas and wrappers use fabrics + oem-nvidia.
 oem-nvidia-fabrics = ["oem-nvidia"]
 oem-nvidia-power-management = ["oem-nvidia"]
 oem-nvidia-profiles = ["oem-nvidia"]

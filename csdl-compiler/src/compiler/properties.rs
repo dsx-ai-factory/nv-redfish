@@ -84,7 +84,9 @@ impl<'a> Properties<'a> {
                             .map_err(|e| Error::Property(&sp.name, e))?;
                         p.properties.push(Property {
                             name: &v.name,
-                            ptype: v.ptype.as_ref().map(|t| (typeinfo, t.into())),
+                            // Keep the property pointing at the type compiled above.
+                            // The declared base may be empty and pruned later.
+                            ptype: v.ptype.as_ref().map(|_| (typeinfo, resolved)),
                             odata: OData::new(MustHaveId::new(false), v),
                             redfish: RedfishProperty::new(v),
                             nullable: v.nullable.unwrap_or(IsNullable::new(true)),
