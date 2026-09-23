@@ -116,12 +116,12 @@ oem-nvidia = ["oem"]
 oem-liteon = ["oem"]
 oem-delta = ["oem"]
 
-# Additional NVIDIA OEM schema families and legacy schema bundles.
+# NVIDIA OEM schema families that extend no standard Redfish service.
 # The rest of the NVIDIA set follows the service feature owning the
 # resource it extends, so `oem-nvidia` + `chassis` compiles the NVIDIA
 # chassis schemas without a further flag.
 oem-nvidia-cper = ["oem-nvidia"]
-# Additional schemas for port metrics and switch power modes.
+# Additional schemas for ports, port/NVLink metrics, and switch power modes.
 # Fabric/Switch schemas and wrappers use fabrics + oem-nvidia.
 oem-nvidia-fabrics = ["oem-nvidia"]
 oem-nvidia-power-management = ["oem-nvidia"]
