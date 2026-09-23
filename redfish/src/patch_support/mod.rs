@@ -39,11 +39,12 @@ pub use payload::Payload;
 #[doc(inline)]
 pub use payload::UpdateWithPatch;
 
-use std::sync::Arc;
-
 /// Reference to a patch function. This function should transform a JSON
 /// structure to a Redfish-compatible structure.
-pub type ReadPatchFn = Arc<dyn Fn(JsonValue) -> JsonValue + Sync + Send>;
+pub use nv_redfish_quirks::ReadPatchFn;
+
+#[cfg(feature = "patch-collection")]
+use std::sync::Arc;
 
 /// Reference to a filter function. This function should filters a JSON
 /// structure.

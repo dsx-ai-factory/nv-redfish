@@ -16,10 +16,10 @@
 //! BMC implementaion that takes in account protocol features.  That
 //! is built on top of core BMC.
 
-use crate::bmc_quirks::BmcQuirks;
 use crate::protocol_features::ExpandQueryFeatures;
 use crate::ProtocolFeatures;
 use nv_redfish_core::Bmc;
+use nv_redfish_quirks::BmcQuirks;
 use std::sync::Arc;
 
 #[cfg(feature = "impl-nv-bmc-expand")]
@@ -71,6 +71,11 @@ impl<B: Bmc> NvBmc<B> {
     #[allow(dead_code)] // feature-enabled func
     pub fn as_ref(&self) -> &B {
         self.bmc.as_ref()
+    }
+
+    /// The transport, shared.
+    pub(crate) fn shared(&self) -> Arc<B> {
+        Arc::clone(&self.bmc)
     }
 
     /// Expand navigation property with optimal available method.

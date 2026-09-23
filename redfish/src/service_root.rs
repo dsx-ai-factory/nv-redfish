@@ -15,7 +15,6 @@
 
 use std::sync::Arc;
 
-use crate::bmc_quirks::BmcQuirks;
 use crate::core::Bmc;
 use crate::core::NavProperty;
 use crate::core::ODataId;
@@ -25,6 +24,9 @@ use crate::NvBmc;
 use crate::ProtocolFeatures;
 use crate::Resource;
 use crate::ResourceSchema;
+use nv_redfish_quirks::BmcQuirks;
+use nv_redfish_quirks::CompatBmc;
+use nv_redfish_quirks::RootEvidence;
 
 use tagged_types::TaggedType;
 
@@ -112,7 +114,28 @@ impl<B: Bmc> ServiceRoot<B> {
             .get(bmc.as_ref())
             .await
             .map_err(Error::Bmc)?;
-        let quirks = BmcQuirks::new(&root);
+        let quirks = BmcQuirks::classify(&RootEvidence {
+            vendor: root
+                .vendor
+                .as_ref()
+                .and_then(Option::as_deref)
+                .map(str::to_owned),
+            product: root
+                .product
+                .as_ref()
+                .and_then(Option::as_deref)
+                .map(str::to_owned),
+            redfish_version: root.redfish_version.clone(),
+            ami_rtp_version: root
+                .base
+                .base
+                .oem
+                .as_ref()
+                .and_then(|oem| oem.additional_properties.get("Ami"))
+                .and_then(|ami| ami.get("RtpVersion"))
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
+        });
         let mut protocol_features = root
             .protocol_features_supported
             .as_ref()
@@ -134,6 +157,13 @@ impl<B: Bmc> ServiceRoot<B> {
         let root = self.root;
         let bmc = self.bmc.replace_bmc(bmc);
         Self { root, bmc }
+    }
+
+    /// The compatibility layer over this root's transport: every document
+    /// read through it carries the repairs this platform needs.
+    #[must_use]
+    pub fn compat(&self) -> CompatBmc<B> {
+        CompatBmc::new(self.bmc.shared(), Arc::clone(&self.bmc.quirks))
     }
 
     /// Restrict usage of expand.

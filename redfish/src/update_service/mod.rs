@@ -46,7 +46,6 @@ use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::UploadReader;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::UploadStream;
-use serde_json::Value as JsonValue;
 use software_inventory::SoftwareInventoryCollection;
 
 #[doc(inline)]
@@ -78,21 +77,8 @@ impl<B: Bmc> UpdateService<B> {
         bmc: &NvBmc<B>,
         root: &ServiceRoot<B>,
     ) -> Result<Option<Self>, Error<B>> {
-        let mut service_patches = Vec::new();
-        if bmc.quirks.bug_missing_update_service_name_field() {
-            service_patches.push(add_default_update_service_name);
-        }
-        let service_patch_fn = (!service_patches.is_empty()).then(|| {
-            Arc::new(move |v| service_patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn
-        });
-
-        let mut fw_inventory_patches = Vec::new();
-        if bmc.quirks.fw_inventory_wrong_release_date() {
-            fw_inventory_patches.push(fw_inventory_patch_wrong_release_date);
-        }
-        let fw_inventory_read_patch_fn = (!fw_inventory_patches.is_empty()).then(|| {
-            Arc::new(move |v| fw_inventory_patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn
-        });
+        let service_patch_fn = bmc.quirks.read_patch("UpdateService");
+        let fw_inventory_read_patch_fn = bmc.quirks.read_patch("SoftwareInventory");
 
         if let Some(nav) = &root.root.update_service {
             if let Some(service_patch_fn) = service_patch_fn {
@@ -415,31 +401,5 @@ impl<B: Bmc> UpdateService<B> {
 impl<B: Bmc> Resource for UpdateService<B> {
     fn resource_ref(&self) -> &ResourceSchema {
         &self.data.as_ref().base
-    }
-}
-
-// `ReleaseDate` is marked as `edm.DateTimeOffset`, but some systems
-// puts "00:00:00Z" as ReleaseDate that is not conform to ABNF of the DateTimeOffset.
-// we delete such fields...
-fn fw_inventory_patch_wrong_release_date(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        if let Some(JsonValue::String(date)) = obj.get("ReleaseDate") {
-            if date == "00:00:00Z" || date == "0000-00-00T00:00:00Z" {
-                obj.remove("ReleaseDate");
-            }
-        }
-        JsonValue::Object(obj)
-    } else {
-        v
-    }
-}
-
-fn add_default_update_service_name(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("Name")
-            .or_insert(JsonValue::String("Unnamed update service".into()));
-        JsonValue::Object(obj)
-    } else {
-        v
     }
 }

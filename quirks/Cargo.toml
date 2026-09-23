@@ -1,0 +1,28 @@
+[package]
+name = "nv-redfish-quirks"
+version.workspace = true
+license.workspace = true
+description = "Platform quirks for nv-redfish: classification, document repairs, and a repairing Bmc"
+repository.workspace = true
+readme.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+documentation = "https://docs.rs/nv-redfish-quirks"
+
+include = ["src/**/*"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+# Mirrors core: the deprecated push-URI update is a `Bmc` method only when
+# the trait carries it.
+update-service-deprecated = ["nv-redfish-core/update-service-deprecated"]
+
+[dependencies]
+nv-redfish-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+futures-util = { workspace = true }

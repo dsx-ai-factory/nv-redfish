@@ -13,14 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::bmc_quirks::BmcQuirks;
 use crate::entity_link::FromLink;
 use crate::hardware_id::HardwareIdRef;
 use crate::hardware_id::Manufacturer as HardwareIdManufacturer;
 use crate::hardware_id::Model as HardwareIdModel;
 use crate::hardware_id::PartNumber as HardwareIdPartNumber;
 use crate::hardware_id::SerialNumber as HardwareIdSerialNumber;
-use crate::patch_support::JsonValue;
 use crate::patch_support::Payload;
 use crate::patch_support::ReadPatchFn;
 use crate::resource::ResetType;
@@ -32,6 +30,7 @@ use crate::ResourceSchema;
 use nv_redfish_core::bmc::Bmc;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
+use nv_redfish_quirks::BmcQuirks;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -91,22 +90,9 @@ pub struct Config {
 
 impl Config {
     pub fn new(quirks: &BmcQuirks) -> Self {
-        let mut patches = Vec::new();
-        if quirks.bug_invalid_contained_by_fields() {
-            patches.push(remove_invalid_contained_by_fields as fn(JsonValue) -> JsonValue);
+        Self {
+            read_patch_fn: quirks.read_patch("Chassis"),
         }
-        if quirks.bug_missing_chassis_type_field() {
-            patches.push(add_default_chassis_type);
-        }
-        if quirks.bug_missing_chassis_name_field() {
-            patches.push(add_default_chassis_name);
-        }
-        if quirks.bug_empty_uuid_field() {
-            patches.push(normalize_empty_uuid_field);
-        }
-        let read_patch_fn = (!patches.is_empty())
-            .then(|| Arc::new(move |v| patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn);
-        Self { read_patch_fn }
     }
 }
 
@@ -509,49 +495,4 @@ impl<B: Bmc> FromLink<B> for Chassis<B> {
     ) -> impl Future<Output = Result<Self, Error<B>>> + Send {
         Self::new(bmc, nav)
     }
-}
-
-fn remove_invalid_contained_by_fields(mut v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(ref mut obj) = v {
-        if let Some(JsonValue::Object(ref mut links_obj)) = obj.get_mut("Links") {
-            if let Some(JsonValue::Object(ref mut contained_by_obj)) =
-                links_obj.get_mut("ContainedBy")
-            {
-                contained_by_obj.retain(|k, _| k == "@odata.id");
-            }
-        }
-    }
-    v
-}
-
-fn add_default_chassis_type(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("ChassisType")
-            .or_insert(JsonValue::String("Other".into()));
-        JsonValue::Object(obj)
-    } else {
-        v
-    }
-}
-
-fn add_default_chassis_name(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("Name")
-            .or_insert(JsonValue::String("Unnamed chassis".into()));
-        JsonValue::Object(obj)
-    } else {
-        v
-    }
-}
-
-fn normalize_empty_uuid_field(mut v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(ref mut obj) = v {
-        if let Some(uuid) = obj.get_mut("UUID") {
-            let is_empty = uuid.as_str().is_some_and(str::is_empty);
-            if is_empty {
-                *uuid = JsonValue::Null;
-            }
-        }
-    }
-    v
 }

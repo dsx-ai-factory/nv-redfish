@@ -36,6 +36,8 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
   - Generates only the schemas required by enabled features during build.
   - Uses feature-gated patch helpers for vendor quirks and schema deviations
     observed in real BMCs.
+  - Keeps platform quirks in `nv-redfish-quirks`: classification, document
+    repairs, and a `Bmc` layer that applies them to schema types read directly.
 
 - `nv-redfish-bmc-mock`
   - Test BMC implementation used by integration tests and examples.

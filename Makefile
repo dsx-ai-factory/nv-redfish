@@ -104,6 +104,7 @@ define build-and-test
 	cargo clippy $1
 	cargo clippy -p nv-redfish-dispatcher --all-targets
 	cargo clippy -p nv-redfish-dispatcher --all-targets --all-features
+	cargo clippy -p nv-redfish-quirks --all-targets --all-features
 	cargo clippy -p nv-redfish-bmc-http --bench cache
 	$(foreach f,$(compile-only-feature-sets),$(call check-one-feature,$f))
 	$(maybe-lenovo-check)

@@ -157,9 +157,12 @@ impl Payload {
     }
 }
 
+// Carries the document's `@odata.etag`, so a caching transport revalidates
+// a patched read exactly as it does a typed one.
 #[cfg(feature = "patch-payload-get")]
 struct Getter {
     id: ODataId,
+    etag: Option<ODataETag>,
     payload: Payload,
 }
 
@@ -169,7 +172,7 @@ impl EntityTypeRef for Getter {
         &self.id
     }
     fn etag(&self) -> Option<&ODataETag> {
-        None
+        self.etag.as_ref()
     }
 }
 
@@ -182,9 +185,18 @@ impl<'de> Deserialize<'de> for Getter {
     where
         D: Deserializer<'de>,
     {
+        let payload = Payload::deserialize(deserializer)?;
+        let text = |key: &str| {
+            payload
+                .0
+                .get(key)
+                .and_then(JsonValue::as_str)
+                .map(str::to_owned)
+        };
         Ok(Self {
-            id: String::new().into(),
-            payload: Payload::deserialize(deserializer)?,
+            id: text("@odata.id").unwrap_or_default().into(),
+            etag: text("@odata.etag").map(ODataETag::from),
+            payload,
         })
     }
 }

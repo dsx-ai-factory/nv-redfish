@@ -34,7 +34,6 @@ mod collection;
 /// Account inside account service.
 mod item;
 
-use crate::patch_support::JsonValue;
 use crate::patch_support::ReadPatchFn;
 use crate::schema::account_service::AccountService as SchemaAccountService;
 use crate::Error;
@@ -132,17 +131,7 @@ impl<B: Bmc> AccountService<B> {
         };
         let service = service_nav.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
 
-        let mut patches = Vec::new();
-        if bmc.quirks.bug_no_account_type_in_accounts() {
-            patches.push(append_default_account_type);
-        }
-        let account_read_patch_fn = if patches.is_empty() {
-            None
-        } else {
-            let account_read_patch_fn: ReadPatchFn =
-                Arc::new(move |v| patches.iter().fold(v, |acc, f| f(acc)));
-            Some(account_read_patch_fn)
-        };
+        let account_read_patch_fn = bmc.quirks.read_patch("ManagerAccount");
         Ok(Some(Self {
             config,
             account_read_patch_fn,
@@ -181,21 +170,5 @@ impl<B: Bmc> AccountService<B> {
         } else {
             Ok(None)
         }
-    }
-}
-
-// `AccountTypes` is marked as `Redfish.Required`, but some systems
-// ignore this requirement. The account service replaces its value with
-// a reasonable default (see below).
-//
-// Note quote from schema: "if this property is not provided by the client, the default value
-// shall be an array that contains the value `Redfish`".
-fn append_default_account_type(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("AccountTypes")
-            .or_insert(JsonValue::Array(vec![JsonValue::String("Redfish".into())]));
-        JsonValue::Object(obj)
-    } else {
-        v
     }
 }

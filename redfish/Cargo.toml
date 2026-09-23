@@ -98,6 +98,7 @@ update-service = ["patch-payload-get", "patch-collection"]
 update-service-deprecated = [
     "update-service",
     "nv-redfish-core/update-service-deprecated",
+    "nv-redfish-quirks/update-service-deprecated",
     "nv-redfish-bmc-http?/update-service-deprecated",
 ]
 
@@ -139,6 +140,7 @@ impl-entity-link = []
 
 [dependencies]
 nv-redfish-core = { workspace = true }
+nv-redfish-quirks = { workspace = true }
 nv-redfish-bmc-http = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
