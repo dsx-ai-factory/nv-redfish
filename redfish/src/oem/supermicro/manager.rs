@@ -17,18 +17,26 @@
 
 use crate::oem::oem_object;
 use crate::oem::supermicro::kcs_interface::KcsInterface;
+use crate::oem::supermicro::schema::manager::OemActions as SupermicroManagerActionsSchema;
 use crate::oem::supermicro::schema::smc_manager_extensions::Manager as SupermicroManagerSchema;
 use crate::oem::supermicro::sys_lockdown::SysLockdown;
 use crate::schema::manager::Manager as ManagerSchema;
 use crate::Error;
 use crate::NvBmc;
+use nv_redfish_core::ActionError;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::ModificationResponse;
+use serde::Deserialize as _;
 use std::sync::Arc;
+
+#[doc(inline)]
+pub use crate::oem::supermicro::schema::smc_manager_config::ResetOption;
 
 /// Represents a Supermicro OEM extension to Manager schema.
 pub struct SupermicroManager<B: Bmc> {
     bmc: NvBmc<B>,
     data: Arc<SupermicroManagerSchema>,
+    actions: Option<Arc<SupermicroManagerActionsSchema>>,
 }
 
 impl<B: Bmc> SupermicroManager<B> {
@@ -40,14 +48,29 @@ impl<B: Bmc> SupermicroManager<B> {
     ///
     /// Returns an error if parsing Supermicro manager OEM data fails.
     pub(crate) fn new(bmc: &NvBmc<B>, manager: &ManagerSchema) -> Result<Option<Self>, Error<B>> {
-        Ok(manager
+        let Some(data) = manager
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| oem_object(oem, "Supermicro"))?
-            .map(|data| Self {
-                bmc: bmc.clone(),
-                data,
-            }))
+        else {
+            return Ok(None);
+        };
+        let actions = manager
+            .actions
+            .as_ref()
+            .and_then(|actions| actions.oem.as_ref())
+            .map(|actions| {
+                SupermicroManagerActionsSchema::deserialize(&actions.additional_properties)
+                    .map(Arc::new)
+                    .map_err(Error::Json)
+            })
+            .transpose()?;
+
+        Ok(Some(Self {
+            bmc: bmc.clone(),
+            data,
+            actions,
+        }))
     }
 
     /// Get the raw schema data for this Supermicro Manager.
@@ -84,5 +107,29 @@ impl<B: Bmc> SupermicroManager<B> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Reset this manager's configuration with a Supermicro reset option.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ActionNotAvailable`] when the action is not advertised,
+    /// or a BMC error if invocation fails.
+    pub async fn reset_configuration(
+        &self,
+        option: ResetOption,
+    ) -> Result<ModificationResponse<()>, Error<B>>
+    where
+        B::Error: ActionError,
+    {
+        let actions = self.actions.as_ref().ok_or(Error::ActionNotAvailable)?;
+        if actions.reset.is_none() {
+            return Err(Error::ActionNotAvailable);
+        }
+
+        actions
+            .reset(self.bmc.as_ref(), option)
+            .await
+            .map_err(Error::Bmc)
     }
 }

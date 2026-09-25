@@ -16,17 +16,19 @@
 //! Support Supermicro System Lockdown OEM resource.
 
 use crate::core::Bmc;
+use crate::core::EntityTypeRef as _;
+use crate::core::ModificationResponse;
 use crate::core::NavProperty;
 use crate::oem::supermicro::schema::sys_lockdown::SysLockdown as SysLockdownSchema;
+pub use crate::oem::supermicro::schema::sys_lockdown::SysLockdownUpdate;
 use crate::Error;
 use crate::NvBmc;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Supermicro system lockdown resource.
 pub struct SysLockdown<B: Bmc> {
+    bmc: NvBmc<B>,
     data: Arc<SysLockdownSchema>,
-    _marker: PhantomData<B>,
 }
 
 impl<B: Bmc> SysLockdown<B> {
@@ -43,8 +45,8 @@ impl<B: Bmc> SysLockdown<B> {
             .await
             .map_err(Error::Bmc)
             .map(|data| Self {
+                bmc: bmc.clone(),
                 data,
-                _marker: PhantomData,
             })
     }
 
@@ -58,5 +60,41 @@ impl<B: Bmc> SysLockdown<B> {
     #[must_use]
     pub fn sys_lockdown_enabled(&self) -> Option<bool> {
         self.data.sys_lockdown_enabled
+    }
+
+    /// Update this system lockdown resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn update(
+        &self,
+        update: &SysLockdownUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .as_ref()
+            .update::<_, NavProperty<SysLockdownSchema>>(
+                self.data.odata_id(),
+                self.data.etag(),
+                update,
+            )
+            .await
+            .map_err(Error::Bmc)?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
+    }
+
+    /// Enable or disable system lockdown.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn set_enabled(&self, enabled: bool) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.update(
+            &SysLockdownUpdate::builder()
+                .with_sys_lockdown_enabled(enabled)
+                .build(),
+        )
+        .await
     }
 }

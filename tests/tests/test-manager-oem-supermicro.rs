@@ -16,7 +16,10 @@
 
 use nv_redfish::manager::Manager;
 use nv_redfish::oem::supermicro::Privilege;
+use nv_redfish::oem::supermicro::ResetOption;
+use nv_redfish::Error as RedfishError;
 use nv_redfish::ServiceRoot;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::json_merge;
 use nv_redfish_tests::Bmc;
@@ -54,17 +57,49 @@ async fn supermicro_kcs_and_sys_lockdown_supported() -> Result<(), Box<dyn StdEr
     let supermicro = manager.oem_supermicro()?.unwrap();
     bmc.expect(Expect::get(
         &ids.kcs_interface_id,
-        kcs_interface_payload(&ids),
+        kcs_interface_payload(&ids, "Administrator", "7f21b53f195494a7c2dad2008917b1d7"),
     ));
     let kcs = supermicro.kcs_interface().await?.unwrap();
     assert_eq!(kcs.privilege(), Some(Privilege::Administrator));
 
+    bmc.expect(Expect::update(
+        &ids.kcs_interface_id,
+        json!({ "Privilege": "Callback" }),
+        kcs_interface_payload(&ids, "Callback", "\"cb6b6a9b633e6f9e4051140515d96e6f\""),
+    ));
+    let ModificationResponse::Entity(kcs) = kcs.set_privilege(Privilege::Callback).await? else {
+        return Err("expected updated KCS entity".into());
+    };
+    assert_eq!(kcs.privilege(), Some(Privilege::Callback));
+
     bmc.expect(Expect::get(
         &ids.sys_lockdown_id,
-        sys_lockdown_payload(&ids),
+        sys_lockdown_payload(&ids, false, "30b691549156f2528aac46ed839cf7f6"),
     ));
     let lockdown = supermicro.sys_lockdown().await?.unwrap();
     assert_eq!(lockdown.sys_lockdown_enabled(), Some(false));
+
+    bmc.expect(Expect::update(
+        &ids.sys_lockdown_id,
+        json!({ "SysLockdownEnabled": true }),
+        sys_lockdown_payload(&ids, true, "\"6ddb3bc56adbae8094bcff1ad987c79c\""),
+    ));
+    let ModificationResponse::Entity(lockdown) = lockdown.set_enabled(true).await? else {
+        return Err("expected updated SysLockdown entity".into());
+    };
+    assert_eq!(lockdown.sys_lockdown_enabled(), Some(true));
+
+    bmc.expect(Expect::action(
+        &ids.reset_target,
+        json!({ "Option": "ClearConfig" }),
+        json!(null),
+    ));
+    assert!(matches!(
+        supermicro
+            .reset_configuration(ResetOption::ClearConfig)
+            .await?,
+        ModificationResponse::Entity(())
+    ));
 
     Ok(())
 }
@@ -83,7 +118,7 @@ async fn supermicro_manager_without_kcs_still_supports_sys_lockdown(
 
     bmc.expect(Expect::get(
         &ids.sys_lockdown_id,
-        sys_lockdown_payload(&ids),
+        sys_lockdown_payload(&ids, false, "\"30b691549156f2528aac46ed839cf7f6\""),
     ));
 
     let supermicro = manager.oem_supermicro()?.unwrap();
@@ -91,6 +126,29 @@ async fn supermicro_manager_without_kcs_still_supports_sys_lockdown(
 
     let lockdown = supermicro.sys_lockdown().await?.unwrap();
     assert_eq!(lockdown.sys_lockdown_enabled(), Some(false));
+
+    Ok(())
+}
+
+#[test]
+async fn manager_reset_requires_advertisement() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let mut payload = manager_payload(
+        &ids,
+        Some(ids.kcs_interface_ref()),
+        Some(ids.sys_lockdown_ref()),
+    );
+    payload["Actions"]["Oem"] = json!({});
+    let manager = get_manager(bmc, &ids, payload).await?;
+    let supermicro = manager.oem_supermicro()?.unwrap();
+
+    assert!(matches!(
+        supermicro
+            .reset_configuration(ResetOption::ClearConfig)
+            .await,
+        Err(RedfishError::ActionNotAvailable)
+    ));
 
     Ok(())
 }
@@ -186,6 +244,7 @@ struct Ids {
     manager_id: String,
     kcs_interface_id: String,
     sys_lockdown_id: String,
+    reset_target: String,
 }
 
 impl Ids {
@@ -204,12 +263,14 @@ fn ids() -> Ids {
     let manager_id = format!("{managers_id}/1");
     let kcs_interface_id = format!("{manager_id}/Oem/Supermicro/KCSInterface");
     let sys_lockdown_id = format!("{manager_id}/Oem/Supermicro/SysLockdown");
+    let reset_target = format!("{manager_id}/Actions/Oem/SmcManagerConfig.Reset");
     Ids {
         root_id,
         managers_id,
         manager_id,
         kcs_interface_id,
         sys_lockdown_id,
+        reset_target,
     }
 }
 
@@ -221,6 +282,13 @@ fn manager_payload(ids: &Ids, kcs_interface: Option<Value>, sys_lockdown: Option
         "Name": "Manager",
         "ManagerType": "BMC",
         "Status": { "State": "Enabled" },
+        "Actions": {
+            "Oem": {
+                "#SmcManagerConfig.Reset": {
+                    "target": &ids.reset_target
+                }
+            }
+        },
     });
 
     let mut supermicro = json!({
@@ -253,24 +321,24 @@ fn manager_payload_without_supermicro(ids: &Ids) -> Value {
     })
 }
 
-fn kcs_interface_payload(ids: &Ids) -> Value {
+fn kcs_interface_payload(ids: &Ids, privilege: &str, etag: &str) -> Value {
     json!({
         ODATA_ID: &ids.kcs_interface_id,
         ODATA_TYPE: KCS_INTERFACE_DATA_TYPE,
         "Id": "KCSInterface",
         "Name": "KCS Interface",
-        "Privilege": "Administrator",
-        "@odata.etag": "\"7f21b53f195494a7c2dad2008917b1d7\""
+        "Privilege": privilege,
+        "@odata.etag": etag
     })
 }
 
-fn sys_lockdown_payload(ids: &Ids) -> Value {
+fn sys_lockdown_payload(ids: &Ids, enabled: bool, etag: &str) -> Value {
     json!({
         ODATA_ID: &ids.sys_lockdown_id,
         ODATA_TYPE: SYS_LOCKDOWN_DATA_TYPE,
         "Id": "SysLockdown",
         "Name": "SysLockdown",
-        "SysLockdownEnabled": false,
-        "@odata.etag": "\"30b691549156f2528aac46ed839cf7f6\""
+        "SysLockdownEnabled": enabled,
+        "@odata.etag": etag
     })
 }

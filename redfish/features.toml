@@ -1016,13 +1016,30 @@ csdl_files = []
 
 [[oem-features]]
 vendor = "supermicro"
-name = "managers"
+name = "computer-systems"
 oem_csdl_files = [
-    "SmcManagerExtensions_v1.xml",
-    "SysLockdown_v1.xml",
-    "KCSInterface_v1.xml"
+    "OemSystemExtensions_v1.xml",
+    "SmcFixedBootOrder_v1.xml",
+    "SmcSystemExtensions_v1.xml",
 ]
 csdl_files = []
+action_patterns = [
+    "OemSystemExtensions.*",
+]
+
+[[oem-features]]
+vendor = "supermicro"
+name = "managers"
+oem_csdl_files = [
+    "SmcManagerConfig_v1.xml",
+    "SmcManagerExtensions_v1.xml",
+    "SysLockdown_v1.xml",
+    "KCSInterface_v1.xml",
+]
+csdl_files = []
+action_patterns = [
+    "SmcManagerConfig.*",
+]
 
 [[oem-features]]
 vendor = "hpe"

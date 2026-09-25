@@ -20,6 +20,18 @@ mod compiled_schema;
 /// Supermicro OEM Schema.
 pub use compiled_schema::redfish as schema;
 
+/// Support of Supermicro ComputerSystem OEM extension.
+#[cfg(feature = "computer-systems")]
+pub mod computer_system;
+
+/// Support of Supermicro ComputerSystem OEM actions.
+#[cfg(feature = "computer-systems")]
+pub mod computer_system_actions;
+
+/// Support of Supermicro fixed boot order.
+#[cfg(feature = "computer-systems")]
+pub mod fixed_boot_order;
+
 /// Support of Supermicro Manager OEM extension.
 #[cfg(feature = "managers")]
 pub mod manager;
@@ -40,7 +52,26 @@ pub use kcs_interface::KcsInterface;
 pub use kcs_interface::Privilege;
 #[cfg(feature = "managers")]
 #[doc(inline)]
+pub use manager::ResetOption;
+#[cfg(feature = "managers")]
+#[doc(inline)]
 pub use manager::SupermicroManager;
 #[cfg(feature = "managers")]
 #[doc(inline)]
 pub use sys_lockdown::SysLockdown;
+
+#[cfg(feature = "computer-systems")]
+#[doc(inline)]
+pub use computer_system::SupermicroComputerSystem;
+#[cfg(feature = "computer-systems")]
+#[doc(inline)]
+pub use computer_system_actions::ResetType as SupermicroSystemResetType;
+#[cfg(feature = "computer-systems")]
+#[doc(inline)]
+pub use computer_system_actions::SupermicroComputerSystemActions;
+#[cfg(feature = "computer-systems")]
+#[doc(inline)]
+pub use fixed_boot_order::BootMode as SupermicroBootMode;
+#[cfg(feature = "computer-systems")]
+#[doc(inline)]
+pub use fixed_boot_order::SmcFixedBootOrder;

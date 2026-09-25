@@ -37,6 +37,7 @@ use tagged_types::TaggedType;
 
 pub use crate::schema::computer_system::BootUpdate;
 pub use crate::schema::computer_system::ComputerSystemUpdate;
+pub use crate::schema::computer_system::IpmiHostInterfaceUpdate;
 
 #[cfg(feature = "bios")]
 use crate::computer_system::Bios;
@@ -60,6 +61,10 @@ use crate::oem::lenovo::computer_system::LenovoComputerSystem;
 use crate::oem::lenovo::LenovoComputerSystemActions;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaComputerSystem;
+#[cfg(feature = "oem-supermicro")]
+use crate::oem::supermicro::SupermicroComputerSystem;
+#[cfg(feature = "oem-supermicro")]
+use crate::oem::supermicro::SupermicroComputerSystemActions;
 
 #[doc(hidden)]
 pub enum ComputerSystemTag {}
@@ -179,6 +184,36 @@ impl<B: Bmc> ComputerSystem<B> {
     #[must_use]
     pub fn power_state(&self) -> Option<PowerState> {
         self.data.power_state.and_then(identity)
+    }
+
+    /// Whether the system's in-band IPMI host interface is enabled.
+    #[must_use]
+    pub fn ipmi_host_interface_enabled(&self) -> Option<bool> {
+        self.data
+            .ipmi_host_interface
+            .as_ref()
+            .and_then(|interface| interface.service_enabled)
+    }
+
+    /// Enable or disable the in-band IPMI host interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned system fails.
+    pub async fn set_ipmi_host_interface_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.update(
+            &ComputerSystemUpdate::builder()
+                .with_ipmi_host_interface(
+                    IpmiHostInterfaceUpdate::builder()
+                        .with_service_enabled(enabled)
+                        .build(),
+                )
+                .build(),
+        )
+        .await
     }
 
     /// Update this computer system.
@@ -503,5 +538,39 @@ impl<B: Bmc> ComputerSystem<B> {
             .and_then(|actions| actions.oem.as_ref())
             .map(|actions| LenovoComputerSystemActions::new(&self.bmc, actions))
             .transpose()
+    }
+
+    /// Get the Supermicro OEM properties advertised by this computer system.
+    ///
+    /// Returns `Ok(None)` when the system does not advertise `Oem.Supermicro`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Supermicro OEM data cannot be parsed.
+    #[cfg(feature = "oem-supermicro")]
+    pub fn oem_supermicro(&self) -> Result<Option<SupermicroComputerSystem<B>>, Error<B>> {
+        SupermicroComputerSystem::new(&self.bmc, &self.data)
+    }
+
+    /// Get the advertised Supermicro OEM system actions.
+    ///
+    /// Returns `Ok(None)` when the system does not advertise the Supermicro
+    /// AC-cycle action.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Supermicro OEM actions cannot be parsed.
+    #[cfg(feature = "oem-supermicro")]
+    pub fn oem_supermicro_actions(
+        &self,
+    ) -> Result<Option<SupermicroComputerSystemActions<B>>, Error<B>> {
+        self.data
+            .actions
+            .as_ref()
+            .and_then(|actions| actions.oem.as_ref())
+            .map_or_else(
+                || Ok(None),
+                |actions| SupermicroComputerSystemActions::new(&self.bmc, actions),
+            )
     }
 }
