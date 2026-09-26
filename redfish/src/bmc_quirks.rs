@@ -171,7 +171,16 @@ impl BmcQuirks {
     /// `MemberId`.
     #[cfg(feature = "event-service")]
     pub(crate) const fn event_service_sse_no_member_id(&self) -> bool {
-        matches!(self.platform, Some(Platform::Nvidia | Platform::Wiwynn))
+        matches!(
+            self.platform,
+            Some(Platform::Nvidia | Platform::VeraRubin | Platform::NvSwitch | Platform::Wiwynn)
+        )
+    }
+
+    /// Event records can contain an empty object instead of a `LogEntry` reference.
+    #[cfg(feature = "event-service")]
+    pub(crate) fn event_service_sse_empty_log_entry(&self) -> bool {
+        self.platform == Some(Platform::VeraRubin)
     }
 
     /// In some implementations, Event records in SSE payload use compact
@@ -246,5 +255,30 @@ impl BmcQuirks {
     #[cfg(feature = "patch-collection")]
     pub(crate) fn bug_nullable_members(&self) -> bool {
         self.platform == Some(Platform::NvidiaDpu)
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "event-service")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sse_repairs_are_scoped_to_affected_platforms() {
+        for (platform, missing_member_id, empty_log_entry) in [
+            (Some(Platform::VeraRubin), true, true),
+            (Some(Platform::NvSwitch), true, false),
+            (Some(Platform::Nvidia), true, false),
+            (Some(Platform::Wiwynn), true, false),
+            (Some(Platform::Dell), false, false),
+            (Some(Platform::Hpe), false, false),
+            (Some(Platform::NvidiaDpu), false, false),
+            (None, false, false),
+        ] {
+            let quirks = BmcQuirks { platform };
+
+            assert_eq!(quirks.event_service_sse_no_member_id(), missing_member_id);
+            assert_eq!(quirks.event_service_sse_empty_log_entry(), empty_log_entry);
+        }
     }
 }
