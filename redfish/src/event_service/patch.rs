@@ -77,7 +77,8 @@ pub(super) fn patch_missing_event_record_member_id(
     value: &mut JsonMap<String, JsonValue>,
     index: usize,
 ) {
-    if value.contains_key("MemberId") {
+    // Adding fields to a reference would make it parse as an expanded record.
+    if value.contains_key("MemberId") || (value.len() == 1 && value.contains_key("@odata.id")) {
         return;
     }
 
@@ -95,11 +96,27 @@ pub(super) fn patch_missing_event_type_to_other(
     value: &mut JsonMap<String, JsonValue>,
     _index: usize,
 ) {
+    // Adding fields to a reference would make it parse as an expanded record.
+    if value.len() == 1 && value.contains_key("@odata.id") {
+        return;
+    }
+
     if value.get("EventType").is_none() {
         value.insert(
             "EventType".to_string(),
             JsonValue::String("Other".to_string()),
         );
+    }
+}
+
+pub(super) fn patch_empty_log_entry(value: &mut JsonMap<String, JsonValue>, _index: usize) {
+    if value
+        .get("LogEntry")
+        .and_then(JsonValue::as_object)
+        .is_some_and(JsonMap::is_empty)
+    {
+        // An empty object contains no link; omit the optional navigation property.
+        value.remove("LogEntry");
     }
 }
 
@@ -144,12 +161,20 @@ fn fix_timestamp_offset(input: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::fix_timestamp_offset;
-    use super::patch_event_records;
-    use super::patch_missing_event_record_member_id;
-    use super::patch_missing_event_type_to_other;
-    use super::EventRecordPatchFn;
+    use super::*;
+    use crate::event_service::EventStreamPayload;
+    use crate::schema::event::EventRecord;
+
     use serde_json::json;
+    use serde_json::Value;
+
+    // Exercise the repairs directly; EventService's async wiring is not under test.
+    const ID_AND_LOG_PATCHES: [EventRecordPatchFn; 4] = [
+        patch_empty_log_entry,
+        patch_missing_event_record_member_id,
+        patch_missing_event_type_to_other,
+        patch_missing_event_record_odata_id,
+    ];
 
     #[test]
     fn normalizes_compact_offset() {
@@ -222,5 +247,160 @@ mod tests {
             .and_then(|event| event.get("MemberId"))
             .and_then(serde_json::Value::as_str);
         assert_eq!(member_id, Some("88"));
+    }
+
+    #[test]
+    fn repairs_missing_ids_and_empty_log_references() {
+        for (missing_member_id, empty_log_entry) in [(true, false), (false, true), (true, true)] {
+            let mut payload = synthetic_event();
+
+            if !missing_member_id {
+                payload["Events"][0]["MemberId"] = json!("existing-member");
+            }
+
+            if !empty_log_entry {
+                payload["Events"][0]
+                    .as_object_mut()
+                    .expect("event record")
+                    .remove("LogEntry");
+            }
+
+            let member_id = if missing_member_id {
+                "1"
+            } else {
+                "existing-member"
+            };
+
+            let mut expected = payload.clone();
+            expected["@odata.id"] = json!("/redfish/v1/EventService/SSE#/Event1");
+            expected["Events"][0]["MemberId"] = json!(member_id);
+            expected["Events"][0]["@odata.id"] =
+                json!(format!("/redfish/v1/EventService/SSE#/Events/{member_id}"));
+
+            expected["Events"][0]
+                .as_object_mut()
+                .expect("event record")
+                .remove("LogEntry");
+
+            let patched =
+                patch_event_records(patch_missing_event_odata_id(payload), &ID_AND_LOG_PATCHES);
+
+            let decoded: EventStreamPayload =
+                serde_json::from_value(patched.clone()).expect("repaired event must decode");
+
+            assert_eq!(patched, expected);
+            assert!(matches!(decoded, EventStreamPayload::Event(_)));
+        }
+    }
+
+    #[test]
+    fn repairs_preserve_valid_ids_references_and_event_fields() {
+        let mut payload = synthetic_event();
+        payload["@odata.id"] = json!("/redfish/v1/EventService/SSE#/existing-event");
+        payload["Events"][0]["MemberId"] = json!("existing-member");
+        payload["Events"][0]["@odata.id"] = json!("/redfish/v1/EventService/SSE#/existing-record");
+        payload["Events"][0]["LogEntry"] =
+            json!({"@odata.id": "/redfish/v1/Managers/1/LogServices/EventLog/Entries/1"});
+
+        let patched = patch_event_records(
+            patch_missing_event_odata_id(payload.clone()),
+            &ID_AND_LOG_PATCHES,
+        );
+
+        let decoded: EventStreamPayload =
+            serde_json::from_value(patched.clone()).expect("valid event must decode");
+
+        let record: EventRecord =
+            serde_json::from_value(patched["Events"][0].clone()).expect("record must decode");
+
+        assert_eq!(patched, payload);
+        assert!(matches!(decoded, EventStreamPayload::Event(_)));
+        assert!(record.log_entry.is_some());
+
+        assert_eq!(
+            record.oem.expect("OEM extensions").additional_properties["Vendor"]["ErrorId"],
+            "TEST-EVENT"
+        );
+    }
+
+    #[test]
+    fn missing_member_id_repair_preserves_reference_only_records() {
+        let mut payload = synthetic_event();
+        payload["Events"] = json!([{"@odata.id": "/redfish/v1/EventService/SSE#/record"}]);
+
+        let patched = patch_event_records(
+            patch_missing_event_odata_id(payload.clone()),
+            &ID_AND_LOG_PATCHES,
+        );
+
+        let decoded: EventStreamPayload =
+            serde_json::from_value(patched.clone()).expect("reference must decode");
+
+        assert_eq!(patched["Events"], payload["Events"]);
+        assert!(matches!(decoded, EventStreamPayload::Event(_)));
+    }
+
+    #[test]
+    fn empty_log_entry_repair_preserves_reference_only_records() {
+        let mut payload = synthetic_event();
+
+        payload["Events"] = json!([{
+            "@odata.id": "/redfish/v1/EventService/SSE#/record",
+            "LogEntry": {}
+        }]);
+
+        let patched =
+            patch_event_records(patch_missing_event_odata_id(payload), &ID_AND_LOG_PATCHES);
+
+        assert_eq!(
+            patched["Events"],
+            json!([{"@odata.id": "/redfish/v1/EventService/SSE#/record"}])
+        );
+
+        let decoded: EventStreamPayload =
+            serde_json::from_value(patched).expect("reference must decode");
+
+        assert!(matches!(decoded, EventStreamPayload::Event(_)));
+    }
+
+    #[test]
+    fn empty_log_entry_repair_leaves_other_values_unchanged() {
+        for (log_entry, should_decode) in [
+            (json!({"unexpected": "value"}), false),
+            (json!([]), false),
+            (json!(""), false),
+            (Value::Null, true),
+        ] {
+            let mut payload = synthetic_event();
+            payload["Events"][0]["LogEntry"] = log_entry.clone();
+
+            let patched =
+                patch_event_records(patch_missing_event_odata_id(payload), &ID_AND_LOG_PATCHES);
+
+            let decoded = serde_json::from_value::<EventStreamPayload>(patched.clone());
+
+            assert_eq!(patched["Events"][0]["LogEntry"], log_entry);
+            assert_eq!(decoded.is_ok(), should_decode, "{decoded:?}");
+        }
+    }
+
+    // Synthetic data retains only the structure needed to reproduce the failures.
+    fn synthetic_event() -> Value {
+        json!({
+            "@odata.type": "#Event.v1_9_0.Event",
+            "Id": "1",
+            "Name": "Event Log",
+            "Events": [{
+                "EventId": "1",
+                "EventTimestamp": "2026-01-01T00:00:00+00:00",
+                "EventType": "Event",
+                "LogEntry": {},
+                "Message": "Test hardware event",
+                "MessageId": "",
+                "MessageArgs": ["test-component", ""],
+                "MessageSeverity": "Critical",
+                "Oem": {"Vendor": {"ErrorId": "TEST-EVENT"}}
+            }]
+        })
     }
 }

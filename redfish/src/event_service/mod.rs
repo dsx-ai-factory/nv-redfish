@@ -97,9 +97,16 @@ impl<B: Bmc> EventService<B> {
             let mut sse_read_patches = Vec::new();
             let mut sse_event_record_patches: Vec<patch::EventRecordPatchFn> = Vec::new();
 
+            // Remove empty links before deciding whether a record is reference-only.
+            if bmc.quirks.event_service_sse_empty_log_entry() {
+                sse_event_record_patches.push(patch::patch_empty_log_entry);
+            }
+
+            // Record ID generation below needs MemberId to be present first.
             if bmc.quirks.event_service_sse_no_member_id() {
                 sse_event_record_patches.push(patch::patch_missing_event_record_member_id);
             }
+
             if bmc.quirks.event_service_sse_missing_event_type() {
                 sse_event_record_patches.push(patch::patch_missing_event_type_to_other);
             }
