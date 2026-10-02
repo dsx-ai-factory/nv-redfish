@@ -13,10 +13,12 @@ documentation = "https://docs.rs/nv-redfish-bmc-mock"
 
 [features]
 default = []
+patch-inflight = []
 update-service-deprecated = ["nv-redfish-core/update-service-deprecated"]
 
 [dependencies]
 nv-redfish-core = { workspace = true }
+nv-redfish-patch-inflight = { workspace = true }
 futures-core = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }

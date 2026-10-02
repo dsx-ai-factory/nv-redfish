@@ -47,6 +47,7 @@ use serde::de::Deserializer;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
+use serde_json::Value;
 use std::sync::Arc;
 
 /// Reference variant of the navigation property (only `@odata.id`
@@ -140,11 +141,32 @@ where
             Ok(Self::Reference(reference))
         } else {
             // Non-reference payloads are always parsed as expanded `T`.
+            //
+            let value = patch_inflight(value);
+
             let expanded = serde_json::from_value::<T>(value)
                 .map_err(|err| de::Error::custom(err.to_string()))?;
             Ok(Self::Expanded(Expanded(Arc::new(expanded))))
         }
     }
+}
+
+#[cfg(feature = "patch-inflight")]
+fn patch_inflight(mut v: Value) -> Value {
+    v = nv_redfish_patch_inflight::INFLIGHT_PATCH_REGISTRY.with_borrow(|r| {
+        if let Some(registry) = r.as_deref() {
+            registry.patch_inflight(v)
+        } else {
+            v
+        }
+    });
+    v
+}
+
+#[cfg(not(feature = "patch-inflight"))]
+#[inline]
+const fn patch_inflight(v: Value) -> Value {
+    v
 }
 
 impl<T> Serialize for NavProperty<T>

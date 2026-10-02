@@ -1,0 +1,16 @@
+[package]
+name = "nv-redfish-patch-inflight"
+description = "Support BMC responces inflight patching"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["alloc", "derive"] }
+serde_json = { workspace = true, features = [ "std" ] }
+wildmatch.workspace = true

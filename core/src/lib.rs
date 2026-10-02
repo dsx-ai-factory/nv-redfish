@@ -427,7 +427,8 @@ mod tests {
     #[test]
     fn try_map_entity_maps_entity_and_propagates_error() -> Result<(), &'static str> {
         assert_entity(
-            ModificationResponse::Entity(21_u32).try_map_entity(|value| Ok(value * 2))?,
+            ModificationResponse::Entity(21_u32)
+                .try_map_entity(|value| Ok::<u32, &'static str>(value * 2))?,
             42,
         )?;
 
@@ -455,7 +456,7 @@ mod tests {
     ) -> Result<(), &'static str> {
         assert_entity(
             ModificationResponse::Entity(21_u32)
-                .try_map_entity_async(|value| async move { Ok(value * 2) })
+                .try_map_entity_async(|value| async move { Ok::<u32, &'static str>(value * 2) })
                 .await?,
             42,
         )?;

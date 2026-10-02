@@ -13,11 +13,13 @@ documentation = "https://docs.rs/nv-redfish-core"
 
 [features]
 default = []
+patch-inflight = []
 update-service-deprecated = []
 
 [dependencies]
 futures-core = { workspace = true }
 futures-io = { workspace = true }
+nv-redfish-patch-inflight = { workspace = true }
 serde = { workspace = true, features = ["alloc", "derive"] }
 serde_json = { workspace = true, features = [ "std" ] }
 uuid = { workspace = true, features = [ "serde" ] }
