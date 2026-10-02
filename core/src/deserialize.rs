@@ -15,6 +15,24 @@
 
 use serde::Deserialize;
 use serde::Deserializer;
+use serde::Serialize;
+
+/// Redfish `LocationIndicatorActive` (`Edm.Boolean` or vendor LED map).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LocationIndicatorActive {
+    /// Standard Redfish boolean indicator.
+    Boolean(bool),
+    /// Lite-On-style LED states on some power-supply firmware.
+    LedIndicators {
+        /// Fault LED state (e.g. `"OFF"`).
+        #[serde(rename = "FaultLed")]
+        fault_led: String,
+        /// Power LED state (e.g. `"Solid"`).
+        #[serde(rename = "PowerLed")]
+        power_led: String,
+    },
+}
 
 /// Deserialize an optional nullable field. nv-redfish models these fields
 /// with `Option<Option<T>>`, where `None` means "no field" and
@@ -43,4 +61,43 @@ where
     T: Deserialize<'de>,
 {
     Deserialize::deserialize(de)
+}
+
+#[cfg(test)]
+mod location_indicator_active_tests {
+    use super::LocationIndicatorActive;
+    use serde::Deserialize;
+    use serde_json::json;
+
+    #[derive(Deserialize)]
+    struct Wrapper {
+        #[serde(
+            rename = "LocationIndicatorActive",
+            default,
+            deserialize_with = "crate::deserialize::de_optional_nullable"
+        )]
+        location_indicator_active: Option<Option<LocationIndicatorActive>>,
+    }
+
+    #[test]
+    fn stores_led_object_and_boolean() {
+        let led: Wrapper = serde_json::from_value(json!({
+            "LocationIndicatorActive": { "FaultLed": "OFF", "PowerLed": "Solid" }
+        }))
+        .expect("led object");
+        assert_eq!(
+            led.location_indicator_active,
+            Some(Some(LocationIndicatorActive::LedIndicators {
+                fault_led: "OFF".into(),
+                power_led: "Solid".into(),
+            }))
+        );
+
+        let boolean: Wrapper =
+            serde_json::from_value(json!({ "LocationIndicatorActive": false })).expect("boolean");
+        assert_eq!(
+            boolean.location_indicator_active,
+            Some(Some(LocationIndicatorActive::Boolean(false)))
+        );
+    }
 }

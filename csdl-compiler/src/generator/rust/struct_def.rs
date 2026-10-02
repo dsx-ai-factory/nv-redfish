@@ -534,13 +534,21 @@ impl<'a> StructDef<'a> {
 
     fn generate_property(p: &Property<'_>, config: &Config) -> TokenStream {
         let doc = doc_format_deprecated(p.name, &p.odata, p.redfish.deprecation);
+        let rename = Literal::string(p.name.inner().inner());
+        let field_rust_type = if Self::is_location_indicator_active_boolean(p) {
+            let top = &config.top_module_alias;
+            quote! { #top::edm::LocationIndicatorActive }
+        } else {
+            FullTypeName::new(p.ptype.name(), config).to_token_stream()
+        };
         let (serde, field_type) = Self::gen_de_struct_field(
             &p.ptype,
-            FullTypeName::new(p.ptype.name(), config),
-            Literal::string(p.name.inner().inner()),
+            field_rust_type,
+            rename,
             p.nullable,
             p.redfish.is_required,
             p.rigid_array_support,
+            None,
         );
         let name = StructFieldName::new_property(p.name);
         quote! { #doc #serde pub #name: #field_type, }
@@ -561,6 +569,13 @@ impl<'a> StructDef<'a> {
         }
     }
 
+    fn is_location_indicator_active_boolean(p: &Property<'_>) -> bool {
+        let qname = p.ptype.name();
+        p.name.inner().inner() == "LocationIndicatorActive"
+            && qname.namespace.is_edm()
+            && qname.name.inner() == "Boolean"
+    }
+
     // Returns serde annotation and field type token streams.
     fn gen_de_struct_field<T>(
         cardinality: &OneOrCollection<T>,
@@ -569,9 +584,15 @@ impl<'a> StructDef<'a> {
         nullable: IsNullable,
         required: IsRequired,
         rigid_array_support: RigidArraySupport,
+        optional_nullable_deserializer: Option<&str>,
     ) -> (TokenStream, TokenStream) {
         (
-            Self::gen_de_struct_field_serde_annot(rename, nullable, required),
+            Self::gen_de_struct_field_serde_annot(
+                rename,
+                nullable,
+                required,
+                optional_nullable_deserializer,
+            ),
             Self::gen_de_struct_field_type(
                 cardinality,
                 ftype,
@@ -586,17 +607,20 @@ impl<'a> StructDef<'a> {
         rename: impl ToTokens,
         nullable: IsNullable,
         required: IsRequired,
+        optional_nullable_deserializer: Option<&str>,
     ) -> TokenStream {
         if required.into_inner() && nullable.into_inner() {
             quote! { #[serde(rename=#rename, deserialize_with="de_required_nullable")] }
         } else if required.into_inner() {
             quote! { #[serde(rename=#rename)] }
         } else if nullable.into_inner() {
+            let deserialize_with =
+                Literal::string(optional_nullable_deserializer.unwrap_or("de_optional_nullable"));
             quote! {
                 #[serde(
                     rename=#rename,
                     default,
-                    deserialize_with="de_optional_nullable",
+                    deserialize_with = #deserialize_with,
                     skip_serializing_if = "Option::is_none"
                 )]
             }
@@ -671,6 +695,7 @@ impl<'a> StructDef<'a> {
                     p.nullable,
                     p.redfish.is_required,
                     RigidArraySupport::new(false),
+                    None,
                 );
                 (doc, sa, t)
             }
@@ -688,6 +713,7 @@ impl<'a> StructDef<'a> {
                     IsNullable::new(false),
                     IsRequired::new(false),
                     RigidArraySupport::new(false),
+                    None,
                 );
                 (doc, sa, t)
             }

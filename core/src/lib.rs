@@ -113,6 +113,8 @@ pub use deserialize::de_optional_nullable;
 #[doc(inline)]
 pub use deserialize::de_required_nullable;
 #[doc(inline)]
+pub use deserialize::LocationIndicatorActive;
+#[doc(inline)]
 pub use dynamic_properties::DynamicProperties;
 #[doc(inline)]
 pub use edm_date_time_offset::EdmDateTimeOffset;

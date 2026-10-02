@@ -290,6 +290,8 @@ impl<'a> RustGenerator<'a> {
                 //!
                 /// Mapping of `Edm.Boolean` type
                 pub type Boolean = bool;
+                /// `LocationIndicatorActive` (boolean or vendor LED object).
+                pub type LocationIndicatorActive = nv_redfish_core::LocationIndicatorActive;
                 /// Mapping of `Edm.DateTimeOffset` type
                 pub type DateTimeOffset = nv_redfish_core::EdmDateTimeOffset;
                 /// Mapping of `Edm.Decimal`
