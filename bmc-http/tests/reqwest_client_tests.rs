@@ -1310,6 +1310,73 @@ mod reqwest_client_tests {
         Ok(())
     }
 
+    /// Supermicro (AST2600, firmware 01.03.34) answers writes with its status
+    /// under `Success` rather than `error`.
+    #[tokio::test]
+    async fn test_supermicro_success_status_reads_as_an_empty_response(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let action_path = "/redfish/v1/Managers/1/Actions/Manager.Reset";
+        let resource_path = "/redfish/v1/AccountService";
+        let success = serde_json::json!({
+            "Success": {"code": "Base.1.10.Success", "message": "Successfully Completed Request."}
+        });
+        let not_success = serde_json::json!({
+            "Success": {"code": "Base.1.10.GeneralError", "message": "A general error has occurred."}
+        });
+        for (body, accepted) in [(success, true), (not_success, false)] {
+            let mock_server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path(action_path))
+                .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+                .mount(&mock_server)
+                .await;
+            Mock::given(method("PATCH"))
+                .and(path(resource_path))
+                .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+                .mount(&mock_server)
+                .await;
+            let bmc = create_test_bmc(&mock_server);
+
+            let action: nv_redfish_core::Action<ActionRequest, ()> =
+                serde_json::from_value(serde_json::json!({ "target": action_path }))?;
+            let action_response = bmc
+                .action(
+                    &action,
+                    &ActionRequest {
+                        parameter: "GracefulRestart".to_string(),
+                    },
+                )
+                .await;
+            let update_response = bmc
+                .update::<UpdateRequest, TestResource>(
+                    &create_odata_id(resource_path),
+                    None,
+                    &UpdateRequest {
+                        name: None,
+                        value: Some(0),
+                    },
+                )
+                .await;
+
+            if accepted {
+                assert!(
+                    matches!(action_response, Ok(ModificationResponse::Empty)),
+                    "action: {:?}",
+                    action_response
+                );
+                assert!(
+                    matches!(update_response, Ok(ModificationResponse::Empty)),
+                    "update: {:?}",
+                    update_response.map(|_| ())
+                );
+            } else {
+                assert!(action_response.is_err(), "action accepted {}", body);
+                assert!(update_response.is_err(), "update accepted {}", body);
+            }
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_create_success_message_with_location_returns_entity_reference(
     ) -> Result<(), Box<dyn std::error::Error>> {

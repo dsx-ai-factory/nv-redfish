@@ -1151,16 +1151,31 @@ fn is_redfish_success_response(value: &serde_json::Value) -> bool {
         _extended_info: Vec<Message>,
     }
 
+    /// Supermicro reports the same status under `Success` rather than `error`.
+    #[derive(serde::Deserialize)]
+    struct SuccessEnvelope {
+        #[serde(rename = "Success")]
+        success: SuccessStatus,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SuccessStatus {
+        code: String,
+    }
+
     // If we recieved extended info, this means we got a success response
     if <ExtendedInfoEnvelope as serde::Deserialize>::deserialize(value).is_ok() {
         return true;
     }
 
-    let Ok(response) = <RedfishError as serde::Deserialize>::deserialize(value) else {
-        return false;
+    let code = match <RedfishError as serde::Deserialize>::deserialize(value) {
+        Ok(response) => response.error.code,
+        Err(_) => match <SuccessEnvelope as serde::Deserialize>::deserialize(value) {
+            Ok(envelope) => envelope.success.code,
+            Err(_) => return false,
+        },
     };
-
-    let code = response.error.code.as_str();
+    let code = code.as_str();
     let message = code.rsplit_once('.').map_or(code, |(_, message)| message);
 
     matches!(message, "Success" | "Created" | "NoOperation")
