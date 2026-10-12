@@ -297,6 +297,9 @@ csdl_files = [
 patterns = [
     "ManagerNetworkProtocol.*",
 ]
+rigid_arrays = [
+    "ManagerNetworkProtocol.*.NTPProtocol/NTPServers",
+]
 
 [[features]]
 name = "pcie-devices"

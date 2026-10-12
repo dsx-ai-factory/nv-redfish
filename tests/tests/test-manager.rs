@@ -100,6 +100,109 @@ async fn network_protocol_fetches_linked_resource() -> Result<(), Box<dyn StdErr
 }
 
 #[test]
+async fn network_protocol_accepts_null_ntp_server_entries() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let manager = get_manager(
+        bmc.clone(),
+        &ids,
+        manager_payload_with_fields(
+            &ids,
+            json!({ "NetworkProtocol": { ODATA_ID: &ids.manager_network_protocol_id } }),
+        ),
+    )
+    .await?;
+
+    bmc.expect(Expect::get(
+        &ids.manager_network_protocol_id,
+        json!({
+            ODATA_ID: &ids.manager_network_protocol_id,
+            ODATA_TYPE: MANAGER_NETWORK_PROTOCOL_DATA_TYPE,
+            "Id": "NetworkProtocol",
+            "Name": "Manager Network Protocol",
+            "NTP": { "NTPServers": [null, "pool.ntp.org"] },
+            "IPMI": { "Port": 623 }
+        }),
+    ));
+
+    let network = manager.network_protocol().await?.unwrap();
+    let raw = network.raw();
+    let servers = raw
+        .ntp
+        .as_ref()
+        .unwrap()
+        .ntp_servers
+        .as_ref()
+        .unwrap()
+        .as_ref()
+        .unwrap();
+    assert_eq!(servers, &[None, Some("pool.ntp.org".to_string())]);
+    assert_eq!(raw.ipmi.as_ref().unwrap().port, Some(Some(623)));
+    Ok(())
+}
+
+#[test]
+async fn manager_accepts_null_ntp_servers_in_expanded_link() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let root = expect_anonymous_1_9_service_root(
+        bmc.clone(),
+        &ids,
+        json!({
+            "Vendor": "Lenovo",
+            "Managers": { ODATA_ID: &ids.managers_id },
+            "ProtocolFeaturesSupported": { "ExpandQuery": { "NoLinks": true } }
+        }),
+    )
+    .await?;
+
+    bmc.expect(Expect::expand(
+        &ids.managers_id,
+        json!({
+            ODATA_ID: &ids.managers_id,
+            ODATA_TYPE: MANAGER_COLLECTION_DATA_TYPE,
+            "Id": "Managers",
+            "Name": "Manager Collection",
+            "Members": [manager_payload_with_fields(
+                &ids,
+                json!({
+                    "NetworkProtocol": {
+                        ODATA_ID: &ids.manager_network_protocol_id,
+                        ODATA_TYPE: MANAGER_NETWORK_PROTOCOL_DATA_TYPE,
+                        "Id": "NetworkProtocol",
+                        "Name": "Manager Network Protocol",
+                        "NTP": { "NTPServers": [null, "pool.ntp.org"] }
+                    }
+                }),
+            )]
+        }),
+    ));
+
+    let manager = root
+        .managers()
+        .await?
+        .unwrap()
+        .members()
+        .await?
+        .pop()
+        .unwrap();
+    let network = manager.network_protocol().await?.unwrap();
+    let servers = network
+        .raw()
+        .ntp
+        .as_ref()
+        .unwrap()
+        .ntp_servers
+        .as_ref()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .clone();
+    assert_eq!(servers, [None, Some("pool.ntp.org".to_string())]);
+    Ok(())
+}
+
+#[test]
 async fn reset_invokes_manager_reset_action() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = ids();
