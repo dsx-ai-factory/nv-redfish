@@ -870,12 +870,10 @@ impl Client {
         match status {
             reqwest::StatusCode::NO_CONTENT => Ok(ModificationResponse::Empty),
             reqwest::StatusCode::ACCEPTED => {
+                // Without a monitor there is nothing to poll: Supermicro answers
+                // a staged BIOS settings change this way.
                 let Some(task_location) = location? else {
-                    return Err(BmcError::InvalidResponse {
-                        url,
-                        status,
-                        text: String::from("202 Accepted without Location header"),
-                    });
+                    return Ok(ModificationResponse::Empty);
                 };
 
                 Ok(ModificationResponse::Task(AsyncTask {
