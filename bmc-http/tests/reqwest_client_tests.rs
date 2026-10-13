@@ -1311,6 +1311,50 @@ mod reqwest_client_tests {
     }
 
     #[tokio::test]
+    async fn test_action_unit_output_accepts_only_an_empty_object_body(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let action_path = "/redfish/v1/systems/1/Actions/ComputerSystem.Reset";
+        let action_request = ActionRequest {
+            parameter: "ForceRestart".to_string(),
+        };
+        let cases = [
+            (serde_json::json!({}), true),
+            (serde_json::json!({ "Unexpected": true }), false),
+        ];
+        for (body, accepted) in cases {
+            let mock_server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path(action_path))
+                .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let bmc = create_test_bmc(&mock_server);
+            let action: nv_redfish_core::Action<ActionRequest, ()> =
+                serde_json::from_value(serde_json::json!({ "target": action_path }))?;
+            let response = bmc.action(&action, &action_request).await;
+
+            if accepted {
+                assert!(
+                    matches!(response, Ok(ModificationResponse::Empty)),
+                    "{} should read as an empty response, got {:?}",
+                    body,
+                    response
+                );
+            } else {
+                assert!(
+                    matches!(response, Err(BmcError::JsonError(_))),
+                    "{} should not match a unit output, got {:?}",
+                    body,
+                    response
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_create_success_message_with_location_returns_entity_reference(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;

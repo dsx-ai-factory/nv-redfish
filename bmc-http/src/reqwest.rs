@@ -902,15 +902,18 @@ impl Client {
                     //
                     // - DSP0266 POST actions with no response body may still return "an error
                     //   response, with a message that indicates success".
+                    //
+                    // - Some services answer with an empty JSON object, which carries no more
+                    //   than an empty body.
                     return match serde_path_to_error::deserialize(&value) {
                         // Non-empty 200/201 body matched the caller-selected type.
                         Ok(entity) => Ok(ModificationResponse::Entity(entity)),
                         Err(err) => {
-                            if is_redfish_success_response(&value) {
-                                // A success envelope is not the requested
-                                // representation. Preserve an accompanying
-                                // resource Location in the same way as an
-                                // empty 200/201 response.
+                            if is_redfish_success_response(&value) || is_empty_object(&value) {
+                                // Neither is the requested representation.
+                                // Preserve an accompanying resource Location
+                                // in the same way as an empty 200/201
+                                // response.
                                 if let Some(location) = location? {
                                     let value = serde_json::json!({ "@odata.id": location });
                                     return Ok(serde_path_to_error::deserialize(value)
@@ -1144,6 +1147,10 @@ fn inject_etag(etag: &ODataETag, body: &mut serde_json::Value) {
 /// DSP0266 7.11, Table 10 allows actions without response bodies to return
 /// an error-shaped success body. Only that body should become Empty.
 #[inline]
+fn is_empty_object(value: &serde_json::Value) -> bool {
+    value.as_object().is_some_and(serde_json::Map::is_empty)
+}
+
 fn is_redfish_success_response(value: &serde_json::Value) -> bool {
     #[derive(serde::Deserialize)]
     struct ExtendedInfoEnvelope {
