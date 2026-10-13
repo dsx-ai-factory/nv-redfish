@@ -21,6 +21,8 @@ use crate::protocol_features::ExpandQueryFeatures;
 use crate::Error;
 use crate::ProtocolFeatures;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::BmcError as _;
+use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
@@ -112,7 +114,8 @@ impl<B: Bmc> NvBmc<B> {
     /// Update the resource at `id`, sending `etag` as `If-Match`.
     ///
     /// On BMCs that reject their own ETags the ETag is dropped, so the
-    /// transport sends `If-Match: *`.
+    /// transport sends `If-Match: *`. On BMCs that accept a staged change
+    /// with a `202` naming no task, that `202` reads as an empty response.
     ///
     /// # Errors
     ///
@@ -133,7 +136,15 @@ impl<B: Bmc> NvBmc<B> {
         } else {
             etag
         };
-        self.bmc.update(id, etag, update).await.map_err(Error::Bmc)
+        match self.bmc.update(id, etag, update).await {
+            Err(error)
+                if self.quirks.bug_accepted_update_without_task()
+                    && error.error_class() == BmcErrorClass::HttpResponse { status: 202 } =>
+            {
+                Ok(ModificationResponse::Empty)
+            }
+            result => result.map_err(Error::Bmc),
+        }
     }
 }
 

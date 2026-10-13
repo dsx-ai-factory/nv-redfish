@@ -39,6 +39,7 @@ enum Platform {
     Anonymous1_9_0,
     LiteonPowershelf,
     NvSwitch,
+    Supermicro,
 }
 
 impl BmcQuirks {
@@ -81,6 +82,7 @@ impl BmcQuirks {
             // Wiwynn ODM GB200 NVL trays report their own vendor rather than
             // `NVIDIA`
             Some("WIWYNN") => Some(Platform::Wiwynn),
+            Some("Supermicro") => Some(Platform::Supermicro),
             Some(vendor) if vendor.starts_with("LITE-ON") => Some(Platform::LiteonPowershelf),
             None if redfish_version_str == Some("1.9.0") => Some(Platform::Anonymous1_9_0),
             _ => None,
@@ -334,6 +336,12 @@ impl BmcQuirks {
             self.platform,
             Some(Platform::Ami | Platform::AmiViking | Platform::AmiGb300 | Platform::LenovoAmi)
         )
+    }
+
+    /// Supermicro answers a staged BIOS settings change with `202 Accepted`
+    /// and nothing to poll: no `Location` and no Task.
+    pub(crate) const fn bug_accepted_update_without_task(&self) -> bool {
+        matches!(self.platform, Some(Platform::Supermicro))
     }
 }
 

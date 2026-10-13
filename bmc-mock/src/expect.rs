@@ -77,6 +77,13 @@ pub enum ExpectedRequest {
     /// Expected update with no response body.
     UpdateEmpty { id: ODataId, request: JsonValue },
 
+    /// Expected update failing with an HTTP status.
+    UpdateStatus {
+        id: ODataId,
+        request: JsonValue,
+        status: u16,
+    },
+
     /// Expected Create.
     Create { id: ODataId, request: JsonValue },
 
@@ -267,6 +274,17 @@ impl<E> Expect<E> {
             request: ExpectedRequest::UpdateEmpty {
                 id: uri.to_string().into(),
                 request: from_str(&request.to_string()).expect("invalid json"),
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    pub fn update_status(uri: impl Display, request: impl Display, status: u16) -> Self {
+        Expect {
+            request: ExpectedRequest::UpdateStatus {
+                id: uri.to_string().into(),
+                request: from_str(&request.to_string()).expect("invalid json"),
+                status,
             },
             response: Ok(JsonValue::Null),
         }

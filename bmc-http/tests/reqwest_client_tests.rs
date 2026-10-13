@@ -1377,53 +1377,6 @@ mod reqwest_client_tests {
         Ok(())
     }
 
-    /// Supermicro accepts a staged BIOS settings change with `202` and no
-    /// `Location`, leaving nothing to poll; a `Location` still names a task.
-    #[tokio::test]
-    async fn test_accepted_update_is_a_task_only_with_a_location(
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let resource_path = "/redfish/v1/Systems/1/Bios/SD";
-        let task_path = "/redfish/v1/TaskService/Tasks/7";
-        for location in [None, Some(task_path)] {
-            let mock_server = MockServer::start().await;
-            let mut response = ResponseTemplate::new(202);
-            if let Some(location) = location {
-                response = response.insert_header("Location", location);
-            }
-            Mock::given(method("PATCH"))
-                .and(path(resource_path))
-                .respond_with(response)
-                .mount(&mock_server)
-                .await;
-            let bmc = create_test_bmc(&mock_server);
-            let result = bmc
-                .update::<UpdateRequest, TestResource>(
-                    &create_odata_id(resource_path),
-                    None,
-                    &UpdateRequest {
-                        name: None,
-                        value: Some(1),
-                    },
-                )
-                .await?;
-            match (location, result) {
-                (None, ModificationResponse::Empty) => {}
-                (Some(_), ModificationResponse::Task(task)) => {
-                    assert!(task.location.0.to_string().ends_with(task_path));
-                }
-                (location, other) => {
-                    return Err(format!(
-                        "Location {:?} gave {:?}",
-                        location,
-                        other.map_entity(|_| ())
-                    )
-                    .into());
-                }
-            }
-        }
-        Ok(())
-    }
-
     #[tokio::test]
     async fn test_create_success_message_with_location_returns_entity_reference(
     ) -> Result<(), Box<dyn std::error::Error>> {

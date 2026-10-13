@@ -281,6 +281,15 @@ where
                 request: ExpectedRequest::UpdateEmpty { id, request },
                 ..
             } if id == *in_id && request == in_request => Ok(ModificationResponse::Empty),
+            Expect {
+                request:
+                    ExpectedRequest::UpdateStatus {
+                        id,
+                        request,
+                        status,
+                    },
+                ..
+            } if id == *in_id && request == in_request => Err(Error::HttpStatus(status)),
             _ => Err(Error::UnexpectedUpdate(
                 in_id.clone(),
                 in_request.to_string(),

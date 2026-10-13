@@ -400,6 +400,62 @@ async fn account_service_accepts_null_entries_in_ldap_arrays() -> TestResult<()>
 }
 
 #[test]
+async fn update_accepted_without_task_is_empty_only_on_supermicro() -> TestResult<()> {
+    for (vendor, empty) in [("Supermicro", true), ("Dell", false)] {
+        let bmc = Arc::new(Bmc::default());
+        let root_id = ODataId::service_root();
+        let service_id = format!("{root_id}/AccountService");
+        bmc.expect(Expect::get(
+            &root_id,
+            json!({
+                ODATA_ID: &root_id,
+                ODATA_TYPE: "#ServiceRoot.v1_13_0.ServiceRoot",
+                "Id": "RootService",
+                "Name": "RootService",
+                "Vendor": vendor,
+                "AccountService": { ODATA_ID: &service_id },
+                "Links": {
+                    "Sessions": { ODATA_ID: format!("{root_id}/SessionService/Sessions") }
+                },
+            }),
+        ));
+        let service_root = ServiceRoot::new(bmc.clone()).await?;
+        bmc.expect(Expect::get(
+            &service_id,
+            json!({
+                ODATA_ID: &service_id,
+                ODATA_TYPE: ACCOUNT_SERVICE_DATA_TYPE,
+                "Id": "AccountService",
+                "Name": "AccountService",
+            }),
+        ));
+        let account_service = service_root
+            .account_service(AccountServiceConfig::standard())
+            .await?
+            .ok_or("missing account service")?;
+
+        bmc.expect(Expect::update_status(
+            &service_id,
+            json!({ "AccountLockoutThreshold": 0 }),
+            202,
+        ));
+        let response = account_service
+            .update(
+                &AccountServiceUpdate::builder()
+                    .with_account_lockout_threshold(0)
+                    .build(),
+            )
+            .await;
+        assert_eq!(
+            matches!(response, Ok(ModificationResponse::Empty)),
+            empty,
+            "{vendor}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 async fn update_sends_wildcard_if_match_on_ami_firmware() -> TestResult<()> {
     let etag = "\"account-service-1\"";
     for (name, root_fields, expected_etag) in [
