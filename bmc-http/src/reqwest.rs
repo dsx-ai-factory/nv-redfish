@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::schema::redfish::message::Message;
-use crate::schema::redfish::redfish_error::RedfishError;
+use crate::schema::redfish::redfish_error::RedfishErrorContents;
 use crate::BmcCredentials;
 use crate::CacheableError;
 use crate::HttpClient;
@@ -1151,16 +1151,11 @@ fn is_redfish_success_response(value: &serde_json::Value) -> bool {
         _extended_info: Vec<Message>,
     }
 
-    /// Supermicro reports the same status under `Success` rather than `error`.
+    /// Supermicro reports the status under `Success` rather than `error`.
     #[derive(serde::Deserialize)]
-    struct SuccessEnvelope {
-        #[serde(rename = "Success")]
-        success: SuccessStatus,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct SuccessStatus {
-        code: String,
+    struct StatusEnvelope {
+        #[serde(rename = "error", alias = "Success")]
+        status: RedfishErrorContents,
     }
 
     // If we recieved extended info, this means we got a success response
@@ -1168,14 +1163,11 @@ fn is_redfish_success_response(value: &serde_json::Value) -> bool {
         return true;
     }
 
-    let code = match <RedfishError as serde::Deserialize>::deserialize(value) {
-        Ok(response) => response.error.code,
-        Err(_) => match <SuccessEnvelope as serde::Deserialize>::deserialize(value) {
-            Ok(envelope) => envelope.success.code,
-            Err(_) => return false,
-        },
+    let Ok(envelope) = <StatusEnvelope as serde::Deserialize>::deserialize(value) else {
+        return false;
     };
-    let code = code.as_str();
+
+    let code = envelope.status.code.as_str();
     let message = code.rsplit_once('.').map_or(code, |(_, message)| message);
 
     matches!(message, "Success" | "Created" | "NoOperation")
