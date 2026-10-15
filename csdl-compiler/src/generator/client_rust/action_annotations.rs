@@ -17,7 +17,8 @@
 
 use crate::compiler::annotations::Annotation;
 use crate::generator::casemungler;
-use crate::generator::rust::{doc, ident, Config, FullTypeName};
+use crate::generator::client_rust::{Config, FullTypeName};
+use crate::generator::common_rust::{doc, ident};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 

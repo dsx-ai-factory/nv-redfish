@@ -24,18 +24,18 @@ use crate::compiler::PropertyType;
 use crate::compiler::QualifiedName;
 use crate::compiler::RigidArraySupport;
 use crate::generator::casemungler;
-use crate::generator::rust::doc::format_and_generate as doc_format_and_generate;
-use crate::generator::rust::doc::format_and_generate_with_deprecation as doc_format_deprecated;
-use crate::generator::rust::ident;
-use crate::generator::rust::inherited_properties::InheritedProperties;
-use crate::generator::rust::ActionFullTypeName;
-use crate::generator::rust::ActionName;
-use crate::generator::rust::Config;
-use crate::generator::rust::Error;
-use crate::generator::rust::FullTypeName;
-use crate::generator::rust::SerializableProperties;
-use crate::generator::rust::StructFieldName;
-use crate::generator::rust::TypeName;
+use crate::generator::client_rust::inherited_properties::InheritedProperties;
+use crate::generator::client_rust::ActionFullTypeName;
+use crate::generator::client_rust::ActionName;
+use crate::generator::client_rust::Config;
+use crate::generator::client_rust::Error;
+use crate::generator::client_rust::FullTypeName;
+use crate::generator::client_rust::SerializableProperties;
+use crate::generator::client_rust::StructFieldName;
+use crate::generator::client_rust::TypeName;
+use crate::generator::common_rust::doc::format_and_generate as doc_format_and_generate;
+use crate::generator::common_rust::doc::format_and_generate_with_deprecation as doc_format_deprecated;
+use crate::generator::common_rust::ident;
 use crate::odata::annotations::Permissions;
 use crate::redfish::DynamicProperties;
 use crate::redfish::ExcerptCopy;
@@ -680,6 +680,7 @@ impl<'a> StructDef<'a> {
                 cardinality,
                 odata,
                 redfish,
+                ..
             } => {
                 let doc = doc_format_deprecated(cardinality.inner(), odata, redfish.deprecation);
                 let top = &config.top_module_alias;

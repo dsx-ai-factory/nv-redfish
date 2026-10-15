@@ -30,6 +30,7 @@ use std::error::Error as StdError;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fmt::Result as FmtResult;
+use std::iter::once;
 use std::str::FromStr;
 
 /// Compilation context.
@@ -81,6 +82,16 @@ impl Default for EntityTypeFilter {
 }
 
 impl EntityTypeFilter {
+    /// Include additional patterns without removing any existing matches.
+    #[must_use]
+    pub fn including(self, patterns: impl IntoIterator<Item = EntityTypeFilterPattern>) -> Self {
+        if self.permissive && self.patterns.is_empty() {
+            self
+        } else {
+            Self::new_restrictive(self.patterns.into_iter().chain(patterns).collect())
+        }
+    }
+
     /// Create a new filter from a list of patterns. If patterns are empty,
     /// matches nothing.
     #[must_use]
@@ -143,6 +154,17 @@ impl EntityTypeFilterPattern {
             }
         }
         true
+    }
+}
+
+impl From<QualifiedName<'_>> for EntityTypeFilterPattern {
+    fn from(name: QualifiedName<'_>) -> Self {
+        Self {
+            ns_ids: (0..name.namespace.len())
+                .map(|depth| name.namespace.get_id(depth).cloned())
+                .collect(),
+            names: once(name.name.clone()).collect(),
+        }
     }
 }
 

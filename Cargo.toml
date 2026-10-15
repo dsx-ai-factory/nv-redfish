@@ -1,6 +1,7 @@
 [workspace]
 members = [
    "core",
+   "server-core",
    "redfish",
    "quirks",
    "bmc-http",
@@ -10,6 +11,7 @@ members = [
    "examples/redfish-std",
    "examples/redfish-oem-contoso",
    "examples/service-root-parser",
+   "examples/server-response",
    "examples/explore-with-dummy-bmc",
    "examples/explore-with-reqwest-bmc",
    "examples/event-stream-console",
@@ -63,6 +65,7 @@ time = { version = "0.3", default-features = false }
 rust_decimal = { version = "1.38", default-features = false }
 rustc-hash = { version = "2" }
 nv-redfish-core = { version = "0.1", path = "./core" }
+nv-redfish-server-core = { version = "0.1", path = "./server-core" }
 nv-redfish-bmc-http = { version = "0.1", path = "./bmc-http" }
 nv-redfish-quirks = { version = "0.1", path = "./quirks" }
 nv-redfish-bmc-mock = { version = "0.1", path = "./bmc-mock" }

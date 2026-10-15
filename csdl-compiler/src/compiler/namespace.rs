@@ -42,6 +42,12 @@ impl<'a> Namespace<'a> {
         }
     }
 
+    /// The full CSDL namespace before any truncation by the optimizer.
+    #[must_use]
+    pub const fn original(&self) -> Self {
+        Self::new(self.edmx_ns)
+    }
+
     /// Number of identifiers in the namespace.
     #[must_use]
     pub const fn len(&self) -> usize {

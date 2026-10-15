@@ -175,6 +175,7 @@ impl<'a> Properties<'a> {
                     cardinality: v.ptype.as_ref().map(|_| &v.name),
                     odata: OData::new(MustHaveId::new(false), v),
                     redfish,
+                    nullable: v.nullable.unwrap_or(IsNullable::new(false)),
                 });
             }
             Ok(Compiled::default())
@@ -348,6 +349,8 @@ pub enum NavProperty<'a> {
         odata: OData<'a>,
         /// Redfish-specific property annotations.
         redfish: RedfishProperty<'a>,
+        /// Whether the referenced value may be null.
+        nullable: IsNullable,
     },
 }
 

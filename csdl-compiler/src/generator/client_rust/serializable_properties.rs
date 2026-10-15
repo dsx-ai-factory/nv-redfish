@@ -17,9 +17,9 @@ use crate::compiler::NavProperty;
 use crate::compiler::Properties;
 use crate::compiler::Property;
 use crate::compiler::TypeClass;
-use crate::generator::rust::Config;
-use crate::generator::rust::FullTypeName;
-use crate::generator::rust::StructFieldName;
+use crate::generator::client_rust::Config;
+use crate::generator::client_rust::FullTypeName;
+use crate::generator::client_rust::StructFieldName;
 use crate::odata::annotations::Permissions;
 use crate::OneOrCollection;
 use proc_macro2::Ident;
@@ -31,8 +31,6 @@ use quote::ToTokens;
 
 /// A compiled property that can be emitted in a create or update request structure.
 struct SerializableProperty<'a> {
-    /// The Redfish property name used by serde on the wire.
-    rename: Literal,
     /// The generated Rust field name.
     name: StructFieldName<'a>,
     /// The generated Rust type, excluding any request-specific optional wrapper.
@@ -125,7 +123,6 @@ impl<'a> SerializableProperties<'a> {
             }
         };
         SerializableProperty {
-            rename: Literal::string(p.name.inner().inner()),
             name: StructFieldName::new_property(p.name),
             prop_type,
             required_on_create: p.redfish.is_required_on_create.into_inner(),
@@ -145,6 +142,7 @@ impl<'a> SerializableProperties<'a> {
                 cardinality,
                 odata,
                 redfish,
+                ..
             } => (
                 cardinality.as_ref().map(|_| ()),
                 *cardinality.inner(),
@@ -153,7 +151,6 @@ impl<'a> SerializableProperties<'a> {
             ),
         };
         SerializableProperty {
-            rename: Literal::string(name.inner().inner()),
             name: StructFieldName::new_property(name),
             prop_type: match cardinality {
                 OneOrCollection::One(()) => quote! { #full_type },
@@ -172,7 +169,7 @@ impl<'a> SerializableProperties<'a> {
         self.0
             .iter()
             .map(|p| {
-                let rename = &p.rename;
+                let rename = p.name.rename();
                 let name = p.name;
                 let prop_type = &p.prop_type;
                 quote! {
@@ -193,7 +190,7 @@ impl<'a> SerializableProperties<'a> {
         self.0
             .iter()
             .map(|p| {
-                let rename = &p.rename;
+                let rename = p.name.rename();
                 let name = p.name;
                 let prop_type = &p.prop_type;
                 if p.required_on_create {

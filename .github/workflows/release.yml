@@ -40,6 +40,7 @@ jobs:
         sed -i -E 's/^(nv-redfish-csdl-compiler = \{ version = ")[^"]+(", path = "\.\/csdl-compiler" \})/\1'"$VERSION"'\2/' Cargo.toml
         sed -i -E 's/^(nv-redfish-schema = \{ version = ")[^"]+(", path = "\.\/schema" \})/\1'"$VERSION"'\2/' Cargo.toml
         sed -i -E 's/^(nv-redfish-dispatcher = \{ version = ")[^"]+(", path = "\.\/dispatcher" \})/\1'"$VERSION"'\2/' Cargo.toml
+        sed -i -E 's/^(nv-redfish-server-core = \{ version = ")[^"]+(", path = "\.\/server-core" \})/\1'"$VERSION"'\2/' Cargo.toml
 
         echo "Publishing dispatcher..."
         cargo publish -p nv-redfish-dispatcher --all-features --allow-dirty
@@ -47,11 +48,14 @@ jobs:
         echo "Publishing schema..."
         cargo publish -p nv-redfish-schema --all-features --allow-dirty
         
-        echo "Publishing csdl-compiler..."
-        cargo publish -p nv-redfish-csdl-compiler --all-features --allow-dirty
-        
         echo "Publishing nv-redfish-core..."
         cargo publish -p nv-redfish-core --all-features --allow-dirty
+
+        echo "Publishing nv-redfish-server-core..."
+        cargo publish -p nv-redfish-server-core --all-features --allow-dirty
+
+        echo "Publishing csdl-compiler..."
+        cargo publish -p nv-redfish-csdl-compiler --all-features --allow-dirty
 
         echo "Publishing nv-redfish-quirks..."
         cargo publish -p nv-redfish-quirks --all-features --allow-dirty
