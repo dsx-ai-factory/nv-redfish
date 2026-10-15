@@ -18,30 +18,14 @@ use crate::Error;
 use nv_redfish_core::Bmc;
 use serde::Deserialize;
 
-#[cfg(any(
-    feature = "patch-payload-get",
-    feature = "patch-payload-update",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
-use nv_redfish_core::EntityTypeRef;
-#[cfg(any(
-    feature = "patch-payload-get",
-    feature = "patch-payload-update",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
+#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
 use nv_redfish_core::Expandable;
 #[cfg(any(
     feature = "patch-payload-get",
     feature = "patch-payload-update",
     all(feature = "oem-nvidia", feature = "managers")
 ))]
-use nv_redfish_core::ODataETag;
-#[cfg(any(
-    feature = "patch-payload-get",
-    feature = "patch-payload-update",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
-use nv_redfish_core::ODataId;
+use nv_redfish_core::{EntityTypeRef, ODataETag, ODataId};
 #[cfg(any(
     feature = "patch-payload-get",
     feature = "patch-payload-update",
@@ -205,10 +189,7 @@ impl EntityTypeRef for Getter {
     }
 }
 
-#[cfg(any(
-    feature = "patch-payload-get",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
+#[cfg(feature = "patch-payload-get")]
 impl Expandable for Getter {}
 
 #[cfg(any(
