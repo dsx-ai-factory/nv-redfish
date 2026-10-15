@@ -12,9 +12,9 @@ mod tests {
 
     use crate::common::test_utils::{create_test_credentials, TestResource};
 
-    use nv_redfish_bmc_http::reqwest::BmcError;
     #[cfg(feature = "update-service-deprecated")]
     use nv_redfish_bmc_http::HttpPushUriUpdateRequest;
+    use nv_redfish_bmc_http::{patch_inflight::MaybeInflightPatchRegistry, reqwest::BmcError};
     use nv_redfish_bmc_http::{
         BmcCredentials, CacheSettings, ConcurrencyLimitedBmc, HttpBmc, HttpClient,
         MultipartUpdateRequest,
@@ -93,6 +93,7 @@ mod tests {
             _credentials: &BmcCredentials,
             _etag: Option<ODataETag>,
             _custom_headers: &HeaderMap,
+            _patch_registry: MaybeInflightPatchRegistry,
         ) -> impl Future<Output = Result<T, Self::Error>> + Send
         where
             T: DeserializeOwned + Send + Sync,

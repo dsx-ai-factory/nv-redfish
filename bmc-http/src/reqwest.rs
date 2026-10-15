@@ -21,6 +21,7 @@ use std::future::ready;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::patch_inflight::MaybeInflightPatchRegistry;
 use crate::schema::redfish::message::Message;
 use crate::schema::redfish::redfish_error::RedfishErrorContents;
 use crate::BmcCredentials;
@@ -53,6 +54,10 @@ use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::UploadStream;
+#[cfg(feature = "patch-inflight")]
+use nv_redfish_patch_inflight::InflightPatchError;
+#[cfg(feature = "patch-inflight")]
+use nv_redfish_patch_inflight::INFLIGHT_PATCH_REGISTRY;
 use reqwest::multipart::Form;
 use reqwest::multipart::Part;
 use reqwest::redirect::Policy as RedirectPolicy;
@@ -106,6 +111,10 @@ pub enum BmcError {
     },
     /// The service does not advertise the requested action.
     ActionNotSupported,
+
+    #[cfg(feature = "patch-inflight")]
+    /// Handle in-flight patch errors
+    InflightPatchesErrors(InflightPatchError),
 }
 
 impl From<reqwest::Error> for BmcError {
@@ -174,6 +183,9 @@ impl fmt::Display for BmcError {
                 write!(f, "SSE stream idle for longer than {idle:?}")
             }
             Self::ActionNotSupported => write!(f, "Action is not supported by the service"),
+
+            #[cfg(feature = "patch-inflight")]
+            Self::InflightPatchesErrors(e) => write!(f, "In-flight patch error: {e}"),
         }
     }
 }
@@ -777,7 +789,12 @@ impl Client {
         }
     }
 
-    async fn handle_response<T>(&self, response: reqwest::Response) -> Result<T, BmcError>
+    async fn handle_response<T>(
+        &self,
+        response: reqwest::Response,
+        #[cfg_attr(not(feature = "patch-inflight"), allow(unused_variables))]
+        patch_registry: MaybeInflightPatchRegistry,
+    ) -> Result<T, BmcError>
     where
         T: DeserializeOwned,
     {
@@ -798,11 +815,31 @@ impl Client {
         let mut value: serde_json::Value =
             serde_json::from_slice(&body).map_err(BmcError::DecodeError)?;
 
+        #[cfg(feature = "patch-inflight")]
+        {
+            if let Some(ref registry) = patch_registry {
+                value = registry
+                    .patch_inflight(value)
+                    .map_err(BmcError::InflightPatchesErrors)?;
+            }
+
+            INFLIGHT_PATCH_REGISTRY.with_borrow_mut(|r| {
+                r.clone_from(&patch_registry);
+            });
+        }
+
         if let Some(etag) = etag_header {
             inject_etag(&etag, &mut value);
         }
 
-        serde_path_to_error::deserialize(value).map_err(BmcError::JsonError)
+        let result = serde_path_to_error::deserialize(value).map_err(BmcError::JsonError);
+        #[cfg(feature = "patch-inflight")]
+        {
+            INFLIGHT_PATCH_REGISTRY.with_borrow_mut(|r| {
+                *r = None;
+            });
+        }
+        result
     }
 
     /// Read a response to polling an asynchronous operation.
@@ -1194,6 +1231,7 @@ impl HttpClient for Client {
         credentials: &BmcCredentials,
         etag: Option<ODataETag>,
         custom_headers: &HeaderMap,
+        patch_registry: MaybeInflightPatchRegistry,
     ) -> Result<T, Self::Error>
     where
         T: DeserializeOwned,
@@ -1206,7 +1244,8 @@ impl HttpClient for Client {
         }
 
         let response = self.send(request.build()?).await?;
-        self.handle_response(response).await
+
+        self.handle_response(response, patch_registry).await
     }
 
     async fn poll<T>(
@@ -1731,7 +1770,7 @@ mod tests {
         );
 
         let decode_error = client
-            .handle_response::<serde_json::Value>(response)
+            .handle_response::<serde_json::Value>(response, None)
             .await
             .expect_err("invalid JSON must fail to decode");
 
@@ -1771,6 +1810,7 @@ mod tests {
                 &credentials,
                 None,
                 &HeaderMap::new(),
+                None,
             )
             .await
             .expect_err("the truncated response body must fail");
@@ -1808,6 +1848,7 @@ mod tests {
                 &credentials,
                 None,
                 &headers,
+                None,
             )
             .await;
 
@@ -1850,6 +1891,7 @@ mod tests {
                 &credentials,
                 None,
                 &headers,
+                None,
             )
             .await?;
 
@@ -1984,6 +2026,7 @@ mod tests {
                 &credentials,
                 None,
                 &HeaderMap::new(),
+                None,
             )
             .await?;
 
@@ -2045,6 +2088,7 @@ mod tests {
                 &credentials,
                 None,
                 &HeaderMap::new(),
+                None,
             )
             .await?;
 

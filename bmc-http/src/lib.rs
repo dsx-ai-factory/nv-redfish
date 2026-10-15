@@ -46,6 +46,7 @@ mod concurrency;
 #[cfg(feature = "reqwest")]
 mod schema;
 
+pub mod patch_inflight;
 #[cfg(feature = "reqwest")]
 pub mod reqwest;
 
@@ -56,6 +57,8 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use crate::cache::TypeErasedCarCache;
+use crate::patch_inflight::holder::MaybeInflightPatchRegistryHolder;
+use crate::patch_inflight::MaybeInflightPatchRegistry;
 
 use http::HeaderMap;
 use nv_redfish_core::query::ExpandQuery;
@@ -106,6 +109,7 @@ pub trait HttpClient: Send + Sync {
         credentials: &BmcCredentials,
         etag: Option<ODataETag>,
         custom_headers: &HeaderMap,
+        patch_registry: MaybeInflightPatchRegistry,
     ) -> impl Future<Output = Result<T, Self::Error>> + Send
     where
         T: DeserializeOwned + Send + Sync;
@@ -259,6 +263,8 @@ pub struct HttpBmc<C: HttpClient> {
     // Response bodies and ETags are enabled or disabled together because a
     // 304 Not Modified response contains no replacement body.
     cache_enabled: bool,
+
+    patch_registry: MaybeInflightPatchRegistryHolder,
 }
 
 impl<C: HttpClient> HttpBmc<C>
@@ -371,6 +377,7 @@ where
             cache: RwLock::new(TypeErasedCarCache::new(cache_settings.capacity)),
             custom_headers,
             cache_enabled: cache_settings.capacity > 0,
+            patch_registry: MaybeInflightPatchRegistryHolder::default(),
         }
     }
 
@@ -643,6 +650,7 @@ where
                 credentials.as_ref(),
                 etag,
                 &self.custom_headers,
+                self.patch_registry.get(),
             )
             .await
         {

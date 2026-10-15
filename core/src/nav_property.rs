@@ -42,6 +42,8 @@ use crate::FilterQuery;
 use crate::ODataETag;
 use crate::ODataId;
 use crate::Updatable;
+#[cfg(feature = "patch-inflight")]
+use nv_redfish_patch_inflight::patch_inflight;
 use serde::de;
 use serde::de::Deserializer;
 use serde::Deserialize;
@@ -140,6 +142,10 @@ where
             Ok(Self::Reference(reference))
         } else {
             // Non-reference payloads are always parsed as expanded `T`.
+            //
+            #[cfg(feature = "patch-inflight")]
+            let value = patch_inflight(value).map_err(de::Error::custom)?;
+
             let expanded = serde_json::from_value::<T>(value)
                 .map_err(|err| de::Error::custom(err.to_string()))?;
             Ok(Self::Expanded(Expanded(Arc::new(expanded))))
