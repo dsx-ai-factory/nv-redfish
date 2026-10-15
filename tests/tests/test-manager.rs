@@ -65,6 +65,73 @@ const SERIAL_INTERFACE_COLLECTION_DATA_TYPE: &str =
 const SERIAL_INTERFACE_DATA_TYPE: &str = "#SerialInterface.v1_1_8.SerialInterface";
 
 #[test]
+async fn filtered_log_count_quirk_is_limited_to_nvidia_platforms() -> Result<(), Box<dyn StdError>>
+{
+    for (name, root_fields, expected) in [
+        ("NVIDIA", json!({ "Vendor": "NVIDIA" }), true),
+        (
+            "Vera Rubin",
+            json!({ "Vendor": "NVIDIA", "Product": "VR NVL72" }),
+            true,
+        ),
+        (
+            "NVSwitch",
+            json!({ "Vendor": "NVIDIA", "Product": "P3809" }),
+            false,
+        ),
+        (
+            "NVIDIA DPU",
+            json!({ "Vendor": "Nvidia", "Product": "BlueField-4" }),
+            false,
+        ),
+        ("Dell", json!({ "Vendor": "Dell" }), false),
+        ("AMI", json!({ "Vendor": "AMI" }), false),
+        ("Wiwynn", json!({ "Vendor": "WIWYNN" }), false),
+        ("unknown vendor", json!({ "Vendor": "Unrecognized" }), false),
+        (
+            "missing vendor",
+            json!({ "RedfishVersion": "1.16.0" }),
+            false,
+        ),
+    ] {
+        let bmc = Arc::new(Bmc::default());
+        let ids = ids();
+        let log_services_id = format!("{}/LogServices", ids.manager_id);
+        let event_log_id = format!("{log_services_id}/EventLog");
+
+        let member = manager_payload_with_fields(
+            &ids,
+            json!({
+                "LogServices": {
+                    ODATA_ID: log_services_id,
+                    ODATA_TYPE: "#LogServiceCollection.LogServiceCollection",
+                    "Name": "Log services",
+                    "Members": [{
+                        ODATA_ID: event_log_id,
+                        ODATA_TYPE: "#LogService.v1_0_0.LogService",
+                        "Id": "EventLog",
+                        "Name": "Event log"
+                    }]
+                }
+            }),
+        );
+
+        let manager = get_manager_with_root_fields(bmc, &ids, root_fields, member).await?;
+
+        let mut services = manager.log_services().await?.expect("log services");
+        let service = services.pop().expect("event log service");
+
+        assert_eq!(
+            service.filtered_entries_count_is_unreliable(),
+            expected,
+            "{name}"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
 async fn network_protocol_returns_none_when_link_is_absent() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = ids();

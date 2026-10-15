@@ -59,6 +59,23 @@ impl<B: Bmc> LogService<B> {
         self.data.clone()
     }
 
+    /// Whether filtered log-entry counts may include entries excluded by the filter.
+    ///
+    /// Returns `true` for recognized NVIDIA and Vera Rubin platforms.
+    /// Returns `false` for NVSwitch, NVIDIA DPUs, and other or unidentified platforms.
+    /// When `true`, callers reading collection pages directly must not require
+    /// `Members@odata.count` to equal the number of entries collected across a
+    /// filtered page chain.
+    /// Follow `Members@odata.nextLink` until it is absent; an oversized count
+    /// cannot establish whether the filtered collection is complete.
+    ///
+    /// This policy does not apply to unfiltered requests and does not change
+    /// the reported count or perform a network request.
+    #[must_use]
+    pub fn filtered_entries_count_is_unreliable(&self) -> bool {
+        self.bmc.quirks.bug_filtered_log_entries_count()
+    }
+
     /// List all log entries.
     ///
     /// # Errors

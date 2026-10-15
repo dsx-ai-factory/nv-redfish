@@ -38,6 +38,7 @@ nv-redfish = { workspace = true, features = [
     "host-interfaces",
     "serial-interfaces",
     "job-service",
+    "log-services",
     "managers",
     "manager-network-protocol",
     "memory",

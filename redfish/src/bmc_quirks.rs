@@ -90,6 +90,12 @@ impl BmcQuirks {
         Self { platform }
     }
 
+    /// NVIDIA platforms can report the unfiltered count for filtered log collections.
+    #[cfg(feature = "log-services")]
+    pub(crate) const fn bug_filtered_log_entries_count(&self) -> bool {
+        matches!(self.platform, Some(Platform::Nvidia | Platform::VeraRubin))
+    }
+
     // Account type is required according to schema specification
     // (marked with Redfish.Required annotation) but some vendors
     // ignores this flag. A workaround for this bug is supported by
