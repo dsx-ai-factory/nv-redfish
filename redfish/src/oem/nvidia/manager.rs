@@ -36,6 +36,7 @@ use crate::oem::nvidia::schema::nvidia_manager::BmcRshimUpdate;
 use crate::oem::nvidia::OEM_KEY;
 use crate::oem::oem_value;
 use crate::patch_support::JsonValue;
+use crate::patch_support::Payload;
 use crate::schema::resource::Oem as ResourceOemSchema;
 use crate::Error;
 use crate::NvBmc;
@@ -79,6 +80,28 @@ impl<B: Bmc> NvidiaManager<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<NvidiaManagerSchema> {
         self.data.clone()
+    }
+
+    /// Whether the BMC side of the DPU rshim interface is enabled.
+    ///
+    /// Reads `BmcRShim.BmcRShimEnabled` from the resource linked from
+    /// `Oem.Nvidia`, where [`Self::set_bmc_rshim_enabled`] writes it.
+    /// Returns `Ok(None)` when the OEM object links no resource or the
+    /// resource does not report the setting.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching or parsing the linked resource fails.
+    pub async fn bmc_rshim_enabled(&self) -> Result<Option<bool>, Error<B>> {
+        let Some(id) = &self.oem_resource else {
+            return Ok(None);
+        };
+        let body = Payload::get_raw(self.bmc.as_ref(), id).await?;
+        let resource: NvidiaManagerSchema = serde_json::from_value(body).map_err(Error::Json)?;
+        Ok(resource
+            .bmc_rshim
+            .as_ref()
+            .and_then(|rshim| rshim.bmc_rshim_enabled))
     }
 
     /// Enable or disable the BMC side of the DPU rshim interface.

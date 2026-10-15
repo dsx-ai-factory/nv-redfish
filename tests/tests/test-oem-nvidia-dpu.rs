@@ -261,6 +261,25 @@ async fn bf3_enable_bmc_rshim_patches_linked_resource() -> Result<(), Box<dyn St
 }
 
 #[test]
+async fn bf3_bmc_rshim_is_read_from_linked_resource() -> Result<(), Box<dyn StdError>> {
+    for enabled in [true, false] {
+        let bmc = Arc::new(Bmc::default());
+        let manager = get_manager(bmc.clone(), BF3_PRODUCT).await?;
+        let oem = manager
+            .oem_nvidia()?
+            .expect("BlueField-3 manager must carry Oem.Nvidia");
+
+        // BlueField-3 serves the linked resource with no `@odata.id`.
+        bmc.expect(Expect::get(
+            format!("{BF3_MANAGER}/Oem/Nvidia"),
+            json!({"BmcRShim": {"BmcRShimEnabled": enabled}}),
+        ));
+        assert_eq!(oem.bmc_rshim_enabled().await?, Some(enabled));
+    }
+    Ok(())
+}
+
+#[test]
 async fn manager_rshim_patches_linked_resource_off_dpu() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let manager = get_manager(bmc.clone(), "GB200 NVL").await?;

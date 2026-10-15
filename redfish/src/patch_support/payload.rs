@@ -18,18 +18,41 @@ use crate::Error;
 use nv_redfish_core::Bmc;
 use serde::Deserialize;
 
-#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+#[cfg(any(
+    feature = "patch-payload-get",
+    feature = "patch-payload-update",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 use nv_redfish_core::EntityTypeRef;
-#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+#[cfg(any(
+    feature = "patch-payload-get",
+    feature = "patch-payload-update",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 use nv_redfish_core::Expandable;
-#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+#[cfg(any(
+    feature = "patch-payload-get",
+    feature = "patch-payload-update",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 use nv_redfish_core::ODataETag;
-#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+#[cfg(any(
+    feature = "patch-payload-get",
+    feature = "patch-payload-update",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 use nv_redfish_core::ODataId;
-#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+#[cfg(any(
+    feature = "patch-payload-get",
+    feature = "patch-payload-update",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 use serde::Deserializer;
 
-#[cfg(feature = "patch-payload-get")]
+#[cfg(any(
+    feature = "patch-payload-get",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 use nv_redfish_core::NavProperty;
 #[cfg(feature = "patch-payload-get")]
 use std::sync::Arc;
@@ -108,7 +131,10 @@ impl Payload {
     /// there is nothing to deserialize into. Unlike [`Self::get`] this
     /// imposes no requirements on the payload, so it tolerates bodies
     /// that omit `@odata.id`.
-    #[cfg(all(feature = "oem-nvidia", feature = "computer-systems"))]
+    #[cfg(all(
+        feature = "oem-nvidia",
+        any(feature = "computer-systems", feature = "managers")
+    ))]
     pub(crate) async fn get_raw<B: Bmc>(bmc: &B, id: &ODataId) -> Result<JsonValue, Error<B>> {
         NavProperty::<Getter>::new_reference(id.clone())
             .get(bmc)
@@ -157,13 +183,19 @@ impl Payload {
     }
 }
 
-#[cfg(feature = "patch-payload-get")]
+#[cfg(any(
+    feature = "patch-payload-get",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 struct Getter {
     id: ODataId,
     payload: Payload,
 }
 
-#[cfg(feature = "patch-payload-get")]
+#[cfg(any(
+    feature = "patch-payload-get",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 impl EntityTypeRef for Getter {
     fn odata_id(&self) -> &ODataId {
         &self.id
@@ -173,10 +205,16 @@ impl EntityTypeRef for Getter {
     }
 }
 
-#[cfg(feature = "patch-payload-get")]
+#[cfg(any(
+    feature = "patch-payload-get",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 impl Expandable for Getter {}
 
-#[cfg(feature = "patch-payload-get")]
+#[cfg(any(
+    feature = "patch-payload-get",
+    all(feature = "oem-nvidia", feature = "managers")
+))]
 impl<'de> Deserialize<'de> for Getter {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
