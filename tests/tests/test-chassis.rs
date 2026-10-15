@@ -414,6 +414,33 @@ async fn ami_without_gb300_rtp_version_uses_expand() -> Result<(), Box<dyn StdEr
 }
 
 #[test]
+async fn nvidia_gb300_disables_expand_for_chassis_collection() -> Result<(), Box<dyn StdError>> {
+    // Platform under test: GB300 host BMC on NVIDIA firmware (`GB BMC`),
+    // whose service root advertises `$expand`.
+    // Quirk under test: as on the AMI GB300, `$expand` is not used, so the
+    // collection is fetched with a plain GET and members individually, while
+    // the quirks the class shares with other NVIDIA BMCs still apply.
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let root = expect_nvidia_gb300_service_root(
+        bmc.clone(),
+        &ids,
+        json!({
+            "Chassis": { ODATA_ID: &ids.chassis_collection_id }
+        }),
+    )
+    .await?;
+    expect_chassis_collection(bmc.clone(), &ids);
+
+    let collection = root.chassis().await?.unwrap();
+    expect_chassis_get(bmc.clone(), &ids, valid_chassis_payload(&ids));
+    let members = collection.members().await?;
+    assert_eq!(members.len(), 1);
+
+    Ok(())
+}
+
+#[test]
 async fn anonymous_1_9_0_wrong_chassis_status_state_workaround() -> Result<(), Box<dyn StdError>> {
     // Platform under test: Liteon powershelf class (anonymous Redfish 1.9.0 root).
     // Quirk under test: invalid Chassis.Status.State="Standby".
@@ -662,6 +689,38 @@ async fn expect_nvidia_service_root(
                 "Name": "RootService",
                 "Vendor": "Nvidia",
                 "Product": "Nvidia-BMCMezz",
+                "ProtocolFeaturesSupported": {
+                    "ExpandQuery": {
+                        "NoLinks": true
+                    }
+                },
+                "Links": {
+                    "Sessions": {
+                        ODATA_ID: format!("{}/SessionService/Sessions", ids.root_id),
+                    }
+                },
+            }),
+            &fields,
+        ]),
+    ));
+    ServiceRoot::new(bmc).await.map_err(Into::into)
+}
+
+async fn expect_nvidia_gb300_service_root(
+    bmc: Arc<Bmc>,
+    ids: &Ids,
+    fields: Value,
+) -> Result<ServiceRoot<Bmc>, Box<dyn StdError>> {
+    bmc.expect(Expect::get(
+        &ids.root_id,
+        json_merge([
+            &json!({
+                ODATA_ID: &ids.root_id,
+                ODATA_TYPE: "#ServiceRoot.v1_13_0.ServiceRoot",
+                "Id": "RootService",
+                "Name": "RootService",
+                "Vendor": "NVIDIA",
+                "Product": "GB BMC",
                 "ProtocolFeaturesSupported": {
                     "ExpandQuery": {
                         "NoLinks": true

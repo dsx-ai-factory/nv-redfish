@@ -174,6 +174,11 @@ const RULES: &[Rule] = &[
             Quirk::CompositeBootOrderEntries,
         ],
     },
+    // The GB300 host BMC on NVIDIA's firmware.
+    Rule {
+        covers: |root| root.vendor_is("NVIDIA") && root.product_is("GB BMC"),
+        quirks: &[Quirk::ExpandIsNotWorkingProperly],
+    },
     // BlueField DPUs: their service roots use an `Nvidia` vendor with these
     // product names; BlueField-4 reports `BlueField-4`.
     Rule {
@@ -428,7 +433,8 @@ impl BmcQuirks {
     /// `$expand` responses drop required fields (`Id`, `Name`,
     /// `ChassisType`) from embedded members while the standalone GETs are
     /// complete, so expansion is not used and each member is fetched on its
-    /// own. Seen on the Viking and GB300 host BMCs.
+    /// own. Seen on the Viking, and on GB300 host BMCs with AMI or NVIDIA
+    /// firmware.
     #[must_use]
     pub fn expand_is_not_working_properly(&self) -> bool {
         self.has(Quirk::ExpandIsNotWorkingProperly)
@@ -531,6 +537,15 @@ mod tests {
             ),
             (json!({ "Vendor": "NVIDIA", "Product": "P3809" }), &nvidia),
             (
+                json!({ "Vendor": "NVIDIA", "Product": "GB BMC" }),
+                &[
+                    Quirk::SseNoMemberId,
+                    Quirk::SseMissingEventType,
+                    Quirk::FilteredLogEntriesCount,
+                    Quirk::ExpandIsNotWorkingProperly,
+                ],
+            ),
+            (
                 json!({ "Vendor": "NVIDIA", "Product": "DGX" }),
                 &[
                     Quirk::SseNoMemberId,
@@ -584,6 +599,7 @@ mod tests {
             None,
             Some("VR NVL72"),
             Some("P3809"),
+            Some("GB BMC"),
             Some("DGX"),
             Some("next year's"),
         ] {

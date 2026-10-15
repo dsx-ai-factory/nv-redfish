@@ -75,6 +75,11 @@ async fn filtered_log_count_quirk_is_limited_to_nvidia_platforms() -> Result<(),
             true,
         ),
         (
+            "NVIDIA GB300",
+            json!({ "Vendor": "NVIDIA", "Product": "GB BMC" }),
+            true,
+        ),
+        (
             "NVSwitch",
             json!({ "Vendor": "NVIDIA", "Product": "P3809" }),
             false,
