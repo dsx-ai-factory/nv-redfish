@@ -23,10 +23,13 @@ use crate::ProtocolFeatures;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::BmcError as _;
 use nv_redfish_core::BmcErrorClass;
+use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::ModificationResponse;
+use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -34,8 +37,6 @@ use std::sync::Arc;
 use nv_redfish_core::query::ExpandQuery;
 #[cfg(feature = "impl-nv-bmc-expand")]
 use nv_redfish_core::Expandable;
-#[cfg(feature = "impl-nv-bmc-expand")]
-use nv_redfish_core::NavProperty;
 
 pub struct NvBmc<B: Bmc> {
     bmc: Arc<B>,
@@ -111,6 +112,23 @@ impl<B: Bmc> NvBmc<B> {
         }
     }
 
+    /// Fetch `id` and return the response body as it arrived.
+    ///
+    /// For resources no schema describes as an entity; the body may omit
+    /// `@odata.id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::Bmc` if fetching the resource fails.
+    #[allow(dead_code)] // feature-enabled func
+    pub(crate) async fn get_raw(&self, id: &ODataId) -> Result<serde_json::Value, Error<B>> {
+        NavProperty::<RawBody>::new_reference(id.clone())
+            .get(self.bmc.as_ref())
+            .await
+            .map(|raw| raw.body.clone())
+            .map_err(Error::Bmc)
+    }
+
     /// Update the resource at `id`, sending `etag` as `If-Match`.
     ///
     /// On BMCs that reject their own ETags the ETag is dropped, so the
@@ -157,5 +175,32 @@ impl<B: Bmc> Clone for NvBmc<B> {
             protocol_features: self.protocol_features.clone(),
             quirks: self.quirks.clone(),
         }
+    }
+}
+
+/// A response body kept as it arrived, for [`NvBmc::get_raw`].
+struct RawBody {
+    id: ODataId,
+    body: serde_json::Value,
+}
+
+impl EntityTypeRef for RawBody {
+    fn odata_id(&self) -> &ODataId {
+        &self.id
+    }
+    fn etag(&self) -> Option<&ODataETag> {
+        None
+    }
+}
+
+impl<'de> Deserialize<'de> for RawBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Self {
+            id: String::new().into(),
+            body: serde_json::Value::deserialize(deserializer)?,
+        })
     }
 }

@@ -36,7 +36,6 @@ use crate::oem::nvidia::schema::nvidia_manager::BmcRshimUpdate;
 use crate::oem::nvidia::OEM_KEY;
 use crate::oem::oem_value;
 use crate::patch_support::JsonValue;
-use crate::patch_support::Payload;
 use crate::schema::resource::Oem as ResourceOemSchema;
 use crate::Error;
 use crate::NvBmc;
@@ -96,7 +95,7 @@ impl<B: Bmc> NvidiaManager<B> {
         let Some(id) = &self.oem_resource else {
             return Ok(None);
         };
-        let body = Payload::get_raw(self.bmc.as_ref(), id).await?;
+        let body = self.bmc.get_raw(id).await?;
         let resource: NvidiaManagerSchema = serde_json::from_value(body).map_err(Error::Json)?;
         Ok(resource
             .bmc_rshim

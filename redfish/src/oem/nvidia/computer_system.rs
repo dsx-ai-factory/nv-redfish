@@ -32,7 +32,6 @@ use crate::oem::nvidia::schema::nvidia_computer_system::NvidiaComputerSystem as 
 use crate::oem::nvidia::OEM_KEY;
 use crate::oem::oem_value;
 use crate::patch_support::JsonValue;
-use crate::patch_support::Payload;
 use crate::schema::resource::Oem as ResourceOemSchema;
 use crate::Error;
 use crate::NvBmc;
@@ -74,7 +73,7 @@ impl<B: Bmc> NvidiaComputerSystem<B> {
             let Some(id) = nvidia.get("@odata.id").and_then(JsonValue::as_str) else {
                 return Ok(None);
             };
-            let body = Payload::get_raw(bmc.as_ref(), &ODataId::from(id.to_owned())).await?;
+            let body = bmc.get_raw(&ODataId::from(id.to_owned())).await?;
             let data = serde_json::from_value(body).map_err(Error::Json)?;
             return Ok(Some(Self {
                 data: Arc::new(data),

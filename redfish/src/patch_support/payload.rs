@@ -19,24 +19,17 @@ use nv_redfish_core::Bmc;
 use serde::Deserialize;
 
 #[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+use nv_redfish_core::EntityTypeRef;
+#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
 use nv_redfish_core::Expandable;
-#[cfg(any(
-    feature = "patch-payload-get",
-    feature = "patch-payload-update",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
-use nv_redfish_core::{EntityTypeRef, ODataETag, ODataId};
-#[cfg(any(
-    feature = "patch-payload-get",
-    feature = "patch-payload-update",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
+#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+use nv_redfish_core::ODataETag;
+#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
+use nv_redfish_core::ODataId;
+#[cfg(any(feature = "patch-payload-get", feature = "patch-payload-update"))]
 use serde::Deserializer;
 
-#[cfg(any(
-    feature = "patch-payload-get",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
+#[cfg(feature = "patch-payload-get")]
 use nv_redfish_core::NavProperty;
 #[cfg(feature = "patch-payload-get")]
 use std::sync::Arc;
@@ -109,24 +102,6 @@ impl Payload {
         }
     }
 
-    /// Fetch `id` and return the response body as it arrived.
-    ///
-    /// For resources that carry properties no schema declares, where
-    /// there is nothing to deserialize into. Unlike [`Self::get`] this
-    /// imposes no requirements on the payload, so it tolerates bodies
-    /// that omit `@odata.id`.
-    #[cfg(all(
-        feature = "oem-nvidia",
-        any(feature = "computer-systems", feature = "managers")
-    ))]
-    pub(crate) async fn get_raw<B: Bmc>(bmc: &B, id: &ODataId) -> Result<JsonValue, Error<B>> {
-        NavProperty::<Getter>::new_reference(id.clone())
-            .get(bmc)
-            .await
-            .map_err(Error::Bmc)
-            .map(|v| v.payload.0.clone())
-    }
-
     /// Apply function `f` to the payload and then try to deserialize to the
     /// target type.
     pub(crate) fn to_target<T, B, F>(&self, f: F) -> Result<T, Error<B>>
@@ -167,19 +142,13 @@ impl Payload {
     }
 }
 
-#[cfg(any(
-    feature = "patch-payload-get",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
+#[cfg(feature = "patch-payload-get")]
 struct Getter {
     id: ODataId,
     payload: Payload,
 }
 
-#[cfg(any(
-    feature = "patch-payload-get",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
+#[cfg(feature = "patch-payload-get")]
 impl EntityTypeRef for Getter {
     fn odata_id(&self) -> &ODataId {
         &self.id
@@ -192,10 +161,7 @@ impl EntityTypeRef for Getter {
 #[cfg(feature = "patch-payload-get")]
 impl Expandable for Getter {}
 
-#[cfg(any(
-    feature = "patch-payload-get",
-    all(feature = "oem-nvidia", feature = "managers")
-))]
+#[cfg(feature = "patch-payload-get")]
 impl<'de> Deserialize<'de> for Getter {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
