@@ -73,8 +73,7 @@ impl<B: Bmc> NvidiaComputerSystem<B> {
             let Some(id) = nvidia.get("@odata.id").and_then(JsonValue::as_str) else {
                 return Ok(None);
             };
-            let body = bmc.get_raw(&ODataId::from(id.to_owned())).await?;
-            let data = serde_json::from_value(body).map_err(Error::Json)?;
+            let data = bmc.get_raw(&ODataId::from(id.to_owned())).await?;
             return Ok(Some(Self {
                 data: Arc::new(data),
                 bmc: bmc.clone(),

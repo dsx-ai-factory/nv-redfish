@@ -95,8 +95,7 @@ impl<B: Bmc> NvidiaManager<B> {
         let Some(id) = &self.oem_resource else {
             return Ok(None);
         };
-        let body = self.bmc.get_raw(id).await?;
-        let resource: NvidiaManagerSchema = serde_json::from_value(body).map_err(Error::Json)?;
+        let resource: NvidiaManagerSchema = self.bmc.get_raw(id).await?;
         Ok(resource
             .bmc_rshim
             .as_ref()

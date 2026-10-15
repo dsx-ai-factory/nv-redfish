@@ -28,6 +28,7 @@ use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
@@ -112,21 +113,22 @@ impl<B: Bmc> NvBmc<B> {
         }
     }
 
-    /// Fetch `id` and return the response body as it arrived.
+    /// Fetch `id` and deserialize the response body into `T`.
     ///
     /// For resources no schema describes as an entity; the body may omit
     /// `@odata.id`.
     ///
     /// # Errors
     ///
-    /// Returns `Error::Bmc` if fetching the resource fails.
+    /// Returns `Error::Bmc` if fetching the resource fails, or `Error::Json`
+    /// if the body does not deserialize into `T`.
     #[allow(dead_code)] // feature-enabled func
-    pub(crate) async fn get_raw(&self, id: &ODataId) -> Result<serde_json::Value, Error<B>> {
-        NavProperty::<RawBody>::new_reference(id.clone())
+    pub async fn get_raw<T: DeserializeOwned>(&self, id: &ODataId) -> Result<T, Error<B>> {
+        let raw = NavProperty::<RawBody>::new_reference(id.clone())
             .get(self.bmc.as_ref())
             .await
-            .map(|raw| raw.body.clone())
-            .map_err(Error::Bmc)
+            .map_err(Error::Bmc)?;
+        serde_json::from_value(raw.body.clone()).map_err(Error::Json)
     }
 
     /// Update the resource at `id`, sending `etag` as `If-Match`.
