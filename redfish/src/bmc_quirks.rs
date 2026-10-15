@@ -69,7 +69,7 @@ impl BmcQuirks {
             Some("Lenovo") if ami_oem.is_some() => Some(Platform::LenovoAmi),
             Some("NVIDIA") if product_str == Some("VR NVL72") => Some(Platform::VeraRubin),
             Some("NVIDIA") if product_str == Some("P3809") => Some(Platform::NvSwitch),
-            Some("NVIDIA") if product_str == Some("GB BMC") => Some(Platform::NvidiaGb300),  
+            Some("NVIDIA") if product_str == Some("GB BMC") => Some(Platform::NvidiaGb300),
             Some("NVIDIA") => Some(Platform::Nvidia),
             // BlueField DPU service roots use an `Nvidia` vendor with these
             // product names; BlueField-4 reports `BlueField-4`.
