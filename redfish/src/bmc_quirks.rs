@@ -35,6 +35,7 @@ enum Platform {
     VeraRubin,
     Nvidia,
     NvidiaDpu,
+    NvidiaGb300,
     Wiwynn,
     Anonymous1_9_0,
     LiteonPowershelf,
@@ -68,6 +69,7 @@ impl BmcQuirks {
             Some("Lenovo") if ami_oem.is_some() => Some(Platform::LenovoAmi),
             Some("NVIDIA") if product_str == Some("VR NVL72") => Some(Platform::VeraRubin),
             Some("NVIDIA") if product_str == Some("P3809") => Some(Platform::NvSwitch),
+            Some("NVIDIA") if product_str == Some("GB BMC") => Some(Platform::NvidiaGb300),  
             Some("NVIDIA") => Some(Platform::Nvidia),
             // BlueField DPU service roots use an `Nvidia` vendor with these
             // product names; BlueField-4 reports `BlueField-4`.
@@ -324,7 +326,7 @@ impl BmcQuirks {
     pub(crate) const fn expand_is_not_working_properly(&self) -> bool {
         matches!(
             self.platform,
-            Some(Platform::AmiViking | Platform::AmiGb300)
+            Some(Platform::AmiViking | Platform::AmiGb300 | Platform::NvidiaGb300)
         )
     }
 
