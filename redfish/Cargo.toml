@@ -69,13 +69,13 @@ std-redfish = [
 ]
 
 assembly = []
-accounts = ["patch-payload-get", "patch-payload-update", "patch-collection-create"]
+accounts = ["patch-collection"]
 bios = []
 boot-options = []
 certificates = []
-chassis = ["patch-payload-get", "patch-collection", "impl-nv-bmc-expand", "impl-entity-link"]
-component-integrity = ["certificates", "patch-payload-get", "task-service"]
-computer-systems = ["patch-payload-get", "patch-collection"]
+chassis = ["patch-collection", "impl-nv-bmc-expand", "impl-entity-link"]
+component-integrity = ["certificates", "task-service"]
+computer-systems = ["patch-collection"]
 controls = ["environment-metrics"]
 ethernet-interfaces = []
 environment-metrics = []
@@ -84,7 +84,7 @@ host-interfaces = []
 job-service = ["impl-entity-link"]
 network-adapters = []
 network-device-functions = []
-event-service = ["patch"]
+event-service = []
 telemetry-service = ["impl-nv-bmc-expand", "impl-entity-link"]
 log-services = []
 managers = ["impl-nv-bmc-expand", "patch-collection"]
@@ -93,7 +93,7 @@ memory = []
 pcie-devices = ["resource-status"]
 power = [] # Support of legacy PowerSubsystem
 power-equipment = ["impl-nv-bmc-expand"]
-power-supplies = ["patch-payload-get", "patch-collection"]
+power-supplies = ["patch-collection"]
 ports = []
 processors = ["pcie-devices"]
 resource-status = []
@@ -104,7 +104,7 @@ session-service = ["impl-nv-bmc-expand"]
 storages = []
 task-service = ["impl-entity-link"]
 thermal = []  # Support of legacy ThermalSubsystem
-update-service = ["patch-payload-get", "patch-collection"]
+update-service = ["patch-collection"]
 update-service-deprecated = [
     "update-service",
     "nv-redfish-core/update-service-deprecated",
@@ -139,11 +139,7 @@ oem-dell-attributes = ["oem-dell"]
 
 # Patches
 patch = []
-patch-payload = ["patch"]
-patch-payload-get = ["patch-payload"]
-patch-payload-update = ["patch-payload"]
-patch-collection = ["impl-nv-bmc-expand", "patch-payload"]
-patch-collection-create = ["patch-collection"]
+patch-collection = ["impl-nv-bmc-expand", "patch"]
 
 # Internal features:
 impl-nv-bmc-expand = []
@@ -151,6 +147,7 @@ impl-entity-link = []
 
 [dependencies]
 nv-redfish-core = { workspace = true }
+nv-redfish-quirks = { workspace = true }
 nv-redfish-bmc-http = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

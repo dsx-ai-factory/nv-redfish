@@ -82,6 +82,7 @@ compile-only-feature-sets = computer-systems,processors,controls \
              chassis,network-adapters,network-device-functions \
              update-service-deprecated \
              bmc-http,update-service-deprecated \
+             bmc-http,nv-redfish-bmc-http/update-service-deprecated \
              http-extras \
              computer-systems,bios,boot-options,storages,memory,processors \
              oem-hpe,accounts \
@@ -128,6 +129,7 @@ define build-and-test
 	cargo clippy $1
 	cargo clippy -p nv-redfish-dispatcher --all-targets
 	cargo clippy -p nv-redfish-dispatcher --all-targets --all-features
+	cargo clippy -p nv-redfish-quirks --all-targets
 	cargo clippy -p nv-redfish-bmc-http --bench cache
 	$(foreach f,$(compile-only-feature-sets),$(call check-one-feature,$f))
 	cargo check -p nv-redfish

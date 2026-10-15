@@ -2,6 +2,7 @@
 members = [
    "core",
    "redfish",
+   "quirks",
    "bmc-http",
    "bmc-mock",
    "csdl-compiler",
@@ -63,6 +64,7 @@ rust_decimal = { version = "1.38", default-features = false }
 rustc-hash = { version = "2" }
 nv-redfish-core = { version = "0.1", path = "./core" }
 nv-redfish-bmc-http = { version = "0.1", path = "./bmc-http" }
+nv-redfish-quirks = { version = "0.1", path = "./quirks" }
 nv-redfish-bmc-mock = { version = "0.1", path = "./bmc-mock" }
 nv-redfish-dispatcher = { version = "0.1", path = "./dispatcher" }
 nv-redfish = { version = "0.1", path = "./redfish" }

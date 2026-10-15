@@ -17,13 +17,10 @@
 
 use std::sync::Arc;
 
-use crate::certificate::normalize_pem_chain_type;
 use crate::certificate::Certificate;
 use crate::core::action::ActionTarget;
 use crate::core::Bmc;
 use crate::core::NavProperty;
-use crate::patch_support::Payload;
-use crate::patch_support::ReadPatchFn;
 use crate::schema::component_integrity::ComponentIntegrity as ComponentIntegritySchema;
 use crate::schema::component_integrity::ComponentIntegritySPDMGetSignedMeasurementsAction;
 use crate::schema::component_integrity_collection::ComponentIntegrityCollection as ComponentIntegrityCollectionSchema;
@@ -53,7 +50,10 @@ impl<B: Bmc> ComponentIntegrityCollection<B> {
         let Some(collection_ref) = &root.root.component_integrity else {
             return Ok(None);
         };
-        let data = collection_ref.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
+        let data = collection_ref
+            .get(bmc.as_ref())
+            .await
+            .map_err(Error::from)?;
         Ok(Some(Self {
             bmc: bmc.clone(),
             data,
@@ -92,7 +92,7 @@ impl<B: Bmc> ComponentIntegrity<B> {
         bmc: &NvBmc<B>,
         component_ref: &NavProperty<ComponentIntegritySchema>,
     ) -> Result<Self, Error<B>> {
-        let data = component_ref.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
+        let data = component_ref.get(bmc.as_ref()).await.map_err(Error::from)?;
         Ok(Self {
             bmc: bmc.clone(),
             data,
@@ -129,15 +129,10 @@ impl<B: Bmc> ComponentIntegrity<B> {
             return Ok(None);
         };
 
-        let data = if self.bmc.quirks.certificate_type_wrong_pem_chain_case() {
-            let patch_fn = Arc::new(normalize_pem_chain_type) as ReadPatchFn;
-            Payload::get(self.bmc.as_ref(), certificate_ref, patch_fn.as_ref()).await?
-        } else {
-            certificate_ref
-                .get(self.bmc.as_ref())
-                .await
-                .map_err(Error::Bmc)?
-        };
+        let data = certificate_ref
+            .get(self.bmc.as_ref())
+            .await
+            .map_err(Error::from)?;
         Ok(Some(Certificate::new(data)))
     }
 
@@ -185,7 +180,9 @@ impl<B: Bmc> ComponentIntegrity<B> {
             slot_id,
             measurement_indices,
         };
-        AsyncActionResult::start(self.bmc.as_ref(), action, &params).await
+        // An action's reply is the transport's, so it starts on the
+        // transport underneath the compatibility layer.
+        AsyncActionResult::start(self.bmc.as_ref().inner().as_ref(), action, &params).await
     }
 
     /// Get the target advertised for the SPDM signed-measurements action.

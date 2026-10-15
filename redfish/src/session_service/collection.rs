@@ -67,7 +67,7 @@ impl<B: Bmc> SessionCollection<B> {
             .as_ref()
             .create_session::<_, SessionSchema>(self.collection.as_ref().odata_id(), create)
             .await
-            .map_err(Error::Bmc)?;
+            .map_err(Error::from)?;
         Ok(Session::from_data_with_session_metadata(
             self.bmc.clone(),
             response.entity,

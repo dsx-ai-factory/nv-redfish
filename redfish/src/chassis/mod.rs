@@ -94,16 +94,10 @@ impl<B: Bmc> ChassisCollection<B> {
         bmc: &NvBmc<B>,
         root: &ServiceRoot<B>,
     ) -> Result<Option<Self>, Error<B>> {
-        let item_config = item::Config::new(&bmc.quirks);
         if let Some(collection_ref) = &root.root.chassis {
-            Self::expand_collection(
-                bmc,
-                collection_ref,
-                item_config.read_patch_fn.as_ref(),
-                None,
-            )
-            .await
-            .map(Some)
+            Self::expand_collection(bmc, collection_ref, None, None)
+                .await
+                .map(Some)
         } else if bmc.quirks.bug_missing_root_nav_properties() {
             bmc.expand_property(&NavProperty::new_reference(
                 format!("{}/Chassis", root.root.odata_id).into(),

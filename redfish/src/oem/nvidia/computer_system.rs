@@ -150,7 +150,7 @@ impl<B: Bmc> NvidiaComputerSystem<B> {
         actions
             .mode_set(self.bmc.as_ref(), mode)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Enable or disable the host-side rshim interface.
@@ -179,7 +179,7 @@ impl<B: Bmc> NvidiaComputerSystem<B> {
         actions
             .host_rshim_set(self.bmc.as_ref(), host_rshim)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Force a reset of the DPU's Arm SoC.
@@ -203,6 +203,6 @@ impl<B: Bmc> NvidiaComputerSystem<B> {
         actions
             .force_reset(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }

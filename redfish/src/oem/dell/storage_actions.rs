@@ -87,6 +87,6 @@ impl<B: Bmc> DellStorageActions<B> {
                 ModificationResponse::Task(task) => ModificationResponse::Task(task),
                 ModificationResponse::Empty => ModificationResponse::Empty,
             })
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }

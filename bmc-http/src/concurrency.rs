@@ -9,6 +9,8 @@ use crate::{BmcCredentials, CacheableError, HttpBmc, HttpClient};
 use nv_redfish_core::query::ExpandQuery;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
+use nv_redfish_core::Repair;
+use nv_redfish_core::RepairError;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::{
     Action, Bmc, BoxTryStream, EntityTypeRef, Expandable, FilterQuery, ModificationResponse,
@@ -141,6 +143,35 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
     ) -> Result<Arc<T>, Self::Error> {
         let _permit = permit(&self.semaphore).await;
         self.inner.filter(id, query).await
+    }
+
+    async fn get_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        let _permit = permit(&self.semaphore).await;
+        self.inner.get_repaired(id, repair).await
+    }
+
+    async fn expand_repaired<T: Expandable>(
+        &self,
+        id: &ODataId,
+        query: ExpandQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        let _permit = permit(&self.semaphore).await;
+        self.inner.expand_repaired(id, query, repair).await
+    }
+
+    async fn filter_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        query: FilterQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        let _permit = permit(&self.semaphore).await;
+        self.inner.filter_repaired(id, query, repair).await
     }
 
     async fn create<V, R>(

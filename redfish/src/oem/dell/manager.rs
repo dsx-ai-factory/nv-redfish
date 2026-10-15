@@ -129,7 +129,7 @@ impl<B: Bmc> DellManager<B> {
         actions
             .import_system_configuration(self.bmc.as_ref(), params)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Fetch the advertised Dell Lifecycle Controller service.

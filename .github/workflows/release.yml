@@ -34,6 +34,7 @@ jobs:
         # Update workspace local crate dependency versions in Cargo.toml
         sed -i -E 's/^(nv-redfish-core = \{ version = ")[^"]+(", path = "\.\/core" \})/\1'"$VERSION"'\2/' Cargo.toml
         sed -i -E 's/^(nv-redfish-bmc-http = \{ version = ")[^"]+(", path = "\.\/bmc-http" \})/\1'"$VERSION"'\2/' Cargo.toml
+        sed -i -E 's/^(nv-redfish-quirks = \{ version = ")[^"]+(", path = "\.\/quirks" \})/\1'"$VERSION"'\2/' Cargo.toml
         sed -i -E 's/^(nv-redfish-bmc-mock = \{ version = ")[^"]+(", path = "\.\/bmc-mock" \})/\1'"$VERSION"'\2/' Cargo.toml
         sed -i -E 's/^(nv-redfish = \{ version = ")[^"]+(", path = "\.\/redfish" \})/\1'"$VERSION"'\2/' Cargo.toml
         sed -i -E 's/^(nv-redfish-csdl-compiler = \{ version = ")[^"]+(", path = "\.\/csdl-compiler" \})/\1'"$VERSION"'\2/' Cargo.toml
@@ -51,6 +52,9 @@ jobs:
         
         echo "Publishing nv-redfish-core..."
         cargo publish -p nv-redfish-core --all-features --allow-dirty
+
+        echo "Publishing nv-redfish-quirks..."
+        cargo publish -p nv-redfish-quirks --all-features --allow-dirty
         
         echo "Publishing nv-redfish-bmc-http..."
         cargo publish -p nv-redfish-bmc-http --all-features --allow-dirty

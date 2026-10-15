@@ -52,7 +52,7 @@ impl<B: Bmc> PowerEquipment<B> {
             return Ok(None);
         };
 
-        let data = nav.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
+        let data = nav.get(bmc.as_ref()).await.map_err(Error::from)?;
 
         Ok(Some(Self {
             bmc: bmc.clone(),
@@ -138,7 +138,7 @@ impl<B: Bmc> PowerShelf<B> {
         bmc: &NvBmc<B>,
         nav: &NavProperty<PowerDistributionSchema>,
     ) -> Result<Self, Error<B>> {
-        let data = nav.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
+        let data = nav.get(bmc.as_ref()).await.map_err(Error::from)?;
         Ok(Self {
             #[cfg(feature = "oem-delta")]
             bmc: bmc.clone(),

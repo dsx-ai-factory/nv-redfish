@@ -13,15 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::bmc_quirks::BmcQuirks;
 use crate::entity_link::FromLink;
 use crate::hardware_id::HardwareIdRef;
 use crate::hardware_id::Manufacturer as HardwareIdManufacturer;
 use crate::hardware_id::Model as HardwareIdModel;
 use crate::hardware_id::PartNumber as HardwareIdPartNumber;
 use crate::hardware_id::SerialNumber as HardwareIdSerialNumber;
-use crate::patch_support::JsonValue;
-use crate::patch_support::Payload;
+#[cfg(feature = "power-supplies")]
 use crate::patch_support::ReadPatchFn;
 use crate::resource::ResetType;
 use crate::schema::chassis::Chassis as ChassisSchema;
@@ -33,8 +31,6 @@ use nv_redfish_core::NavProperty;
 use std::future::Future;
 use std::sync::Arc;
 
-#[cfg(feature = "power-supplies")]
-use super::power_supply::remove_invalid_power_supply_location_indicator_active;
 #[cfg(feature = "assembly")]
 use crate::assembly::Assembly;
 #[cfg(feature = "network-adapters")]
@@ -87,31 +83,6 @@ pub type PartNumber<T> = HardwareIdPartNumber<T, ChassisTag>;
 /// Chassis serial number.
 pub type SerialNumber<T> = HardwareIdSerialNumber<T, ChassisTag>;
 
-pub struct Config {
-    pub read_patch_fn: Option<ReadPatchFn>,
-}
-
-impl Config {
-    pub fn new(quirks: &BmcQuirks) -> Self {
-        let mut patches = Vec::new();
-        if quirks.bug_invalid_contained_by_fields() {
-            patches.push(remove_invalid_contained_by_fields as fn(JsonValue) -> JsonValue);
-        }
-        if quirks.bug_missing_chassis_type_field() {
-            patches.push(add_default_chassis_type);
-        }
-        if quirks.bug_missing_chassis_name_field() {
-            patches.push(add_default_chassis_name);
-        }
-        if quirks.bug_empty_uuid_field() {
-            patches.push(normalize_empty_uuid_field);
-        }
-        let read_patch_fn = (!patches.is_empty())
-            .then(|| Arc::new(move |v| patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn);
-        Self { read_patch_fn }
-    }
-}
-
 /// Represents a chassis in the BMC.
 ///
 /// Provides access to chassis information and sub-resources such as power supplies.
@@ -119,8 +90,6 @@ pub struct Chassis<B: Bmc> {
     #[allow(dead_code)] // used if any feature enabled.
     bmc: NvBmc<B>,
     data: Arc<ChassisSchema>,
-    #[allow(dead_code)] // used when assembly feature enabled.
-    config: Arc<Config>,
 }
 
 impl<B: Bmc> Chassis<B> {
@@ -129,17 +98,13 @@ impl<B: Bmc> Chassis<B> {
         bmc: &NvBmc<B>,
         nav: &NavProperty<ChassisSchema>,
     ) -> Result<Self, Error<B>> {
-        let config = Config::new(&bmc.quirks);
-        if let Some(read_patch_fn) = &config.read_patch_fn {
-            Payload::get(bmc.as_ref(), nav, read_patch_fn.as_ref()).await
-        } else {
-            nav.get(bmc.as_ref()).await.map_err(Error::Bmc)
-        }
-        .map(|data| Self {
-            bmc: bmc.clone(),
-            data,
-            config: config.into(),
-        })
+        nav.get(bmc.as_ref())
+            .await
+            .map_err(Error::from)
+            .map(|data| Self {
+                bmc: bmc.clone(),
+                data,
+            })
     }
 
     /// Get the raw schema data for this chassis.
@@ -177,7 +142,7 @@ impl<B: Bmc> Chassis<B> {
         actions
             .reset(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get hardware identifier of the network adpater.
@@ -238,18 +203,15 @@ impl<B: Bmc> Chassis<B> {
     #[cfg(feature = "power-supplies")]
     pub async fn power_supplies(&self) -> Result<Vec<PowerSupply<B>>, Error<B>> {
         if let Some(ps) = &self.data.power_subsystem {
-            let ps = ps.get(self.bmc.as_ref()).await.map_err(Error::Bmc)?;
+            let ps = ps.get(self.bmc.as_ref()).await.map_err(Error::from)?;
             if let Some(supplies) = &ps.power_supplies {
-                let read_patch_fn = self
-                    .bmc
-                    .quirks
-                    .bug_power_supply_location_indicator_active(
-                        self.data.manufacturer.as_ref().and_then(Option::as_deref),
-                    )
-                    .then(|| {
-                        Arc::new(remove_invalid_power_supply_location_indicator_active)
-                            as ReadPatchFn
-                    });
+                // Decided by this chassis' manufacturer, which the service
+                // root may not name, so it is applied here rather than by
+                // the compatibility layer.
+                let repair = self.bmc.quirks.power_supply_location_indicator_repair(
+                    self.data.manufacturer.as_ref().and_then(Option::as_deref),
+                );
+                let read_patch_fn = repair.map(|repair| Arc::new(repair) as ReadPatchFn);
                 let supplies = &PowerSupply::<B>::expand_collection(
                     &self.bmc,
                     supplies,
@@ -260,9 +222,7 @@ impl<B: Bmc> Chassis<B> {
                 .members;
                 let mut power_supplies = Vec::with_capacity(supplies.len());
                 for power_supply in supplies {
-                    power_supplies.push(
-                        PowerSupply::new(&self.bmc, power_supply, read_patch_fn.as_ref()).await?,
-                    );
+                    power_supplies.push(PowerSupply::new(&self.bmc, power_supply, repair).await?);
                 }
                 return Ok(power_supplies);
             }
@@ -373,7 +333,7 @@ impl<B: Bmc> Chassis<B> {
             let log_services_collection = log_services_ref
                 .get(self.bmc.as_ref())
                 .await
-                .map_err(Error::Bmc)?;
+                .map_err(Error::from)?;
 
             let mut log_services = Vec::new();
             for m in &log_services_collection.members {
@@ -448,7 +408,7 @@ impl<B: Bmc> Chassis<B> {
             let sc = sensors_collection
                 .get(self.bmc.as_ref())
                 .await
-                .map_err(Error::Bmc)?;
+                .map_err(Error::from)?;
             let mut sensor_data = Vec::with_capacity(sc.members.len());
             for sensor in &sc.members {
                 sensor_data.push(SensorLink::new(
@@ -522,49 +482,4 @@ impl<B: Bmc> FromLink<B> for Chassis<B> {
     ) -> impl Future<Output = Result<Self, Error<B>>> + Send {
         Self::new(bmc, nav)
     }
-}
-
-fn remove_invalid_contained_by_fields(mut v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(ref mut obj) = v {
-        if let Some(JsonValue::Object(ref mut links_obj)) = obj.get_mut("Links") {
-            if let Some(JsonValue::Object(ref mut contained_by_obj)) =
-                links_obj.get_mut("ContainedBy")
-            {
-                contained_by_obj.retain(|k, _| k == "@odata.id");
-            }
-        }
-    }
-    v
-}
-
-fn add_default_chassis_type(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("ChassisType")
-            .or_insert(JsonValue::String("Other".into()));
-        JsonValue::Object(obj)
-    } else {
-        v
-    }
-}
-
-fn add_default_chassis_name(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("Name")
-            .or_insert(JsonValue::String("Unnamed chassis".into()));
-        JsonValue::Object(obj)
-    } else {
-        v
-    }
-}
-
-fn normalize_empty_uuid_field(mut v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(ref mut obj) = v {
-        if let Some(uuid) = obj.get_mut("UUID") {
-            let is_empty = uuid.as_str().is_some_and(str::is_empty);
-            if is_empty {
-                *uuid = JsonValue::Null;
-            }
-        }
-    }
-    v
 }

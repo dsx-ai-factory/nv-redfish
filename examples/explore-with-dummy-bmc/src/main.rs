@@ -19,12 +19,13 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use nv_redfish_core::query::ExpandQuery;
+use nv_redfish_core::repair::decode_raw;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
 use nv_redfish_core::{
     Action, ActionError, Bmc, EntityTypeRef, Expandable, ModificationResponse,
-    MultipartUpdateRequest, NavProperty, ODataETag, ODataId, SessionCreateResponse, Updatable,
-    UploadReader,
+    MultipartUpdateRequest, NavProperty, ODataETag, ODataId, Raw, Repair, RepairError,
+    SessionCreateResponse, Updatable, UploadReader,
 };
 use redfish_oem_contoso::redfish::contoso_turboencabulator_service::{
     ContosoTurboencabulatorServiceUpdate, TurboencabulatorMode,
@@ -506,6 +507,34 @@ impl Bmc for MockBmc {
         _query: nv_redfish_core::FilterQuery,
     ) -> Result<Arc<T>, Error> {
         todo!("unimplimented")
+    }
+
+    // This BMC does not deserialize documents in a way a repair could join,
+    // so a repaired read goes through `Raw`.
+    async fn get_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Error>> {
+        decode_raw(self.get::<Raw>(id).await, repair)
+    }
+
+    async fn expand_repaired<T: Expandable>(
+        &self,
+        id: &ODataId,
+        query: ExpandQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Error>> {
+        decode_raw(self.expand::<Raw>(id, query).await, repair)
+    }
+
+    async fn filter_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        query: nv_redfish_core::FilterQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Error>> {
+        decode_raw(self.filter::<Raw>(id, query).await, repair)
     }
 
     async fn get<T: EntityTypeRef + for<'de> Deserialize<'de>>(

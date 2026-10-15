@@ -40,6 +40,9 @@
 //!   returns the updated representation (`R`).
 //! - `delete` removes the entity at `id`.
 //! - `action` posts to an action endpoint (`Action.target`).
+//! - `get_repaired`, `expand_repaired` and `filter_repaired` read like `get`,
+//!   `expand` and `filter`, with a [`crate::Repair`] applied to the document
+//!   before it is deserialized.
 //!
 //! Notes for implementors:
 //! - The trait is `Send + Sync` and returns `Send` futures to support use in
@@ -55,6 +58,7 @@ use serde::Serialize;
 use crate::query::ExpandQuery;
 use crate::Action;
 use crate::BoxTryStream;
+use crate::DecodeError;
 use crate::EntityTypeRef;
 use crate::Expandable;
 use crate::FilterQuery;
@@ -63,6 +67,8 @@ use crate::HttpPushUriUpdateRequest;
 use crate::ModificationResponse;
 use crate::ODataETag;
 use crate::ODataId;
+use crate::Repair;
+use crate::RepairError;
 use crate::SessionCreateResponse;
 use std::error::Error as StdError;
 use std::future::Future;
@@ -108,13 +114,29 @@ pub trait BmcError: StdError + Send + Sync {
     fn error_class(&self) -> BmcErrorClass {
         BmcErrorClass::Other
     }
+
+    /// The document this error failed to deserialize, when it is that.
+    ///
+    /// A transport that deserializes documents itself reports its decode
+    /// failure here, so a repaired read can tell a document that did not
+    /// match its type from a failed request. The default is never one.
+    ///
+    /// # Errors
+    ///
+    /// Returns `self` when the error is not a decode failure.
+    fn into_decode_error(self) -> Result<DecodeError, Self>
+    where
+        Self: Sized,
+    {
+        Err(self)
+    }
 }
 
 /// BMC trait defines access to a Baseboard Management Controller using
 /// the Redfish protocol.
 pub trait Bmc: Send + Sync {
     /// BMC Error.
-    type Error: BmcError;
+    type Error: BmcError + 'static;
 
     /// Expand any expandable object (navigation property or entity).
     ///
@@ -141,6 +163,39 @@ pub trait Bmc: Send + Sync {
         id: &ODataId,
         query: FilterQuery,
     ) -> impl Future<Output = Result<Arc<T>, Self::Error>> + Send;
+
+    /// [`Self::get`], with `repair` applied to the document before it is
+    /// deserialized.
+    ///
+    /// A document that does not deserialize after the repair is
+    /// [`RepairError::Decode`]. A transport that deserializes documents
+    /// itself repairs in the same pass and, if it caches results, keys them
+    /// by [`Repair::generation`]. Any other reads the document as
+    /// [`crate::Raw`] and hands it to [`crate::repair::decode_raw`]; a
+    /// decorator forwards to the BMC it wraps.
+    fn get_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        repair: &impl Repair,
+    ) -> impl Future<Output = Result<Arc<T>, RepairError<Self::Error>>> + Send;
+
+    /// [`Self::expand`], with `repair` applied as for
+    /// [`Self::get_repaired`].
+    fn expand_repaired<T: Expandable>(
+        &self,
+        id: &ODataId,
+        query: ExpandQuery,
+        repair: &impl Repair,
+    ) -> impl Future<Output = Result<Arc<T>, RepairError<Self::Error>>> + Send;
+
+    /// [`Self::filter`], with `repair` applied as for
+    /// [`Self::get_repaired`].
+    fn filter_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        query: FilterQuery,
+        repair: &impl Repair,
+    ) -> impl Future<Output = Result<Arc<T>, RepairError<Self::Error>>> + Send;
 
     /// Creates element of the collection.
     ///
@@ -235,6 +290,10 @@ pub trait Bmc: Send + Sync {
     ///
     /// Implementations may reject URI references that violate their outbound
     /// request policy before transport.
+    ///
+    /// An implementation outside this crate defines it inside
+    /// [`if_update_service_deprecated!`](crate::if_update_service_deprecated),
+    /// so it has the method exactly when the trait requires it.
     #[cfg(feature = "update-service-deprecated")]
     fn http_push_uri_update<U, R>(
         &self,
@@ -284,6 +343,29 @@ pub trait Bmc: Send + Sync {
         let _ = last_event_id;
         async move { self.stream::<T>(uri).await.map(without_event_ids) }
     }
+}
+
+/// Expands to the items it wraps when this crate's
+/// `update-service-deprecated` feature is on, and to nothing when it is off.
+///
+/// The feature adds a required method to [`Bmc`], and Cargo turns it on for
+/// the whole build when any crate asks for it. A [`Bmc`] implemented outside
+/// this crate defines `http_push_uri_update` inside this macro rather than
+/// behind a feature of its own, so the method is there exactly when the
+/// trait requires it, whichever crate turned the feature on.
+#[cfg(feature = "update-service-deprecated")]
+#[macro_export]
+macro_rules! if_update_service_deprecated {
+    ($($item:tt)*) => {
+        $($item)*
+    };
+}
+
+#[cfg(not(feature = "update-service-deprecated"))]
+#[macro_export]
+#[doc(hidden)]
+macro_rules! if_update_service_deprecated {
+    ($($item:tt)*) => {};
 }
 
 /// One event a server-sent event stream delivered.

@@ -22,8 +22,10 @@ update-service-deprecated = [
 [dependencies]
 nv-redfish-core = { workspace = true }
 nv-redfish-bmc-mock = { workspace = true }
+nv-redfish-quirks = { workspace = true }
 nv-redfish = { workspace = true, features = [
     "accounts",
+    "bmc-http",
     "assembly",
     "bios",
     "boot-options",
@@ -70,6 +72,8 @@ serde_json = { workspace = true }
 futures-util = { workspace = true, features = ["io"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 trybuild = { workspace = true }
+url = { workspace = true }
+wiremock = { workspace = true }
 
 [build-dependencies]
 nv-redfish-csdl-compiler = { workspace = true }

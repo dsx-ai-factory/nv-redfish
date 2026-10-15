@@ -41,7 +41,7 @@ pub(crate) async fn chassis_fetch_links<B: Bmc>(
     let power_subsystem = power_subsystem
         .get(bmc.as_ref())
         .await
-        .map_err(Error::Bmc)?;
+        .map_err(Error::from)?;
     let Some(power_supplies) = &power_subsystem.power_supplies else {
         return Ok(None);
     };
@@ -51,7 +51,7 @@ pub(crate) async fn chassis_fetch_links<B: Bmc>(
     )
     .get(bmc.as_ref())
     .await
-    .map_err(Error::Bmc)
+    .map_err(Error::from)
     .map(|v| {
         v.members
             .iter()

@@ -43,7 +43,7 @@ impl<B: Bmc> SecureBootDatabaseCollection<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -83,7 +83,7 @@ impl<B: Bmc> SecureBootDatabase<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -129,7 +129,7 @@ impl<B: Bmc> SecureBootDatabase<B> {
         actions
             .reset_keys(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get the raw schema data for this database.

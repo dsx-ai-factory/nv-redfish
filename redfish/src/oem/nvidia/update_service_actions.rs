@@ -64,7 +64,7 @@ impl<B: Bmc> NvidiaUpdateServiceActions<B> {
         self.data
             .clear_nvram(self.bmc.as_ref(), targets)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Commit staged images for the selected firmware inventory targets.
@@ -86,7 +86,7 @@ impl<B: Bmc> NvidiaUpdateServiceActions<B> {
         self.data
             .commit_image(self.bmc.as_ref(), targets)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get the raw NVIDIA UpdateService OEM actions schema.

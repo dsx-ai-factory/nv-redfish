@@ -131,6 +131,6 @@ impl<B: Bmc> NvidiaManager<B> {
             .update::<_, JsonValue>(id, None, &update)
             .await
             .map(|response| response.map_entity(|_| ()))
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }

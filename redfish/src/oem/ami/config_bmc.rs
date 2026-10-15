@@ -117,6 +117,6 @@ impl<B: Bmc> ConfigBmc<B> {
             .create::<_, Value>(self.data.odata_id(), update)
             .await
             .map(|response| response.map_entity(drop))
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }

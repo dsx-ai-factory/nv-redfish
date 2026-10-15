@@ -43,7 +43,7 @@ impl<B: Bmc> Thermal<B> {
         thermal_ref
             .get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| Self {
                 data,
                 _marker: PhantomData,

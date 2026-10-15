@@ -177,7 +177,12 @@ async fn malformed_dpu_action_is_rejected_by_schema() -> Result<(), Box<dyn StdE
             "Mode": "DpuMode"
         }),
     ));
-    assert!(matches!(system.oem_nvidia().await, Err(Error::Json(_))));
+    // The OEM body is a document read on its own, so a schema mismatch is a
+    // decode error naming the property that failed.
+    assert!(matches!(
+        system.oem_nvidia().await,
+        Err(Error::Decode(error)) if error.path().to_string().starts_with("Actions")
+    ));
     Ok(())
 }
 

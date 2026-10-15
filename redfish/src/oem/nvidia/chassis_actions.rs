@@ -66,7 +66,7 @@ impl<B: Bmc> NvidiaChassisActions<B> {
         self.data
             .aux_power_reset(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Reset this chassis or its DPU with an NVIDIA reset type.
@@ -89,7 +89,7 @@ impl<B: Bmc> NvidiaChassisActions<B> {
         self.data
             .reset(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get the raw NVIDIA Chassis OEM actions schema.

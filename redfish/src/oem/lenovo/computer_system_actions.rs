@@ -67,7 +67,7 @@ impl<B: Bmc> LenovoComputerSystemActions<B> {
         self.data
             .system_reset(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get the raw Lenovo ComputerSystem OEM actions schema.

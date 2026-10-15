@@ -43,7 +43,7 @@ impl<B: Bmc> LogService<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(crate::Error::Bmc)
+            .map_err(crate::Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -109,7 +109,7 @@ impl<B: Bmc> LogService<B> {
             let entries_collection = entries_ref
                 .filter(self.bmc.as_ref(), filter)
                 .await
-                .map_err(Error::Bmc)?;
+                .map_err(Error::from)?;
 
             self.expand_entries(&entries_collection.members)
                 .await
@@ -146,7 +146,7 @@ impl<B: Bmc> LogService<B> {
         actions
             .clear_log(self.bmc.as_ref(), log_entry_codes)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// This unwraps `NavProperty`, usually all BMC already have them expanded, so we do not expect network IO here
@@ -156,7 +156,10 @@ impl<B: Bmc> LogService<B> {
     ) -> Result<Vec<Arc<LogEntry>>, Error<B>> {
         let mut entries = Vec::new();
         for entry_ref in entry_refs {
-            let entry = entry_ref.get(self.bmc.as_ref()).await.map_err(Error::Bmc)?;
+            let entry = entry_ref
+                .get(self.bmc.as_ref())
+                .await
+                .map_err(Error::from)?;
             entries.push(entry);
         }
         Ok(entries)

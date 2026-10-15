@@ -94,7 +94,7 @@ impl<B: Bmc> EthernetInterface<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(crate::Error::Bmc)
+            .map_err(crate::Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,

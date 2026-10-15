@@ -14,13 +14,16 @@
 // limitations under the License.
 
 //! Sometimes Redfish implementations do not perfectly match the CSDL
-//! specification. This module provides helpers to deal with that.
+//! specification. What a document says is repaired by `nv-redfish-quirks`
+//! on every read through [`NvBmc`](crate::NvBmc), event streams included;
+//! this module keeps the quirks that change how a collection is read —
+//! members to leave out, `Members` sent as `null` — and the one repair
+//! decided per resource.
 
 /// Redfish collection related patches.
 #[cfg(feature = "patch-collection")]
 mod collection;
-/// Redfish payload patches.
-#[cfg(feature = "patch-payload")]
+#[cfg(feature = "patch-collection")]
 mod payload;
 
 #[doc(inline)]
@@ -29,20 +32,16 @@ pub use serde_json::Value as JsonValue;
 #[cfg(feature = "patch-collection")]
 #[doc(inline)]
 pub use collection::CollectionWithPatch;
-#[cfg(feature = "patch-collection-create")]
-#[doc(inline)]
-pub use collection::CreateWithPatch;
-#[cfg(feature = "patch-payload")]
+#[cfg(feature = "patch-collection")]
 #[doc(inline)]
 pub use payload::Payload;
-#[cfg(feature = "patch-payload-update")]
-#[doc(inline)]
-pub use payload::UpdateWithPatch;
 
+#[cfg(feature = "patch-collection")]
 use std::sync::Arc;
 
 /// Reference to a patch function. This function should transform a JSON
 /// structure to a Redfish-compatible structure.
+#[cfg(feature = "patch-collection")]
 pub type ReadPatchFn = Arc<dyn Fn(JsonValue) -> JsonValue + Sync + Send>;
 
 /// Reference to a filter function. This function should filters a JSON

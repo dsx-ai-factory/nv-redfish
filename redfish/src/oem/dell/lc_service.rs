@@ -36,7 +36,7 @@ impl<B: Bmc> DellLcService<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -65,7 +65,7 @@ impl<B: Bmc> DellLcService<B> {
         actions
             .get_remote_services_api_status(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get the raw Dell Lifecycle Controller service schema.

@@ -25,8 +25,6 @@ use nv_redfish_core::Bmc;
 use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
-#[cfg(feature = "component-integrity")]
-use serde_json::Value as JsonValue;
 
 #[doc(inline)]
 pub use crate::schema::certificate::CertificateCreate;
@@ -59,7 +57,7 @@ impl Certificate {
         nav.get(bmc.as_ref())
             .await
             .map(Self::new)
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }
 
@@ -78,7 +76,7 @@ impl<B: Bmc> CertificateCollection<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -111,7 +109,7 @@ impl<B: Bmc> CertificateCollection<B> {
             .as_ref()
             .create::<_, NavProperty<CertificateSchema>>(self.data.odata_id(), create)
             .await
-            .map_err(Error::Bmc)?
+            .map_err(Error::from)?
             .try_map_entity_async(|nav| async move { Certificate::from_nav(&self.bmc, &nav).await })
             .await
     }
@@ -121,13 +119,4 @@ impl<B: Bmc> CertificateCollection<B> {
     pub fn raw(&self) -> Arc<CertificateCollectionSchema> {
         self.data.clone()
     }
-}
-
-/// Normalize the non-standard certificate-chain spelling used by H100 AMI.
-#[cfg(feature = "component-integrity")]
-pub(crate) fn normalize_pem_chain_type(mut value: JsonValue) -> JsonValue {
-    if value.get("CertificateType").and_then(JsonValue::as_str) == Some("PEMChain") {
-        value["CertificateType"] = JsonValue::String("PEMchain".to_string());
-    }
-    value
 }

@@ -47,7 +47,7 @@ impl<B: Bmc> SecureBoot<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(crate::Error::Bmc)
+            .map_err(crate::Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -119,7 +119,7 @@ impl<B: Bmc> SecureBoot<B> {
         actions
             .reset_keys(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get an indication of whether UEFI Secure Boot is enabled.

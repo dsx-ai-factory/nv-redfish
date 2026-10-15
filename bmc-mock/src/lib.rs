@@ -32,10 +32,13 @@ use std::sync::PoisonError;
 use futures_util::TryStreamExt as _;
 use nv_redfish_core::action::ActionTarget;
 use nv_redfish_core::query::ExpandQuery;
+use nv_redfish_core::repair::decode;
+use nv_redfish_core::repair::decode_raw;
 use nv_redfish_core::ActionError;
 use nv_redfish_core::AsyncTask;
 use nv_redfish_core::Bmc as NvRedfishBmc;
 use nv_redfish_core::BmcErrorClass;
+use nv_redfish_core::DecodeError;
 use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::Expandable;
 #[cfg(feature = "update-service-deprecated")]
@@ -44,13 +47,14 @@ use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
+use nv_redfish_core::Raw;
+use nv_redfish_core::Repair;
+use nv_redfish_core::RepairError;
 use nv_redfish_core::SessionCreateResponse;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
 use serde::Serialize;
-use serde_json::from_value;
 use serde_json::to_value;
-use serde_json::Error as JsonError;
 
 #[derive(Debug)]
 pub enum Error {
@@ -58,7 +62,7 @@ pub enum Error {
     ErrorResponse(Box<dyn StdError + Send + Sync>),
     MutexLock(String),
     NothingIsExpected,
-    BadResponseJson(JsonError),
+    BadResponseJson(DecodeError),
     HttpStatus(u16),
     UnexpectedGet(ODataId, ExpectedRequest),
     UnexpectedPoll(ODataId, ExpectedRequest),
@@ -151,6 +155,13 @@ impl nv_redfish_core::BmcError for Error {
             _ => BmcErrorClass::Other,
         }
     }
+
+    fn into_decode_error(self) -> Result<DecodeError, Self> {
+        match self {
+            Self::BadResponseJson(error) => Ok(error),
+            other => Err(other),
+        }
+    }
 }
 
 impl Error {
@@ -208,7 +219,7 @@ where
                 response,
             } if id == *in_id => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: T = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: T = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(Arc::new(result))
             }
             _ => Err(Error::UnexpectedExpand(in_id.clone(), expect.request)),
@@ -231,7 +242,7 @@ where
                 response,
             } if id == *in_id => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: T = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: T = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(Arc::new(result))
             }
             _ => Err(Error::UnexpectedGet(in_id.clone(), expect.request)),
@@ -262,7 +273,7 @@ where
                 response,
             } if id == *in_id && request == in_request => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: R = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: R = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
             Expect {
@@ -270,7 +281,7 @@ where
                 response,
             } if id == *in_id && etag.as_ref() == in_etag && request == in_request => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: R = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: R = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
             Expect {
@@ -321,7 +332,7 @@ where
                 response,
             } if id == *in_id && request == in_request => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: R = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: R = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
             Expect {
@@ -367,7 +378,7 @@ where
                 response,
             } if id == *in_id && request == in_request => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let entity: R = from_value(response).map_err(Error::BadResponseJson)?;
+                let entity: R = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(SessionCreateResponse {
                     entity,
                     auth_token,
@@ -426,7 +437,7 @@ where
                 response,
             } if target == action.target && request == in_request => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: R = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: R = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
             Expect {
@@ -500,7 +511,7 @@ where
                 && expected_parts == oem_parts =>
             {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: R = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: R = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
             _ => Err(Error::UnexpectedMultipartUpdate(
@@ -535,7 +546,7 @@ where
                 response,
             } if uri == *in_uri => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: R = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: R = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
             _ => Err(Error::UnexpectedHttpPushUriUpdate(
@@ -551,6 +562,32 @@ where
         _query: nv_redfish_core::FilterQuery,
     ) -> Result<Arc<T>, Self::Error> {
         todo!("unimplemented")
+    }
+
+    async fn get_repaired<T: EntityTypeRef + for<'de> serde::Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        decode_raw(self.get::<Raw>(id).await, repair)
+    }
+
+    async fn expand_repaired<T: Expandable>(
+        &self,
+        id: &ODataId,
+        query: ExpandQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        decode_raw(self.expand::<Raw>(id, query).await, repair)
+    }
+
+    async fn filter_repaired<T: EntityTypeRef + for<'de> serde::Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        query: nv_redfish_core::FilterQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        decode_raw(self.filter::<Raw>(id, query).await, repair)
     }
 
     async fn stream<T: Sized + for<'de> serde::Deserialize<'de> + Send + 'static>(
@@ -578,7 +615,7 @@ where
                 response,
             } if uri == *in_uri && last_event_id.is_none() => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let payloads: Vec<T> = from_value(response).map_err(Error::BadResponseJson)?;
+                let payloads: Vec<T> = decode(response).map_err(Error::BadResponseJson)?;
                 let events = payloads.into_iter().map(|data| StreamEvent {
                     last_event_id: None,
                     data,
@@ -595,7 +632,7 @@ where
             } if uri == *in_uri && expected.as_deref() == last_event_id => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
                 let events: Vec<ScriptedEvent<T>> =
-                    from_value(response).map_err(Error::BadResponseJson)?;
+                    decode(response).map_err(Error::BadResponseJson)?;
                 let events = events.into_iter().map(|event| StreamEvent {
                     last_event_id: event.last_event_id,
                     data: event.data,
@@ -628,7 +665,7 @@ where
                 response,
             } if id == *location => {
                 let response = response.map_err(|err| Error::ErrorResponse(Box::new(err)))?;
-                let result: T = from_value(response).map_err(Error::BadResponseJson)?;
+                let result: T = decode(response).map_err(Error::BadResponseJson)?;
                 Ok(ModificationResponse::Entity(result))
             }
             Expect {

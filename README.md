@@ -16,6 +16,8 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
     response metadata.
   - Provides common Redfish/OData value types such as date/time, duration,
     UUID, decimal, task, action, and navigation-property helpers.
+  - Defines `Repair`, a rewrite of a document before it is deserialized, and
+    the `Bmc` reads that apply one.
   - Does not include an HTTP implementation.
 
 - `nv-redfish-bmc-http`
@@ -26,6 +28,16 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
     default for this crate.
   - Supports custom default headers and session-token credential updates, so
     callers can use either basic credentials or a Redfish `X-Auth-Token`.
+  - Applies a `Repair` in its own decode, and serves a cached document only
+    to reads under the same repair.
+
+- `nv-redfish-quirks`
+  - Platform quirks of real BMCs, kept apart from the generated model.
+  - Classifies an endpoint from its service root and holds the document
+    repairs its platform needs, keyed by the document's `@odata.type`.
+  - Provides `CompatBmc`, a `Bmc` over another that applies those repairs and
+    the caller's runtime `UserRules` to every document it reads, event stream
+    payloads included.
 
 - `nv-redfish`
   - High-level Redfish API over generated schema types.
@@ -34,8 +46,9 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
   - Re-exports `nv-redfish-bmc-http` as `nv_redfish::bmc_http` when the
     `bmc-http` feature is enabled.
   - Generates only the schemas required by enabled features during build.
-  - Uses feature-gated patch helpers for vendor quirks and schema deviations
-    observed in real BMCs.
+  - Reads every resource through `CompatBmc`, so its wrappers and schema
+    types read directly get the same platform repairs;
+    `ServiceRoot::with_user_rules` adds the caller's.
 
 - `nv-redfish-bmc-mock`
   - Test BMC implementation used by integration tests and examples.
@@ -179,7 +192,8 @@ objects.
 - Keep the transport layer independent from the Redfish schema layer.
 - Compile only the schema surface needed by enabled features.
 - Support standard Redfish and selected OEM extensions.
-- Keep vendor compatibility fixes isolated behind feature-gated patch helpers.
+- Keep vendor compatibility fixes in one place, `nv-redfish-quirks`, as facts
+  about the documents a device sends rather than changes to the schema.
 
 ## Security
 - Vulnerability disclosure: [SECURITY.md](SECURITY.md)

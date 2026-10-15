@@ -130,6 +130,6 @@ impl<B: Bmc> SupermicroManager<B> {
         actions
             .reset(self.bmc.as_ref(), option)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }

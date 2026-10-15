@@ -452,4 +452,103 @@ mod cache_integration_tests {
         let retrieved = result.unwrap();
         assert_eq!(retrieved.etag.as_ref().unwrap().to_string(), etag_value);
     }
+
+    /// Sets `value`, so a result shows which repair it went through.
+    struct SetValue {
+        generation: nv_redfish_core::Generation,
+        value: serde_json::Value,
+    }
+
+    impl nv_redfish_core::Repair for SetValue {
+        fn repair(&self, document: &mut serde_json::Value) {
+            document["value"] = self.value.clone();
+        }
+
+        fn generation(&self) -> Option<nv_redfish_core::Generation> {
+            Some(self.generation)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_repaired_entities_are_cached_per_generation() -> Result<(), Box<dyn Error>> {
+        let mock_server = MockServer::start().await;
+        let resource_path = paths::CHASSIS_1;
+        let etag_value = "gen123";
+        let test_resource =
+            create_test_resource(resource_path, Some(etag_value), names::TEST_CHASSIS, 0);
+
+        // Only the second read revalidates; the third (new generation)
+        // and the fourth (unrepaired) must fetch the body again.
+        Mock::given(method("GET"))
+            .and(path(resource_path))
+            .and(header("if-none-match", etag_value))
+            .respond_with(ResponseTemplate::new(304))
+            .with_priority(1)
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(resource_path))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&test_resource)
+                    .insert_header("etag", etag_value),
+            )
+            .expect(3)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let id = create_odata_id(resource_path);
+        let first = SetValue {
+            generation: nv_redfish_core::Generation::unique(),
+            value: 10.into(),
+        };
+        let second = SetValue {
+            generation: nv_redfish_core::Generation::unique(),
+            value: 20.into(),
+        };
+
+        let read = bmc.get_repaired::<TestResource>(&id, &first).await?;
+        assert_eq!(read.value, 10);
+        let cached = bmc.get_repaired::<TestResource>(&id, &first).await?;
+        assert!(
+            Arc::ptr_eq(&read, &cached),
+            "same generation is served from cache"
+        );
+        let replaced = bmc.get_repaired::<TestResource>(&id, &second).await?;
+        assert_eq!(replaced.value, 20);
+        let plain = bmc.get::<TestResource>(&id).await?;
+        assert_eq!(plain.value, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_a_document_that_does_not_decode_after_repair_is_a_decode_error(
+    ) -> Result<(), Box<dyn Error>> {
+        let mock_server = MockServer::start().await;
+        let resource_path = paths::CHASSIS_1;
+        let test_resource = create_test_resource(resource_path, None, names::TEST_CHASSIS, 0);
+        Mock::given(method("GET"))
+            .and(path(resource_path))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&test_resource))
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let breaks = SetValue {
+            generation: nv_redfish_core::Generation::unique(),
+            value: "not a number".into(),
+        };
+        let result = bmc
+            .get_repaired::<TestResource>(&create_odata_id(resource_path), &breaks)
+            .await;
+        match result {
+            Err(nv_redfish_core::RepairError::Decode(error)) => {
+                assert_eq!(error.path().to_string(), "value");
+            }
+            other => panic!("expected a decode error, got {:?}", other),
+        }
+        Ok(())
+    }
 }

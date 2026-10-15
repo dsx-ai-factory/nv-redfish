@@ -69,7 +69,7 @@ impl<B: Bmc> SupermicroComputerSystemActions<B> {
         self.data
             .reset(self.bmc.as_ref(), ResetType::AcCycle)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get the raw Supermicro ComputerSystem OEM actions schema.

@@ -16,21 +16,20 @@
 //! BMC implementaion that takes in account protocol features.  That
 //! is built on top of core BMC.
 
-use crate::bmc_quirks::BmcQuirks;
 use crate::protocol_features::ExpandQueryFeatures;
 use crate::Error;
 use crate::ProtocolFeatures;
+use nv_redfish_core::repair::decode;
 use nv_redfish_core::Bmc;
-use nv_redfish_core::BmcError as _;
-use nv_redfish_core::BmcErrorClass;
-use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
+use nv_redfish_core::Raw;
+use nv_redfish_quirks::BmcQuirks;
+use nv_redfish_quirks::CompatBmc;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde::Deserializer;
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -40,23 +39,25 @@ use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::Expandable;
 
 pub struct NvBmc<B: Bmc> {
-    bmc: Arc<B>,
+    /// Every request goes through the compatibility layer, so the wrappers
+    /// get the platform's and the caller's repairs.
+    bmc: CompatBmc<B>,
     protocol_features: Arc<ProtocolFeatures>,
     pub(crate) quirks: Arc<BmcQuirks>,
 }
 
 impl<B: Bmc> NvBmc<B> {
-    pub(crate) fn new(bmc: Arc<B>, protocol_features: ProtocolFeatures, quirks: BmcQuirks) -> Self {
+    pub(crate) fn new(bmc: CompatBmc<B>, protocol_features: ProtocolFeatures) -> Self {
         Self {
+            quirks: Arc::clone(bmc.quirks()),
             bmc,
             protocol_features: protocol_features.into(),
-            quirks: quirks.into(),
         }
     }
 
     pub(crate) fn replace_bmc(self, bmc: Arc<B>) -> Self {
         Self {
-            bmc,
+            bmc: self.bmc.replace_inner(bmc),
             protocol_features: self.protocol_features,
             quirks: self.quirks,
         }
@@ -77,15 +78,21 @@ impl<B: Bmc> NvBmc<B> {
     }
 
     #[allow(dead_code)] // feature-enabled func
-    pub fn as_ref(&self) -> &B {
-        self.bmc.as_ref()
+    pub const fn as_ref(&self) -> &CompatBmc<B> {
+        &self.bmc
+    }
+
+    /// The compatibility layer, sharing this BMC's rule set.
+    pub(crate) fn compat(&self) -> CompatBmc<B> {
+        self.bmc.clone()
     }
 
     /// Expand navigation property with optimal available method.
     ///
     /// # Errors
     ///
-    /// Returns `Error::Bmc` if failed to send request to the BMC.
+    /// Returns `Error::Bmc` if failed to send request to the BMC, or
+    /// `Error::Decode` if the repaired document did not deserialize.
     ///
     #[cfg(feature = "impl-nv-bmc-expand")]
     pub async fn expand_property<T>(&self, nav: &NavProperty<T>) -> Result<Arc<T>, Error<B>>
@@ -101,15 +108,15 @@ impl<B: Bmc> NvBmc<B> {
             None
         };
         if let Some(optimal_query) = optimal_query {
-            nav.expand(self.bmc.as_ref(), optimal_query)
+            nav.expand(&self.bmc, optimal_query)
                 .await
-                .map_err(Error::Bmc)?
-                .get(self.bmc.as_ref())
+                .map_err(Error::from)?
+                .get(&self.bmc)
                 .await
-                .map_err(Error::Bmc)
+                .map_err(Error::from)
         } else {
             // if query is not suported.
-            nav.get(self.bmc.as_ref()).await.map_err(Error::Bmc)
+            nav.get(&self.bmc).await.map_err(Error::from)
         }
     }
 
@@ -120,22 +127,24 @@ impl<B: Bmc> NvBmc<B> {
     ///
     /// # Errors
     ///
-    /// Returns `Error::Bmc` if fetching the resource fails, or `Error::Json`
-    /// if the body does not deserialize into `T`.
+    /// Returns `Error::Bmc` if fetching the resource fails, or
+    /// `Error::Decode` if the body does not deserialize into `T`.
     #[allow(dead_code)] // feature-enabled func
     pub async fn get_raw<T: DeserializeOwned>(&self, id: &ODataId) -> Result<T, Error<B>> {
-        let raw = NavProperty::<RawBody>::new_reference(id.clone())
-            .get(self.bmc.as_ref())
+        let raw = NavProperty::<Raw>::new_reference(id.clone())
+            .get(&self.bmc)
             .await
-            .map_err(Error::Bmc)?;
-        serde_json::from_value(raw.body.clone()).map_err(Error::Json)
+            .map_err(Error::from)?;
+        let body = Arc::try_unwrap(raw).map_or_else(|raw| raw.value().clone(), Raw::into_value);
+        decode(body).map_err(Error::Decode)
     }
 
     /// Update the resource at `id`, sending `etag` as `If-Match`.
     ///
-    /// On BMCs that reject their own ETags the ETag is dropped, so the
-    /// transport sends `If-Match: *`. On BMCs that accept a staged change
-    /// with a `202` naming no task, that `202` reads as an empty response.
+    /// The platform's protocol quirks apply in the compatibility layer: on
+    /// BMCs that reject their own ETags the transport sends `If-Match: *`,
+    /// and on BMCs that accept a staged change with a `202` naming no task,
+    /// that `202` reads as an empty response.
     ///
     /// # Errors
     ///
@@ -151,20 +160,7 @@ impl<B: Bmc> NvBmc<B> {
         V: Sync + Send + Serialize,
         R: Send + Sync + for<'de> Deserialize<'de>,
     {
-        let etag = if self.quirks.bug_rejects_own_etag() {
-            None
-        } else {
-            etag
-        };
-        match self.bmc.update(id, etag, update).await {
-            Err(error)
-                if self.quirks.bug_accepted_update_without_task()
-                    && error.error_class() == BmcErrorClass::HttpResponse { status: 202 } =>
-            {
-                Ok(ModificationResponse::Empty)
-            }
-            result => result.map_err(Error::Bmc),
-        }
+        self.bmc.update(id, etag, update).await.map_err(Error::from)
     }
 }
 
@@ -177,32 +173,5 @@ impl<B: Bmc> Clone for NvBmc<B> {
             protocol_features: self.protocol_features.clone(),
             quirks: self.quirks.clone(),
         }
-    }
-}
-
-/// A response body kept as it arrived, for [`NvBmc::get_raw`].
-struct RawBody {
-    id: ODataId,
-    body: serde_json::Value,
-}
-
-impl EntityTypeRef for RawBody {
-    fn odata_id(&self) -> &ODataId {
-        &self.id
-    }
-    fn etag(&self) -> Option<&ODataETag> {
-        None
-    }
-}
-
-impl<'de> Deserialize<'de> for RawBody {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Ok(Self {
-            id: String::new().into(),
-            body: serde_json::Value::deserialize(deserializer)?,
-        })
     }
 }

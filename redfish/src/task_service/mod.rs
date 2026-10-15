@@ -73,7 +73,7 @@ impl<B: Bmc> TaskCollection<B> {
         let collection = NavProperty::<TaskCollectionSchema>::new_reference(self.id.clone())
             .get(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)?;
+            .map_err(Error::from)?;
         Ok(collection
             .members
             .iter()
@@ -355,7 +355,7 @@ impl<B: Bmc> TaskService<B> {
             return Ok(None);
         };
 
-        let data = service_ref.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
+        let data = service_ref.get(bmc.as_ref()).await.map_err(Error::from)?;
 
         // Task links need the BMC-advertised Tasks collection as the allowed
         // parent path for all async task locations.

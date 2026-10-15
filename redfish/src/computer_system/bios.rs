@@ -46,7 +46,7 @@ impl<B: Bmc> Bios<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(crate::Error::Bmc)
+            .map_err(crate::Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -135,7 +135,7 @@ impl<B: Bmc> Bios<B> {
         actions
             .reset_bios(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Change or clear a BIOS password.
@@ -166,7 +166,7 @@ impl<B: Bmc> Bios<B> {
         actions
             .change_password(self.bmc.as_ref(), password_name, old_password, new_password)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get bios attribute by key value.

@@ -25,8 +25,9 @@
 //!
 //! Vendor compatibility
 //! - Some implementations omit fields marked as `Redfish.Required`.
-//! - This crate can apply read/response patches (see `patch_support`) to keep
-//!   behavior compatible across vendors (for example, defaulting `AccountTypes`).
+//! - Every read goes through the compatibility layer of `nv-redfish-quirks`,
+//!   which repairs such documents for the platform (for example, defaulting
+//!   `AccountTypes`).
 //!
 
 /// Collection of accounts.
@@ -34,9 +35,6 @@ mod collection;
 /// Account inside account service.
 mod item;
 
-use crate::patch_support::JsonValue;
-use crate::patch_support::Payload;
-use crate::patch_support::ReadPatchFn;
 use crate::schema::account_service::AccountService as SchemaAccountService;
 use crate::Error;
 use crate::NvBmc;
@@ -95,18 +93,16 @@ impl AccountServiceConfig {
         }
     }
 
-    fn collection_config(&self, read_patch_fn: Option<ReadPatchFn>) -> collection::Config {
+    fn collection_config(&self) -> collection::Config {
         match &self.behavior {
             AccountServiceBehavior::Standard => collection::Config {
                 account: AccountConfig {
-                    read_patch_fn,
                     deletion_strategy: DeletionStrategy::DeleteResource,
                 },
                 fixed_slots: None,
             },
             AccountServiceBehavior::FixedSlots(slots) => collection::Config {
                 account: AccountConfig {
-                    read_patch_fn,
                     deletion_strategy: DeletionStrategy::DisableSlot,
                 },
                 fixed_slots: Some(FixedSlotConfig {
@@ -120,7 +116,6 @@ impl AccountServiceConfig {
 /// Account service. Provides the ability to manage accounts via Redfish.
 pub struct AccountService<B: Bmc> {
     config: AccountServiceConfig,
-    account_read_patch_fn: Option<ReadPatchFn>,
     service: Arc<SchemaAccountService>,
     bmc: NvBmc<B>,
 }
@@ -136,22 +131,9 @@ impl<B: Bmc> AccountService<B> {
         let Some(service_nav) = root.root.account_service.as_ref() else {
             return Ok(None);
         };
-        let service = fetch_account_service(bmc, service_nav).await?;
-
-        let mut patches = Vec::new();
-        if bmc.quirks.bug_no_account_type_in_accounts() {
-            patches.push(append_default_account_type);
-        }
-        let account_read_patch_fn = if patches.is_empty() {
-            None
-        } else {
-            let account_read_patch_fn: ReadPatchFn =
-                Arc::new(move |v| patches.iter().fold(v, |acc, f| f(acc)));
-            Some(account_read_patch_fn)
-        };
+        let service = service_nav.get(bmc.as_ref()).await.map_err(Error::from)?;
         Ok(Some(Self {
             config,
-            account_read_patch_fn,
             service,
             bmc: bmc.clone(),
         }))
@@ -168,8 +150,8 @@ impl<B: Bmc> AccountService<B> {
 
     /// Update this account service.
     ///
-    /// The immutable account behavior and account read-patch configuration are
-    /// retained when the response contains an updated resource.
+    /// The immutable account behavior is retained when the response contains
+    /// an updated resource.
     ///
     /// # Errors
     ///
@@ -186,10 +168,9 @@ impl<B: Bmc> AccountService<B> {
             )
             .await?
             .try_map_entity_async(|nav| async move {
-                let service = fetch_account_service(&self.bmc, &nav).await?;
+                let service = nav.get(self.bmc.as_ref()).await.map_err(Error::from)?;
                 Ok(Self {
                     config: self.config.clone(),
-                    account_read_patch_fn: self.account_read_patch_fn.clone(),
                     service,
                     bmc: self.bmc.clone(),
                 })
@@ -209,9 +190,7 @@ impl<B: Bmc> AccountService<B> {
     /// Returns an error if expanding the collection fails.
     pub async fn accounts(&self) -> Result<Option<AccountCollection<B>>, Error<B>> {
         if let Some(collection_ref) = self.service.accounts.as_ref() {
-            let config = self
-                .config
-                .collection_config(self.account_read_patch_fn.clone());
+            let config = self.config.collection_config();
             AccountCollection::new(self.bmc.clone(), collection_ref, config)
                 .await
                 .map(Some)
@@ -219,74 +198,4 @@ impl<B: Bmc> AccountService<B> {
             Ok(None)
         }
     }
-}
-
-/// Fetch AccountService while applying platform-specific payload repairs.
-async fn fetch_account_service<B: Bmc>(
-    bmc: &NvBmc<B>,
-    nav: &NavProperty<SchemaAccountService>,
-) -> Result<Arc<SchemaAccountService>, Error<B>> {
-    if cfg!(feature = "certificates")
-        && bmc
-            .quirks
-            .bug_incomplete_account_service_certificate_collection()
-    {
-        Payload::get(
-            bmc.as_ref(),
-            nav,
-            normalize_dpu_certificate_collection_stubs,
-        )
-        .await
-    } else {
-        nav.get(bmc.as_ref()).await.map_err(Error::Bmc)
-    }
-}
-
-// `AccountTypes` is marked as `Redfish.Required`, but some systems
-// ignore this requirement. The account service replaces its value with
-// a reasonable default (see below).
-//
-// Note quote from schema: "if this property is not provided by the client, the default value
-// shall be an array that contains the value `Redfish`".
-fn append_default_account_type(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("AccountTypes")
-            .or_insert(JsonValue::Array(vec![JsonValue::String("Redfish".into())]));
-        JsonValue::Object(obj)
-    } else {
-        v
-    }
-}
-
-/// Convert incomplete NVIDIA DPU certificate collection stubs to references.
-fn normalize_dpu_certificate_collection_stubs(mut value: JsonValue) -> JsonValue {
-    fn normalize(value: &mut JsonValue) {
-        match value {
-            JsonValue::Object(object) => {
-                let certificate_collection = object
-                    .get("@odata.type")
-                    .and_then(JsonValue::as_str)
-                    .is_some_and(|odata_type| odata_type.starts_with("#CertificateCollection."));
-                if certificate_collection && !object.contains_key("Name") {
-                    if let Some(odata_id) = object.get("@odata.id").cloned() {
-                        object.clear();
-                        object.insert("@odata.id".to_string(), odata_id);
-                        return;
-                    }
-                }
-                for value in object.values_mut() {
-                    normalize(value);
-                }
-            }
-            JsonValue::Array(values) => {
-                for value in values {
-                    normalize(value);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    normalize(&mut value);
-    value
 }

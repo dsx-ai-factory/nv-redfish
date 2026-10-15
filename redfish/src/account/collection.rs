@@ -26,7 +26,7 @@
 //!     configured inclusive range.
 //!
 //! Configuration:
-//! - `account`: controls read patching via `read_patch_fn`.
+//! - `account`: per-account behavior, such as how deletion is performed.
 //! - `fixed_slots`: inclusive numeric slot range. Disabled slots are omitted
 //!   from `all_accounts_data`.
 //!
@@ -41,8 +41,6 @@ use crate::account::AccountConfig;
 use crate::account::ManagerAccountCreate;
 use crate::account::ManagerAccountUpdate;
 use crate::patch_support::CollectionWithPatch;
-use crate::patch_support::CreateWithPatch;
-use crate::patch_support::ReadPatchFn;
 use crate::schema::account_service::MfaBypassUpdate;
 use crate::schema::manager_account::ManagerAccount;
 use crate::schema::manager_account::SnmpUserInfoUpdate;
@@ -54,10 +52,12 @@ use crate::NvBmc;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::BmcError as _;
 use nv_redfish_core::BmcErrorClass;
+use nv_redfish_core::Creatable as _;
 use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataId;
+use nv_redfish_core::ReferenceLeaf;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -114,24 +114,10 @@ impl<B: Bmc> CollectionWithPatch<ManagerAccountCollection, ManagerAccount, B>
     }
 }
 
-impl<B: Bmc> CreateWithPatch<ManagerAccountCollection, ManagerAccount, ManagerAccountCreate, B>
-    for AccountCollection<B>
-{
-    fn entity_ref(&self) -> &ManagerAccountCollection {
-        self.collection.as_ref()
-    }
-    fn patch(&self) -> Option<&ReadPatchFn> {
-        self.config.account.read_patch_fn.as_ref()
-    }
-    fn bmc(&self) -> &B {
-        self.bmc.as_ref()
-    }
-}
-
 impl<B: Bmc> AccountCollection<B> {
     fn fixed_slot_read_error_is_skippable(error: &Error<B>) -> bool {
         match error {
-            Error::Json(_) => true,
+            Error::Json(_) | Error::Decode(_) => true,
             Error::Bmc(error) => matches!(
                 error.error_class(),
                 BmcErrorClass::HttpResponse { status: 404 | 410 }
@@ -147,13 +133,7 @@ impl<B: Bmc> AccountCollection<B> {
         collection_ref: &NavProperty<ManagerAccountCollection>,
         config: Config,
     ) -> Result<Self, Error<B>> {
-        let collection = Self::expand_collection(
-            &bmc,
-            collection_ref,
-            config.account.read_patch_fn.as_ref(),
-            None,
-        )
-        .await?;
+        let collection = Self::expand_collection(&bmc, collection_ref, None, None).await?;
         Ok(Self {
             config,
             bmc,
@@ -264,10 +244,31 @@ impl<B: Bmc> AccountCollection<B> {
             }
             // No available slot found
             Err(Error::AccountSlotNotAvailable)
+        } else if self.bmc.quirks.bug_no_account_type_in_accounts() {
+            // The platform answers with an account that lacks
+            // `AccountTypes`, which only a read through the compatibility
+            // layer repairs: take the reply as a reference and read the new
+            // account.
+            self.bmc
+                .as_ref()
+                .create::<_, ReferenceLeaf>(self.collection.odata_id(), &create)
+                .await
+                .map_err(Error::from)?
+                .try_map_entity_async(|created| async move {
+                    Account::new(
+                        &self.bmc,
+                        &NavProperty::new_reference(created.odata_id),
+                        &self.config.account,
+                    )
+                    .await
+                })
+                .await
         } else {
             Ok(self
-                .create_with_patch(&create)
-                .await?
+                .collection
+                .create(self.bmc.as_ref(), &create)
+                .await
+                .map_err(Error::from)?
                 .map_entity(|account| {
                     Account::from_data(self.bmc.clone(), account, self.config.account.clone())
                 }))

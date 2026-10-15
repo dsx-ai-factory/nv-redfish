@@ -45,7 +45,7 @@ impl<B: Bmc> JobService<B> {
         service_ref
             .get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| {
                 Some(Self {
                     bmc: bmc.clone(),
@@ -124,7 +124,7 @@ impl<B: Bmc> JobCollection<B> {
         let collection = NavProperty::<JobCollectionSchema>::new_reference(self.id.clone())
             .get(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)?;
+            .map_err(Error::from)?;
         Ok(collection
             .members
             .iter()

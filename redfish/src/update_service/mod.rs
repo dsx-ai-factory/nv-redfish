@@ -26,8 +26,6 @@ use std::time::Duration;
 use crate::core::NavProperty;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaUpdateServiceActions;
-use crate::patch_support::Payload;
-use crate::patch_support::ReadPatchFn;
 use crate::schema::update_service::UpdateService as UpdateServiceSchema;
 use crate::schema::update_service::UpdateServiceSimpleUpdateAction;
 use crate::schema::ActionAnnotations;
@@ -45,7 +43,6 @@ use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::UploadReader;
 #[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::UploadStream;
-use serde_json::Value as JsonValue;
 use software_inventory::SoftwareInventoryCollection;
 
 #[doc(inline)]
@@ -86,7 +83,6 @@ pub struct MultipartUpdateParametersWithApplyTime {
 pub struct UpdateService<B: Bmc> {
     bmc: NvBmc<B>,
     data: Arc<UpdateServiceSchema>,
-    fw_inventory_read_patch_fn: Option<ReadPatchFn>,
 }
 
 impl<B: Bmc> UpdateService<B> {
@@ -95,38 +91,14 @@ impl<B: Bmc> UpdateService<B> {
         bmc: &NvBmc<B>,
         root: &ServiceRoot<B>,
     ) -> Result<Option<Self>, Error<B>> {
-        let mut service_patches = Vec::new();
-        if bmc.quirks.bug_missing_update_service_name_field() {
-            service_patches.push(add_default_update_service_name);
-        }
-        let service_patch_fn = (!service_patches.is_empty()).then(|| {
-            Arc::new(move |v| service_patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn
-        });
-
-        let mut fw_inventory_patches = Vec::new();
-        if bmc.quirks.fw_inventory_wrong_release_date() {
-            fw_inventory_patches.push(fw_inventory_patch_wrong_release_date);
-        }
-        let fw_inventory_read_patch_fn = (!fw_inventory_patches.is_empty()).then(|| {
-            Arc::new(move |v| fw_inventory_patches.iter().fold(v, |acc, f| f(acc))) as ReadPatchFn
-        });
-
         if let Some(nav) = &root.root.update_service {
-            if let Some(service_patch_fn) = service_patch_fn {
-                Payload::get(bmc.as_ref(), nav, service_patch_fn.as_ref()).await
-            } else {
-                nav.get(bmc.as_ref()).await.map_err(Error::Bmc)
-            }
-            .map(Some)
+            nav.get(bmc.as_ref()).await.map_err(Error::from).map(Some)
         } else if bmc.quirks.bug_missing_root_nav_properties() {
-            let nav =
-                NavProperty::new_reference(format!("{}/UpdateService", root.root.odata_id).into());
-            if let Some(service_patch_fn) = service_patch_fn {
-                Payload::get(bmc.as_ref(), &nav, service_patch_fn.as_ref()).await
-            } else {
-                nav.get(bmc.as_ref()).await.map_err(Error::Bmc)
-            }
-            .map(Some)
+            NavProperty::new_reference(format!("{}/UpdateService", root.root.odata_id).into())
+                .get(bmc.as_ref())
+                .await
+                .map_err(Error::from)
+                .map(Some)
         } else {
             Ok(None)
         }
@@ -134,7 +106,6 @@ impl<B: Bmc> UpdateService<B> {
             d.map(|data| Self {
                 bmc: bmc.clone(),
                 data,
-                fw_inventory_read_patch_fn,
             })
         })
     }
@@ -176,15 +147,11 @@ impl<B: Bmc> UpdateService<B> {
         &self,
     ) -> Result<Option<Vec<SoftwareInventory<B>>>, Error<B>> {
         if let Some(collection_ref) = &self.data.firmware_inventory {
-            SoftwareInventoryCollection::new(
-                &self.bmc,
-                collection_ref,
-                self.fw_inventory_read_patch_fn.clone(),
-            )
-            .await?
-            .members()
-            .await
-            .map(Some)
+            SoftwareInventoryCollection::new(&self.bmc, collection_ref)
+                .await?
+                .members()
+                .await
+                .map(Some)
         } else {
             Ok(None)
         }
@@ -204,7 +171,7 @@ impl<B: Bmc> UpdateService<B> {
             let collection = self.bmc.expand_property(collection_ref).await?;
             let mut items = Vec::new();
             for item_ref in &collection.members {
-                items.push(SoftwareInventory::new(&self.bmc, item_ref, None).await?);
+                items.push(SoftwareInventory::new(&self.bmc, item_ref).await?);
             }
             Ok(Some(items))
         } else {
@@ -275,7 +242,7 @@ impl<B: Bmc> UpdateService<B> {
                 },
             )
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Start updates that have been previously invoked with an `OperationApplyTime` of
@@ -299,7 +266,7 @@ impl<B: Bmc> UpdateService<B> {
         actions
             .start_update(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Update this service with generated `UpdateServiceUpdate` fields.
@@ -321,12 +288,11 @@ impl<B: Bmc> UpdateService<B> {
             )
             .await?
             .try_map_entity_async(|nav| async move {
-                let data = nav.get(self.bmc.as_ref()).await.map_err(Error::Bmc)?;
+                let data = nav.get(self.bmc.as_ref()).await.map_err(Error::from)?;
 
                 Ok(Self {
                     bmc: self.bmc.clone(),
                     data,
-                    fw_inventory_read_patch_fn: self.fw_inventory_read_patch_fn.clone(),
                 })
             })
             .await
@@ -381,7 +347,7 @@ impl<B: Bmc> UpdateService<B> {
             .as_ref()
             .http_push_uri_update(http_push_uri, request)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Upload a named stream using this service's `MultipartHttpPushUri`.
@@ -438,32 +404,6 @@ impl<B: Bmc> UpdateService<B> {
             .as_ref()
             .multipart_update(multipart_uri, request)
             .await
-            .map_err(Error::Bmc)
-    }
-}
-
-// `ReleaseDate` is marked as `edm.DateTimeOffset`, but some systems
-// puts "00:00:00Z" as ReleaseDate that is not conform to ABNF of the DateTimeOffset.
-// we delete such fields...
-fn fw_inventory_patch_wrong_release_date(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        if let Some(JsonValue::String(date)) = obj.get("ReleaseDate") {
-            if date == "00:00:00Z" || date == "0000-00-00T00:00:00Z" {
-                obj.remove("ReleaseDate");
-            }
-        }
-        JsonValue::Object(obj)
-    } else {
-        v
-    }
-}
-
-fn add_default_update_service_name(v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = v {
-        obj.entry("Name")
-            .or_insert(JsonValue::String("Unnamed update service".into()));
-        JsonValue::Object(obj)
-    } else {
-        v
+            .map_err(Error::from)
     }
 }

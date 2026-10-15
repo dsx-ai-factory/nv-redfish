@@ -44,10 +44,12 @@ use nv_redfish_core::AsyncTask;
 use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::DataStream;
+use nv_redfish_core::DecodeError;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
 use nv_redfish_core::OemMultipartPart;
+use nv_redfish_core::Repair;
 use nv_redfish_core::SessionCreateResponse;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
@@ -199,6 +201,13 @@ impl nv_redfish_core::BmcError for BmcError {
             Self::JsonError(_) | Self::DecodeError(_) => BmcErrorClass::ResponseParse,
             Self::ReqwestError(_) => BmcErrorClass::Transport,
             _ => BmcErrorClass::Other,
+        }
+    }
+
+    fn into_decode_error(self) -> Result<DecodeError, Self> {
+        match self {
+            Self::JsonError(error) => Ok(error),
+            other => Err(other),
         }
     }
 }
@@ -777,7 +786,11 @@ impl Client {
         }
     }
 
-    async fn handle_response<T>(&self, response: reqwest::Response) -> Result<T, BmcError>
+    async fn handle_response<T>(
+        &self,
+        response: reqwest::Response,
+        repair: &impl Repair,
+    ) -> Result<T, BmcError>
     where
         T: DeserializeOwned,
     {
@@ -797,6 +810,10 @@ impl Client {
 
         let mut value: serde_json::Value =
             serde_json::from_slice(&body).map_err(BmcError::DecodeError)?;
+
+        // Repaired before the header's ETag goes in, so no repair can take
+        // away what the cache revalidates with.
+        repair.repair(&mut value);
 
         if let Some(etag) = etag_header {
             inject_etag(&etag, &mut value);
@@ -1194,6 +1211,7 @@ impl HttpClient for Client {
         credentials: &BmcCredentials,
         etag: Option<ODataETag>,
         custom_headers: &HeaderMap,
+        repair: &impl Repair,
     ) -> Result<T, Self::Error>
     where
         T: DeserializeOwned,
@@ -1206,7 +1224,7 @@ impl HttpClient for Client {
         }
 
         let response = self.send(request.build()?).await?;
-        self.handle_response(response).await
+        self.handle_response(response, repair).await
     }
 
     async fn poll<T>(
@@ -1731,7 +1749,7 @@ mod tests {
         );
 
         let decode_error = client
-            .handle_response::<serde_json::Value>(response)
+            .handle_response::<serde_json::Value>(response, &nv_redfish_core::NoRepair)
             .await
             .expect_err("invalid JSON must fail to decode");
 
@@ -1771,6 +1789,7 @@ mod tests {
                 &credentials,
                 None,
                 &HeaderMap::new(),
+                &nv_redfish_core::NoRepair,
             )
             .await
             .expect_err("the truncated response body must fail");
@@ -1808,6 +1827,7 @@ mod tests {
                 &credentials,
                 None,
                 &headers,
+                &nv_redfish_core::NoRepair,
             )
             .await;
 
@@ -1850,6 +1870,7 @@ mod tests {
                 &credentials,
                 None,
                 &headers,
+                &nv_redfish_core::NoRepair,
             )
             .await?;
 
@@ -1984,6 +2005,7 @@ mod tests {
                 &credentials,
                 None,
                 &HeaderMap::new(),
+                &nv_redfish_core::NoRepair,
             )
             .await?;
 
@@ -2045,6 +2067,7 @@ mod tests {
                 &credentials,
                 None,
                 &HeaderMap::new(),
+                &nv_redfish_core::NoRepair,
             )
             .await?;
 

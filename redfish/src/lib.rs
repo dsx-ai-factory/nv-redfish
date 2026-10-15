@@ -20,7 +20,11 @@
 //! - High-level entry points (for example, [`ServiceRoot`])
 //! - Modular, feature-gated services (enable only what you need)
 //! - OEM extension support (also under feature flags)
-//! - Patch helpers for vendor quirks that deviate from the Redfish CSDL
+//! - Platform quirks from `nv-redfish-quirks` (re-exported as [`quirks`]):
+//!   every wrapper reads through its [`Bmc`] layer, which applies the
+//!   platform's document repairs and the caller's runtime rules
+//!   ([`ServiceRoot::with_user_rules`]); schema types read directly through
+//!   the same layer ([`ServiceRoot::compat`]) get the same repairs
 //!
 //! Relationship to other crates
 //! - Depends on `nv-redfish-core` for transport-agnostic traits (`Bmc`) and
@@ -187,11 +191,11 @@ pub(crate) mod protocol_features;
 /// Bmc wrapper used in nv-redfish.
 pub(crate) mod bmc;
 
-/// BMC quirks support.
-pub(crate) mod bmc_quirks;
-
 #[doc(inline)]
 pub use nv_redfish_core as core;
+
+#[doc(inline)]
+pub use nv_redfish_quirks as quirks;
 
 #[cfg(feature = "bmc-http")]
 #[doc(inline)]

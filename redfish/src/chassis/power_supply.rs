@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::patch_support::{CollectionWithPatch, JsonValue, Payload, ReadPatchFn};
+use crate::patch_support::{CollectionWithPatch, JsonValue};
 use crate::resource::ResetType;
 use crate::schema::power_supply::PowerSupply as PowerSupplySchema;
 use crate::schema::power_supply_collection::PowerSupplyCollection as PowerSupplyCollectionSchema;
@@ -21,9 +21,11 @@ use crate::schema::power_supply_metrics::PowerSupplyMetrics;
 use crate::schema::resource::ResourceCollection;
 use crate::Error;
 use crate::NvBmc;
+use nv_redfish_core::repair::decode;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
+use nv_redfish_core::Raw;
 use std::sync::Arc;
 
 #[cfg(feature = "sensors")]
@@ -48,14 +50,24 @@ impl<B: Bmc> PowerSupply<B> {
     pub(crate) async fn new(
         bmc: &NvBmc<B>,
         nav: &NavProperty<PowerSupplySchema>,
-        read_patch_fn: Option<&ReadPatchFn>,
+        repair: Option<fn(JsonValue) -> JsonValue>,
     ) -> Result<Self, Error<B>> {
-        if let Some(read_patch_fn) = read_patch_fn {
-            Payload::get(bmc.as_ref(), nav, read_patch_fn.as_ref()).await
-        } else {
-            nav.get(bmc.as_ref()).await.map_err(Error::Bmc)
-        }
-        .map(|data| Self {
+        let data = match (repair, nav) {
+            // Read as it came through the layer, then repaired here: the
+            // repair depends on the chassis, which the layer cannot see.
+            (Some(repair), NavProperty::Reference(_)) => {
+                let raw = NavProperty::<Raw>::new_reference(nav.id().clone())
+                    .get(bmc.as_ref())
+                    .await
+                    .map_err(Error::from)?;
+                let document =
+                    Arc::try_unwrap(raw).map_or_else(|raw| raw.value().clone(), Raw::into_value);
+                Arc::new(decode(repair(document)).map_err(Error::Decode)?)
+            }
+            // An expanded member was repaired when its collection was read.
+            _ => nav.get(bmc.as_ref()).await.map_err(Error::from)?,
+        };
+        Ok(Self {
             bmc: bmc.clone(),
             data,
         })
@@ -96,7 +108,7 @@ impl<B: Bmc> PowerSupply<B> {
         actions
             .reset(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get power supply metrics.
@@ -113,7 +125,7 @@ impl<B: Bmc> PowerSupply<B> {
             metrics_ref
                 .get(self.bmc.as_ref())
                 .await
-                .map_err(Error::Bmc)
+                .map_err(Error::from)
                 .map(Some)
         } else {
             Ok(None)
@@ -132,7 +144,7 @@ impl<B: Bmc> PowerSupply<B> {
             metrics_ref
                 .get(self.bmc.as_ref())
                 .await
-                .map_err(Error::Bmc)
+                .map_err(Error::from)
                 .map(|m| {
                     extract_sensor_uris!(m,
                         single: input_voltage,
@@ -179,19 +191,6 @@ impl<B: Bmc> PowerSupply<B> {
             .transpose()
             .map(|v| v.and_then(identity))
     }
-}
-
-/// Remove Lite-On's invalid LED object while preserving schema-valid values.
-pub(super) fn remove_invalid_power_supply_location_indicator_active(mut v: JsonValue) -> JsonValue {
-    if let JsonValue::Object(ref mut obj) = v {
-        if obj
-            .get("LocationIndicatorActive")
-            .is_some_and(JsonValue::is_object)
-        {
-            obj.remove("LocationIndicatorActive");
-        }
-    }
-    v
 }
 
 impl<B: Bmc> CollectionWithPatch<PowerSupplyCollectionSchema, PowerSupplySchema, B>

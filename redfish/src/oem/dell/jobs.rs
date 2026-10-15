@@ -76,7 +76,7 @@ impl<B: Bmc> DellJobs<B> {
                 ModificationResponse::Task(task) => ModificationResponse::Task(task),
                 ModificationResponse::Empty => ModificationResponse::Empty,
             })
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Create a job link from an asynchronous operation result, such as the

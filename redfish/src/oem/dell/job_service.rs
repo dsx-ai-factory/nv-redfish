@@ -38,7 +38,7 @@ impl<B: Bmc> DellJobService<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,
@@ -69,7 +69,7 @@ impl<B: Bmc> DellJobService<B> {
         actions
             .delete_job_queue(self.bmc.as_ref(), job_id.into())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Get the raw Dell job-service schema.

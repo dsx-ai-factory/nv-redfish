@@ -24,7 +24,6 @@ use crate::oem::lenovo::boot_manager::LenovoBootManagerCollection;
 use crate::oem::lenovo::oem_update;
 use crate::oem::lenovo::schema::lenovo_computer_system::LenovoSystemProperties as LenovoSystemPropertiesSchema;
 use crate::oem::oem_object;
-use crate::patch_support::ReadPatchFn;
 use crate::schema::computer_system::ComputerSystem as ComputerSystemSchema;
 use crate::schema::computer_system::ComputerSystemUpdate;
 use crate::Error;
@@ -49,7 +48,6 @@ pub struct LenovoComputerSystem<B: Bmc> {
     computer_system_etag: Option<ODataETag>,
     computer_system_id: ODataId,
     data: Arc<LenovoSystemPropertiesSchema>,
-    read_patch_fn: Option<ReadPatchFn>,
 }
 
 impl<B: Bmc> LenovoComputerSystem<B> {
@@ -63,7 +61,6 @@ impl<B: Bmc> LenovoComputerSystem<B> {
     pub(crate) fn new(
         bmc: &NvBmc<B>,
         computer_system: &ComputerSystemSchema,
-        read_patch_fn: Option<&ReadPatchFn>,
     ) -> Result<Option<Self>, Error<B>> {
         Ok(computer_system
             .oem
@@ -74,7 +71,6 @@ impl<B: Bmc> LenovoComputerSystem<B> {
                 computer_system_etag: computer_system.etag().cloned(),
                 computer_system_id: computer_system.odata_id().clone(),
                 data,
-                read_patch_fn: read_patch_fn.cloned(),
             }))
     }
 
@@ -125,9 +121,7 @@ impl<B: Bmc> LenovoComputerSystem<B> {
                 &update,
             )
             .await?
-            .try_map_entity_async(|nav| async move {
-                ComputerSystem::new(&self.bmc, &nav, self.read_patch_fn.as_ref()).await
-            })
+            .try_map_entity_async(|nav| async move { ComputerSystem::new(&self.bmc, &nav).await })
             .await
     }
 

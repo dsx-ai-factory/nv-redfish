@@ -68,7 +68,7 @@ impl<B: Bmc> DeltaPowerShelf<B> {
         self.actions()?
             .turn_on_psus(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Turn off all PSUs in the shelf.
@@ -85,7 +85,7 @@ impl<B: Bmc> DeltaPowerShelf<B> {
         self.actions()?
             .turn_off_psus(self.bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Type of the power shelf, for example `1RU_HPR_Power_Shelf`.

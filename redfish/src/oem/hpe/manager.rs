@@ -166,6 +166,6 @@ impl<B: Bmc> HpeManager<B> {
         actions
             .reset_to_factory_defaults(self.bmc.as_ref(), ResetType::Default)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }

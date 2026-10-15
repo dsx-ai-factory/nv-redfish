@@ -87,7 +87,7 @@ impl<B: Bmc> ControlCollection<B> {
         // Read the collection from the BMC so members can be fetched later.
         nav.get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|collection| Self {
                 bmc: bmc.clone(),
                 collection,
@@ -133,7 +133,7 @@ impl<B: Bmc> Control<B> {
     ) -> Result<Self, Error<B>> {
         nav.get(bmc.as_ref())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
             .map(|data| Self {
                 bmc: bmc.clone(),
                 data,

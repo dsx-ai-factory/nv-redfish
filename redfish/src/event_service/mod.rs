@@ -17,14 +17,10 @@
 //!
 //! This module provides typed access to Redfish `EventService`.
 
-mod patch;
-
-use crate::patch_support::ReadPatchFn;
 use crate::schema::event_service::EventService as EventServiceSchema;
 use crate::Error;
 use crate::NvBmc;
 use crate::ServiceRoot;
-use futures_util::future;
 use futures_util::TryStreamExt as _;
 use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Bmc;
@@ -82,7 +78,6 @@ impl<'de> Deserialize<'de> for EventStreamPayload {
 pub struct EventService<B: Bmc> {
     data: Arc<EventServiceSchema>,
     bmc: NvBmc<B>,
-    sse_read_patches: Vec<ReadPatchFn>,
 }
 
 impl<B: Bmc> EventService<B> {
@@ -92,45 +87,11 @@ impl<B: Bmc> EventService<B> {
         root: &ServiceRoot<B>,
     ) -> Result<Option<Self>, Error<B>> {
         if let Some(service_ref) = &root.root.event_service {
-            let data = service_ref.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
-
-            let mut sse_read_patches = Vec::new();
-            let mut sse_event_record_patches: Vec<patch::EventRecordPatchFn> = Vec::new();
-
-            // Remove empty links before deciding whether a record is reference-only.
-            if bmc.quirks.event_service_sse_empty_log_entry() {
-                sse_event_record_patches.push(patch::patch_empty_log_entry);
-            }
-
-            // Record ID generation below needs MemberId to be present first.
-            if bmc.quirks.event_service_sse_no_member_id() {
-                sse_event_record_patches.push(patch::patch_missing_event_record_member_id);
-            }
-
-            if bmc.quirks.event_service_sse_missing_event_type() {
-                sse_event_record_patches.push(patch::patch_missing_event_type_to_other);
-            }
-            if bmc.quirks.event_service_sse_no_odata_id() {
-                let patch_event_id: ReadPatchFn =
-                    Arc::new(patch::patch_missing_event_odata_id as fn(JsonValue) -> JsonValue);
-                sse_read_patches.push(patch_event_id);
-                sse_event_record_patches.push(patch::patch_missing_event_record_odata_id);
-            }
-            if bmc.quirks.event_service_sse_wrong_timestamp_offset() {
-                sse_event_record_patches.push(patch::patch_compact_event_timestamp_offset);
-            }
-
-            if !sse_event_record_patches.is_empty() {
-                let patch_event_records: ReadPatchFn = Arc::new(move |payload| {
-                    patch::patch_event_records(payload, &sse_event_record_patches)
-                });
-                sse_read_patches.push(patch_event_records);
-            }
+            let data = service_ref.get(bmc.as_ref()).await.map_err(Error::from)?;
 
             Ok(Some(Self {
                 data,
                 bmc: bmc.clone(),
-                sse_read_patches,
             }))
         } else {
             Ok(None)
@@ -154,7 +115,9 @@ impl<B: Bmc> EventService<B> {
     /// Returns an error if:
     /// - `ServerSentEventUri` is not present in `EventService`
     /// - opening or consuming the SSE stream through the underlying BMC transport fails
-    /// - deserializing patched SSE payload into [`EventStreamPayload`] fails
+    /// - a payload, repaired by the compatibility layer, does not deserialize
+    ///   into [`EventStreamPayload`]; that event is one error item and the
+    ///   stream goes on
     pub async fn events(&self) -> Result<BoxTryStream<EventStreamPayload, Error<B>>, Error<B>>
     where
         B: 'static,
@@ -191,43 +154,16 @@ impl<B: Bmc> EventService<B> {
             .as_ref()
             .ok_or(Error::EventServiceServerSentEventUriNotAvailable)?;
 
+        // The compatibility layer repairs each payload under the SSE id it
+        // arrived with before it is decoded.
         let stream = self
             .bmc
             .as_ref()
-            .stream_events::<JsonValue>(stream_uri, last_event_id)
+            .stream_events::<EventStreamPayload>(stream_uri, last_event_id)
             .await
-            .map_err(Error::Bmc)?;
+            .map_err(Error::from)?;
 
-        let sse_read_patches = self.sse_read_patches.clone();
-        let missing_envelope_ids = self.bmc.quirks.event_service_sse_missing_envelope_ids();
-
-        let stream = stream.map_err(Error::Bmc).and_then(move |event| {
-            let StreamEvent {
-                last_event_id,
-                data,
-            } = event;
-
-            // Supply Id before the existing envelope @odata.id patch. The transport
-            // cursor is only borrowed: it may be inherited and remains unchanged.
-            let data = if missing_envelope_ids {
-                patch::patch_missing_event_id(data, last_event_id.as_deref())
-            } else {
-                data
-            };
-
-            let patched = sse_read_patches.iter().fold(data, |acc, patch| patch(acc));
-
-            future::ready(
-                serde_json::from_value::<EventStreamPayload>(patched)
-                    .map(|data| StreamEvent {
-                        last_event_id,
-                        data,
-                    })
-                    .map_err(Error::Json),
-            )
-        });
-
-        Ok(Box::pin(stream))
+        Ok(Box::pin(stream.map_err(Error::from)))
     }
 }
 

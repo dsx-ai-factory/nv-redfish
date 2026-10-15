@@ -52,7 +52,7 @@ impl<B: Bmc> SessionService<B> {
         root: &ServiceRoot<B>,
     ) -> Result<Option<Self>, Error<B>> {
         if let Some(service_ref) = &root.root.session_service {
-            let service = service_ref.get(bmc.as_ref()).await.map_err(Error::Bmc)?;
+            let service = service_ref.get(bmc.as_ref()).await.map_err(Error::from)?;
             Ok(Some(Self {
                 bmc: bmc.clone(),
                 service,

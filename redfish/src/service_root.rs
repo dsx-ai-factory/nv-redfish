@@ -15,7 +15,6 @@
 
 use std::sync::Arc;
 
-use crate::bmc_quirks::BmcQuirks;
 use crate::core::Bmc;
 use crate::core::NavProperty;
 use crate::core::ODataId;
@@ -23,6 +22,11 @@ use crate::schema::service_root::ServiceRoot as SchemaServiceRoot;
 use crate::Error;
 use crate::NvBmc;
 use crate::ProtocolFeatures;
+use nv_redfish_quirks::BmcQuirks;
+use nv_redfish_quirks::CompatBmc;
+use nv_redfish_quirks::Raw;
+use nv_redfish_quirks::RootEvidence;
+use nv_redfish_quirks::UserRules;
 
 use tagged_types::TaggedType;
 
@@ -112,23 +116,46 @@ impl<B: Bmc> ServiceRoot<B> {
     ///
     /// Returns error if retrieving the root path via Redfish fails.
     pub async fn new(bmc: Arc<B>) -> Result<Self, Error<B>> {
-        let root = NavProperty::<SchemaServiceRoot>::new_reference(ODataId::service_root())
+        Self::with_user_rules(bmc, UserRules::default()).await
+    }
+
+    /// Create a new service root whose reads apply `rules` after the
+    /// platform's repairs.
+    ///
+    /// The caller owns the rule set: keep one handle for as long as the
+    /// rules apply and pass clones of it to every root built for them, so
+    /// they reach every read and the transport's cached documents stay
+    /// valid from one root to the next.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if retrieving the root path via Redfish fails.
+    pub async fn with_user_rules(bmc: Arc<B>, rules: UserRules) -> Result<Self, Error<B>> {
+        // The root is read once, raw: it decides the platform, and is then
+        // repaired for it like any other document.
+        let raw = NavProperty::<Raw>::new_reference(ODataId::service_root())
             .get(bmc.as_ref())
             .await
             .map_err(Error::Bmc)?;
-        let quirks = BmcQuirks::new(&root);
+        let quirks = BmcQuirks::classify(&RootEvidence::from_root(raw.value()));
+        let compat = CompatBmc::new(bmc, Arc::new(quirks)).with_user_rules(rules);
+        let root = Arc::new(
+            compat
+                .decode::<SchemaServiceRoot>(raw.value().clone())
+                .map_err(Error::Decode)?,
+        );
         let mut protocol_features = root
             .protocol_features_supported
             .as_ref()
             .map(ProtocolFeatures::new)
             .unwrap_or_default();
 
-        if quirks.expand_is_not_working_properly() {
+        if compat.quirks().expand_is_not_working_properly() {
             protocol_features.expand.expand_all = false;
             protocol_features.expand.no_links = false;
         }
 
-        let bmc = NvBmc::new(bmc, protocol_features, quirks);
+        let bmc = NvBmc::new(compat, protocol_features);
         Ok(Self { root, bmc })
     }
 
@@ -138,6 +165,15 @@ impl<B: Bmc> ServiceRoot<B> {
         let root = self.root;
         let bmc = self.bmc.replace_bmc(bmc);
         Self { root, bmc }
+    }
+
+    /// The compatibility layer every wrapper under this root reads
+    /// through: documents carry the platform's repairs and the caller's.
+    /// Rules replaced through [`CompatBmc::user_rules`] apply to the
+    /// wrappers and to this handle alike.
+    #[must_use]
+    pub fn compat(&self) -> CompatBmc<B> {
+        self.bmc.compat()
     }
 
     /// Restrict usage of expand.
@@ -230,7 +266,7 @@ impl<B: Bmc> ServiceRoot<B> {
             let collection = collection
                 .get(self.bmc.as_ref())
                 .await
-                .map_err(Error::Bmc)?;
+                .map_err(Error::from)?;
             Ok(Some(
                 collection
                     .members

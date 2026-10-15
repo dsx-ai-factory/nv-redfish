@@ -23,8 +23,6 @@ use crate::hardware_id::Manufacturer as HardwareIdManufacturer;
 use crate::hardware_id::Model as HardwareIdModel;
 use crate::hardware_id::PartNumber as HardwareIdPartNumber;
 use crate::hardware_id::SerialNumber as HardwareIdSerialNumber;
-use crate::patch_support::Payload;
-use crate::patch_support::ReadPatchFn;
 use crate::resource::PowerState;
 use crate::resource::ResetType;
 use crate::schema::computer_system::BootSource;
@@ -111,7 +109,6 @@ pub struct ComputerSystem<B: Bmc> {
     #[allow(dead_code)] // feature-enabled...
     bmc: NvBmc<B>,
     data: Arc<ComputerSystemSchema>,
-    read_patch_fn: Option<ReadPatchFn>,
 }
 
 impl<B: Bmc> ComputerSystem<B> {
@@ -119,19 +116,14 @@ impl<B: Bmc> ComputerSystem<B> {
     pub(crate) async fn new(
         bmc: &NvBmc<B>,
         nav: &NavProperty<ComputerSystemSchema>,
-        read_patch_fn: Option<&ReadPatchFn>,
     ) -> Result<Self, Error<B>> {
-        let read_patch_fn = read_patch_fn.cloned();
-        if let Some(read_patch_fn) = read_patch_fn.as_ref() {
-            Payload::get(bmc.as_ref(), nav, read_patch_fn.as_ref()).await
-        } else {
-            nav.get(bmc.as_ref()).await.map_err(Error::Bmc)
-        }
-        .map(|data| Self {
-            bmc: bmc.clone(),
-            data,
-            read_patch_fn,
-        })
+        nav.get(bmc.as_ref())
+            .await
+            .map_err(Error::from)
+            .map(|data| Self {
+                bmc: bmc.clone(),
+                data,
+            })
     }
 
     /// Get the raw schema data for this computer system.
@@ -260,7 +252,7 @@ impl<B: Bmc> ComputerSystem<B> {
         actions
             .reset(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// An array of `BootOptionReference` strings that represent the persistent boot order for with this
@@ -362,9 +354,7 @@ impl<B: Bmc> ComputerSystem<B> {
         self.bmc
             .update::<_, NavProperty<ComputerSystemSchema>>(odata_id, etag, update)
             .await?
-            .try_map_entity_async(|nav| async move {
-                Self::new(&self.bmc, &nav, self.read_patch_fn.as_ref()).await
-            })
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
             .await
     }
 
@@ -480,7 +470,7 @@ impl<B: Bmc> ComputerSystem<B> {
             let log_services_collection = log_services_ref
                 .get(self.bmc.as_ref())
                 .await
-                .map_err(Error::Bmc)?;
+                .map_err(Error::from)?;
 
             let mut log_services = Vec::new();
             for m in &log_services_collection.members {
@@ -559,7 +549,7 @@ impl<B: Bmc> ComputerSystem<B> {
     /// Returns an error if Lenovo OEM data parsing fails.
     #[cfg(feature = "oem-lenovo")]
     pub fn oem_lenovo(&self) -> Result<Option<LenovoComputerSystem<B>>, Error<B>> {
-        LenovoComputerSystem::new(&self.bmc, &self.data, self.read_patch_fn.as_ref())
+        LenovoComputerSystem::new(&self.bmc, &self.data)
     }
 
     /// Get the Lenovo OEM actions advertised by this computer system.

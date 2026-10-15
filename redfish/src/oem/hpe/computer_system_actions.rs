@@ -78,7 +78,7 @@ impl<B: Bmc> HpeComputerSystemActions<B> {
         actions
             .system_reset(self.bmc.as_ref(), reset_type)
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 
     /// Cycle auxiliary power through the advertised HPE action.

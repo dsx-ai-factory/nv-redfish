@@ -92,7 +92,7 @@ where
     ///
     /// Returns an error if fetching the entity fails.
     pub async fn fetch(&self) -> Result<Arc<T>, Error<B>> {
-        self.nav.get(self.bmc.as_ref()).await.map_err(Error::Bmc)
+        self.nav.get(self.bmc.as_ref()).await.map_err(Error::from)
     }
 
     /// Construct a full wrapper from this link.
@@ -128,7 +128,7 @@ where
             .as_ref()
             .delete(self.odata_id())
             .await
-            .map_err(Error::Bmc)
+            .map_err(Error::from)
     }
 }
 
