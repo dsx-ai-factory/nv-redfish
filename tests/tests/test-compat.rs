@@ -24,6 +24,8 @@
 use std::error::Error as StdError;
 use std::sync::Arc;
 
+use futures_util::TryStreamExt as _;
+
 use nv_redfish::schema::manager_account::ManagerAccount;
 use nv_redfish::schema::software_inventory::SoftwareInventory;
 use nv_redfish::schema::software_inventory_collection::SoftwareInventoryCollection;
@@ -34,8 +36,8 @@ use nv_redfish_quirks::CompatBmc;
 use nv_redfish_quirks::CompatError;
 use nv_redfish_quirks::IdPattern;
 use nv_redfish_quirks::Match;
+use nv_redfish_quirks::RulesBmc;
 use nv_redfish_quirks::UserRule;
-use nv_redfish_quirks::UserRules;
 use nv_redfish_tests::Bmc as MockBmc;
 use nv_redfish_tests::Expect;
 use nv_redfish_tests::ODATA_ID;
@@ -47,6 +49,7 @@ use tokio::test;
 const ROOT: &str = "/redfish/v1";
 const INVENTORY: &str = "/redfish/v1/UpdateService/FirmwareInventory";
 const BMC_FIRMWARE: &str = "/redfish/v1/UpdateService/FirmwareInventory/BMC";
+const SSE: &str = "/redfish/v1/EventService/SSE";
 
 fn service_root(vendor: &str) -> Value {
     json!({
@@ -213,86 +216,126 @@ fn expect_inventory(bmc: &MockBmc) {
 }
 
 #[test]
-async fn user_rules_reach_the_wrappers_and_can_be_replaced() -> Result<(), Box<dyn StdError>> {
+async fn user_rules_reach_the_wrappers() -> Result<(), Box<dyn StdError>> {
+    // HPE has no release-date repair: the wrapper fails as the device
+    // answered.
     let bmc = Arc::new(MockBmc::default());
     bmc.expect(Expect::get(ROOT, service_root_with_update_service("HPE")));
     let root = ServiceRoot::new(bmc.clone()).await?;
     expect_update_service(&bmc);
     let update_service = root.update_service().await?.expect("root links it");
-
-    // HPE has no release-date repair: the wrapper fails as the device
-    // answered.
     expect_inventory(&bmc);
     assert!(matches!(
         update_service.firmware_inventories().await,
         Err(nv_redfish::Error::Decode(_))
     ));
 
-    // A rule installed through the root's layer applies to the wrapper
-    // created before it.
-    root.compat()
-        .user_rules()
-        .replace(vec![undate(Match::Type("SoftwareInventory".into()))]);
-    expect_inventory(&bmc);
+    // The same device behind a transport with the caller's rule.
+    let bmc = Arc::new(RulesBmc::new(
+        MockBmc::default(),
+        vec![undate(Match::Type("SoftwareInventory".into()))],
+    ));
+    let device = bmc.inner();
+    device.expect(Expect::get(ROOT, service_root_with_update_service("HPE")));
+    let root = ServiceRoot::new(bmc.clone()).await?;
+    expect_update_service(device);
+    let update_service = root.update_service().await?.expect("root links it");
+    expect_inventory(device);
     let inventories = update_service
         .firmware_inventories()
         .await?
         .expect("service links it");
     assert!(inventories[0].raw().release_date.is_none());
-
-    // Cleared, the next read is the device's again.
-    root.compat().user_rules().clear();
-    expect_inventory(&bmc);
-    assert!(matches!(
-        update_service.firmware_inventories().await,
-        Err(nv_redfish::Error::Decode(_))
-    ));
     Ok(())
 }
 
 #[test]
 async fn a_user_rule_can_match_by_odata_id() -> Result<(), Box<dyn StdError>> {
-    let (bmc, compat) = classified("HPE").await?;
-    compat
-        .user_rules()
-        .replace(vec![undate(Match::Id(IdPattern::new(
+    let bmc = Arc::new(RulesBmc::new(
+        MockBmc::default(),
+        vec![undate(Match::Id(IdPattern::new(
             "/redfish/v1/UpdateService/FirmwareInventory/*",
-        )))]);
+        )))],
+    ));
+    bmc.inner().expect(Expect::get(ROOT, service_root("HPE")));
+    let compat = CompatBmc::classify(bmc.clone()).await?;
 
-    bmc.expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
+    bmc.inner()
+        .expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
     let firmware = compat.get::<SoftwareInventory>(&firmware_id()).await?;
     assert!(firmware.release_date.is_none());
     Ok(())
 }
 
 #[test]
-async fn rules_given_to_service_roots_reach_each_of_them() -> Result<(), Box<dyn StdError>> {
-    let bmc = Arc::new(MockBmc::default());
-    let rules = UserRules::default();
-    rules.replace(vec![undate(Match::Type("SoftwareInventory".into()))]);
+async fn a_transports_rules_reach_every_root_built_on_it() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(RulesBmc::new(
+        MockBmc::default(),
+        vec![undate(Match::Type("SoftwareInventory".into()))],
+    ));
 
-    // Two roots built with the same handle, as a service that builds one
-    // per iteration does.
+    // Two roots over the one transport, as a service that builds one per
+    // iteration does.
     for _ in 0..2 {
-        bmc.expect(Expect::get(ROOT, service_root("HPE")));
-        let root = ServiceRoot::with_user_rules(bmc.clone(), rules.clone()).await?;
-        bmc.expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
+        bmc.inner().expect(Expect::get(ROOT, service_root("HPE")));
+        let root = ServiceRoot::new(bmc.clone()).await?;
+        bmc.inner()
+            .expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
         let firmware = root
             .compat()
             .get::<SoftwareInventory>(&firmware_id())
             .await?;
         assert!(firmware.release_date.is_none());
     }
+    Ok(())
+}
 
-    // The caller's handle still governs every root built with it.
-    bmc.expect(Expect::get(ROOT, service_root("HPE")));
-    let root = ServiceRoot::with_user_rules(bmc.clone(), rules.clone()).await?;
-    rules.clear();
-    bmc.expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
-    assert!(matches!(
-        root.compat().get::<SoftwareInventory>(&firmware_id()).await,
-        Err(CompatError::Decode(_))
+#[test]
+async fn a_read_around_the_layer_gets_the_callers_rules() -> Result<(), Box<dyn StdError>> {
+    let bmc = RulesBmc::new(
+        MockBmc::default(),
+        vec![undate(Match::Type("SoftwareInventory".into()))],
+    );
+    bmc.inner()
+        .expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
+    let firmware = bmc.get::<SoftwareInventory>(&firmware_id()).await?;
+    assert!(firmware.release_date.is_none());
+    Ok(())
+}
+
+#[test]
+async fn the_callers_rules_reach_event_stream_payloads() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(RulesBmc::new(
+        MockBmc::default(),
+        vec![UserRule::new(
+            "tag",
+            Match::Type("Event".into()),
+            |mut v| {
+                v["Context"] = json!("tagged");
+                v
+            },
+        )],
     ));
+    bmc.inner().expect(Expect::get(ROOT, service_root("HPE")));
+    let compat = CompatBmc::classify(bmc.clone()).await?;
+
+    bmc.inner().expect(Expect::stream_events(
+        SSE,
+        None,
+        [(
+            Some("1"),
+            json!({
+                ODATA_TYPE: "#Event.v1_9_0.Event",
+                "Id": "1",
+                "Name": "Event Log",
+                "Events": [],
+            }),
+        )],
+    ));
+    let mut stream = compat.stream_events::<Value>(SSE, None).await?;
+    let event = stream.try_next().await?.ok_or("event")?;
+    assert_eq!(event.data["Context"], "tagged");
+    assert_eq!(event.last_event_id.as_deref(), Some("1"));
     Ok(())
 }
 

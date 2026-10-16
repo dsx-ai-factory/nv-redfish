@@ -141,7 +141,6 @@ pub use raw::Raw;
 #[doc(inline)]
 pub use repair::DecodeError;
 #[doc(inline)]
-pub use repair::Generation;
 #[doc(inline)]
 pub use repair::NoRepair;
 #[doc(inline)]

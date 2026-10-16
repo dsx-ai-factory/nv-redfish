@@ -147,6 +147,12 @@ impl Display for Error {
 
 impl StdError for Error {}
 
+impl From<DecodeError> for Error {
+    fn from(error: DecodeError) -> Self {
+        Self::BadResponseJson(error)
+    }
+}
+
 impl nv_redfish_core::BmcError for Error {
     fn error_class(&self) -> BmcErrorClass {
         match self {

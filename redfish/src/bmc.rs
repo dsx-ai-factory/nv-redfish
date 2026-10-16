@@ -82,7 +82,7 @@ impl<B: Bmc> NvBmc<B> {
         &self.bmc
     }
 
-    /// The compatibility layer, sharing this BMC's rule set.
+    /// The compatibility layer.
     pub(crate) fn compat(&self) -> CompatBmc<B> {
         self.bmc.clone()
     }

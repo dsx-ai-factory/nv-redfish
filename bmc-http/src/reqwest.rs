@@ -192,6 +192,12 @@ impl StdErr for BmcError {
     }
 }
 
+impl From<DecodeError> for BmcError {
+    fn from(error: DecodeError) -> Self {
+        Self::JsonError(error)
+    }
+}
+
 impl nv_redfish_core::BmcError for BmcError {
     fn error_class(&self) -> BmcErrorClass {
         match self {

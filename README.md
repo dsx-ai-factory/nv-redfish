@@ -28,16 +28,17 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
     default for this crate.
   - Supports custom default headers and session-token credential updates, so
     callers can use either basic credentials or a Redfish `X-Auth-Token`.
-  - Applies a `Repair` in its own decode, and serves a cached document only
-    to reads under the same repair.
+  - Applies a `Repair` in its own decode, and caches the repaired document.
 
 - `nv-redfish-quirks`
   - Platform quirks of real BMCs, kept apart from the generated model.
   - Classifies an endpoint from its service root and holds the document
     repairs its platform needs, keyed by the document's `@odata.type`.
-  - Provides `CompatBmc`, a `Bmc` over another that applies those repairs and
-    the caller's runtime `UserRules` to every document it reads, event stream
-    payloads included.
+  - Provides `CompatBmc`, a `Bmc` over another that applies those repairs to
+    every document it reads, event stream payloads included.
+  - Provides `RulesBmc`, a transport wrapper that adds the caller's
+    `UserRule`s. The rules are the transport's for its whole life, so new
+    rules take a new transport.
 
 - `nv-redfish`
   - High-level Redfish API over generated schema types.
@@ -47,8 +48,8 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
     `bmc-http` feature is enabled.
   - Generates only the schemas required by enabled features during build.
   - Reads every resource through `CompatBmc`, so its wrappers and schema
-    types read directly get the same platform repairs;
-    `ServiceRoot::with_user_rules` adds the caller's.
+    types read directly get the same platform repairs; a `RulesBmc`
+    transport adds the caller's.
 
 - `nv-redfish-bmc-mock`
   - Test BMC implementation used by integration tests and examples.

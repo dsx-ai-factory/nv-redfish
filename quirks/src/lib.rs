@@ -29,16 +29,19 @@
 //! - The repair table turns the document quirks into rewrites keyed by the
 //!   document's type: the schema and type its `@odata.type` names, in any
 //!   version.
-//! - [`UserRules`] holds repairs a caller supplies at runtime, matched by
-//!   type ([`Match::Type`]) or `@odata.id` pattern and applied after the
-//!   platform's. The set can be replaced while the layer is in use.
 //! - [`CompatBmc`] is a [`Bmc`](nv_redfish_core::Bmc) over another that
-//!   applies both to every document it reads, members a device expanded
-//!   inline included. The high-level wrappers in `nv-redfish` read through
-//!   it, and a consumer reading generated schema types directly gets the
-//!   same repairs. Writes go through as they are, so the transport's own
-//!   reading of a reply still applies. Server-sent events are repaired
-//!   too, each payload under the SSE id it arrived with.
+//!   applies the platform's repairs to every document it reads, members a
+//!   device expanded inline included. The high-level wrappers in
+//!   `nv-redfish` read through it, and a consumer reading generated schema
+//!   types directly gets the same repairs. Writes go through as they are,
+//!   so the transport's own reading of a reply still applies. Server-sent
+//!   events are repaired too, each payload under the SSE id it arrived
+//!   with.
+//! - [`RulesBmc`] wraps a transport with repairs the caller supplies:
+//!   [`UserRule`]s matched by type ([`Match::Type`]) or `@odata.id`
+//!   pattern, applied after the platform's to every document read through
+//!   it. The rules are the transport's for its whole life, so new rules
+//!   take a new transport.
 //!
 //! The crate does not depend on the generated model, only on
 //! `nv-redfish-core` and JSON values: a repair is a fact about a wire
@@ -89,6 +92,6 @@ pub use platform::BmcQuirks;
 pub use platform::RootEvidence;
 pub use user::IdPattern;
 pub use user::Match;
+pub use user::RulesBmc;
 pub use user::UserFix;
 pub use user::UserRule;
-pub use user::UserRules;

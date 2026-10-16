@@ -67,7 +67,6 @@ use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::Expandable;
 use nv_redfish_core::FilterQuery;
-use nv_redfish_core::Generation;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NoRepair;
 use nv_redfish_core::ODataETag;
@@ -612,8 +611,6 @@ where
     /// - Sending conditional GET with If-None-Match
     /// - Handling 304 Not Modified responses from cache
     /// - Updating cache and `ETag` storage on success
-    /// - Serving a cached entity only to a read under the same
-    ///   [`Repair::generation`]
     #[allow(clippy::significant_drop_tightening)]
     async fn get_with_cache<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
         &self,
@@ -621,7 +618,6 @@ where
         repair: &impl Repair,
     ) -> Result<Arc<T>, C::Error> {
         let cache_key = endpoint_url.clone();
-        let generation = repair.generation();
 
         // The `etag` is always `None` when caching is disabled. Check the flag here so we can save
         // a read lock acquisition and guarantee that disabled caching never sends If-None-Match,
@@ -634,10 +630,7 @@ where
                 .cache
                 .write()
                 .map_err(|e| C::Error::cache_error(e.to_string()))?;
-            cache
-                .get_typed::<Cached<T>>(&cache_key)
-                .filter(|cached| cached.generation == generation)
-                .map(|cached| Arc::clone(&cached.entity))
+            cache.get_typed::<Arc<T>>(&cache_key).cloned()
         } else {
             None
         };
@@ -674,13 +667,7 @@ where
                         .write()
                         .map_err(|e| C::Error::cache_error(e.to_string()))?;
 
-                    cache.put_typed(
-                        cache_key.clone(),
-                        Cached {
-                            generation,
-                            entity: entity.clone(),
-                        },
-                    );
+                    cache.put_typed(cache_key.clone(), entity.clone());
                 }
                 Ok(entity)
             }
@@ -694,12 +681,6 @@ where
             }
         }
     }
-}
-
-/// A cached entity and the repair generation it was decoded under.
-struct Cached<T> {
-    generation: Option<Generation>,
-    entity: Arc<T>,
 }
 
 impl<C: HttpClient> Bmc for HttpBmc<C>

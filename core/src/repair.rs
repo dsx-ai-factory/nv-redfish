@@ -24,8 +24,6 @@
 
 use std::error::Error as StdError;
 use std::fmt;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use serde::Deserialize;
@@ -40,49 +38,6 @@ use crate::Raw;
 pub trait Repair: Send + Sync {
     /// Rewrites `document` in place.
     fn repair(&self, document: &mut Value);
-
-    /// Identifies the rewrite: two repairs with the same generation rewrite
-    /// every document the same way, and `None` leaves every document as it
-    /// came. A transport that caches results keys them by it, so a result
-    /// repaired under another generation is not served.
-    fn generation(&self) -> Option<Generation>;
-}
-
-/// The identity of a [`Repair`]'s rewrite, as a cache sees it.
-///
-/// A generation is either [`unique`](Self::unique) or a
-/// [`variant`](Self::variant) of a unique one, so two independent repairs
-/// cannot present the same generation to a cache.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Generation {
-    id: u64,
-    variant: u64,
-}
-
-impl Generation {
-    /// A generation unequal to every other one in the process.
-    ///
-    /// Ids come from one process-wide 64-bit counter: at a million calls a
-    /// second it wraps after more than half a million years.
-    #[must_use]
-    pub fn unique() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        Self {
-            id: NEXT.fetch_add(1, Ordering::Relaxed),
-            variant: 0,
-        }
-    }
-
-    /// The variant `variant` of this generation. Variants of one generation
-    /// differ from each other, and from the variants of every other one;
-    /// variant `0` is the generation itself.
-    #[must_use]
-    pub const fn variant(self, variant: u64) -> Self {
-        Self {
-            id: self.id,
-            variant,
-        }
-    }
 }
 
 /// The document as it came: the repair of a read that asks for none.
@@ -91,10 +46,6 @@ pub struct NoRepair;
 
 impl Repair for NoRepair {
     fn repair(&self, _: &mut Value) {}
-
-    fn generation(&self) -> Option<Generation> {
-        None
-    }
 }
 
 /// A document that did not deserialize, with the path to the property that
@@ -192,20 +143,4 @@ where
     let mut document = Arc::try_unwrap(raw).map_or_else(|raw| raw.value().clone(), Raw::into_value);
     repair.repair(&mut document);
     decode(document).map(Arc::new).map_err(RepairError::Decode)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generations_never_collide_across_repairs() {
-        let first = Generation::unique();
-        let second = Generation::unique();
-        assert_ne!(first, second);
-        assert_eq!(first.variant(0), first);
-        assert_ne!(first.variant(1), first);
-        assert_ne!(first.variant(1), second.variant(1));
-        assert_eq!(first.variant(7), first.variant(7));
-    }
 }

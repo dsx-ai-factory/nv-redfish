@@ -14,12 +14,12 @@
 // limitations under the License.
 
 //! The compatibility layer over the HTTP transport. Repairs run in the
-//! transport's own decode; every layer with the same repairs shares the
-//! transport's cached documents, and a layer that repairs nothing shares
-//! the entries of plain reads; a replaced rule set applies to the next
-//! read; a document that does not match its type is a decode error; and a
-//! write keeps the transport's reading of the reply, with the platform's
-//! protocol quirks applied.
+//! transport's own decode; layers over one transport share its cached
+//! documents, the caller's rules on the transport included, and a layer
+//! that repairs nothing shares the entries of plain reads; a document that
+//! does not match its type is a decode error; and a write keeps the
+//! transport's reading of the reply, with the platform's protocol quirks
+//! applied.
 
 use std::error::Error as StdError;
 use std::sync::Arc;
@@ -40,8 +40,8 @@ use nv_redfish_quirks::CompatBmc;
 use nv_redfish_quirks::CompatError;
 use nv_redfish_quirks::Match;
 use nv_redfish_quirks::RootEvidence;
+use nv_redfish_quirks::RulesBmc;
 use nv_redfish_quirks::UserRule;
-use nv_redfish_quirks::UserRules;
 use nv_redfish_tests::ODATA_ID;
 use nv_redfish_tests::ODATA_TYPE;
 use serde_json::json;
@@ -77,13 +77,17 @@ fn id(path: &str) -> ODataId {
     ODataId::from(path.to_owned())
 }
 
-fn transport(server: &MockServer) -> Result<Arc<HttpBmc<Client>>, Box<dyn StdError>> {
-    Ok(Arc::new(HttpBmc::new(
+fn http(server: &MockServer) -> Result<HttpBmc<Client>, Box<dyn StdError>> {
+    Ok(HttpBmc::new(
         Client::new()?,
         Url::parse(&server.uri())?,
         BmcCredentials::new("root".into(), "password".into()),
         CacheSettings::default(),
-    )))
+    ))
+}
+
+fn transport(server: &MockServer) -> Result<Arc<HttpBmc<Client>>, Box<dyn StdError>> {
+    Ok(Arc::new(http(server)?))
 }
 
 /// The platform a `vendor`'s service root classifies into.
@@ -155,30 +159,28 @@ async fn a_layer_without_repairs_shares_plain_reads() -> Result<(), Box<dyn StdE
 }
 
 #[test]
-async fn a_replaced_rule_set_applies_to_the_next_read() -> Result<(), Box<dyn StdError>> {
+async fn a_transports_rules_are_cached_with_the_document() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
     serve_cached(&server, FIRMWARE, &undated_firmware()).await;
-    let rules = UserRules::default();
-    let layer: Layer =
-        CompatBmc::new(transport(&server)?, platform("Dell")).with_user_rules(rules.clone());
-
-    let before = layer.get::<SoftwareInventory>(&id(FIRMWARE)).await?;
-    assert_eq!(before.name, "Integrated Remote Access Controller");
-
-    rules.replace(vec![UserRule::new(
+    let rename = UserRule::new(
         "rename",
         Match::Type("SoftwareInventory".into()),
         |mut document| {
             document["Name"] = json!("Renamed");
             document
         },
-    )]);
-    let after = layer.get::<SoftwareInventory>(&id(FIRMWARE)).await?;
-    assert!(
-        !last_was_revalidation(&server).await,
-        "a new rule set is not served from the cache"
     );
-    assert_eq!(after.name, "Renamed");
+    let ruled = Arc::new(RulesBmc::new(http(&server)?, vec![rename]));
+    // What two `ServiceRoot::new` calls over one transport build.
+    let first = CompatBmc::new(ruled.clone(), platform("Dell"));
+    let second = CompatBmc::new(ruled, platform("Dell"));
+
+    let read = first.get::<SoftwareInventory>(&id(FIRMWARE)).await?;
+    assert!(read.release_date.is_none(), "the Dell repair ran");
+    assert_eq!(read.name, "Renamed", "the caller's rule ran after it");
+    let again = second.get::<SoftwareInventory>(&id(FIRMWARE)).await?;
+    assert!(last_was_revalidation(&server).await);
+    assert!(Arc::ptr_eq(&read, &again));
     Ok(())
 }
 

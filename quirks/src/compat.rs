@@ -16,13 +16,14 @@
 //! The compatibility layer: a [`Bmc`] over another that applies the
 //! classified platform's document repairs to everything it reads.
 //!
-//! [`CompatBmc`] applies the repairs enabled for the platform and then the
-//! caller's [`UserRules`] to every document it reads — members a device
-//! expanded inline included, at any depth — before the document is
-//! deserialized into the type the caller asked for. It hands the repairs
-//! to the transport through [`Bmc::get_repaired`] and its siblings, so a
-//! transport that deserializes documents itself repairs in the same pass.
-//! It is classified once, from the service root, with one request.
+//! [`CompatBmc`] applies the repairs enabled for the platform to every
+//! document it reads — members a device expanded inline included, at any
+//! depth — before the document is deserialized into the type the caller
+//! asked for. It hands the repairs to the transport through
+//! [`Bmc::get_repaired`] and its siblings, so a transport that deserializes
+//! documents itself repairs in the same pass, and a
+//! [`RulesBmc`](crate::RulesBmc) underneath adds the caller's rules after
+//! them. It is classified once, from the service root, with one request.
 //!
 //! What a write answers with is the transport's: creates, updates,
 //! deletes, polls, actions and uploads go through as they are, so the
@@ -31,15 +32,15 @@
 //!
 //! Each payload of an event stream is repaired as it arrives: first the
 //! event repairs, which may take the SSE id the payload arrived under, then
-//! the document repairs and the caller's rules. A payload that still does
-//! not deserialize is one error in the stream, not its end.
+//! the document repairs. A payload that still does not deserialize is one
+//! error in the stream, not its end.
 //!
-//! A repair's generation is built from what it does — the platform's
-//! enabled repairs and the caller's rule set — so every layer with the
-//! same repairs shares a caching transport's entries, and a layer whose
-//! repairs change nothing shares the entries of reads without repairs. A
-//! replaced rule set is a new generation and applies to the next read of a
-//! resource whose `ETag` has not changed.
+//! A caching transport keeps a document as it was repaired and serves it to
+//! every later read of the resource. Every layer over one transport repairs
+//! the same way, since the transport serves one device and the device
+//! classifies the same way each time, so the layers share its cache. A read
+//! that goes around the layer shares that cache too: read a resource either
+//! through the layer or around it.
 
 use std::sync::Arc;
 
@@ -55,7 +56,6 @@ use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::Expandable;
 use nv_redfish_core::FilterQuery;
-use nv_redfish_core::Generation;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::NavProperty;
@@ -73,74 +73,35 @@ use serde::Serialize;
 use crate::events::EventRepairs;
 use crate::rules;
 use crate::rules::Enabled;
-use crate::user::RuleSet;
 use crate::BmcQuirks;
 use crate::DecodeError;
 use crate::RootEvidence;
-use crate::UserRules;
 
 /// What a request through [`CompatBmc`] can fail with.
 pub type CompatError<E> = RepairError<E>;
 
-/// One read's repairs: the platform's, then the caller's rules as they
-/// stood when the read began.
-struct Repairs<'a> {
-    /// The platform's enabled repairs.
-    enabled: &'a Enabled,
-    user: RuleSet,
-}
-
-impl Repairs<'_> {
-    /// Whether the repairs leave every document as it came.
-    fn is_noop(&self) -> bool {
-        self.enabled.is_empty() && self.user.rules.is_empty()
-    }
-}
-
-impl Repair for Repairs<'_> {
-    fn repair(&self, document: &mut serde_json::Value) {
-        if !self.is_noop() {
-            rules::repair_in_place(self.enabled, &self.user.rules, document);
-        }
-    }
-
-    // Built from what the repairs do, so that layers with the same repairs
-    // agree, and one that repairs nothing shares the plain read's entries.
-    fn generation(&self) -> Option<Generation> {
-        (!self.is_noop()).then(|| self.user.generation.variant(self.enabled.id()))
-    }
-}
-
-/// The repairs for the payloads of one event stream. The caller's rules are
-/// taken as they stand when each payload arrives.
+/// The repairs for the payloads of one event stream.
 struct StreamRepairs {
     events: EventRepairs,
     enabled: Enabled,
-    user: UserRules,
 }
 
 impl StreamRepairs {
     fn repair(&self, payload: &mut serde_json::Value, last_event_id: Option<&str>) {
         self.events.repair(payload, last_event_id);
-        Repairs {
-            enabled: &self.enabled,
-            user: self.user.current(),
-        }
-        .repair(payload);
+        self.enabled.repair(payload);
     }
 }
 
 /// A [`Bmc`] that repairs what it reads.
 ///
-/// Repairs are the classified platform's, then the caller's rules;
-/// everything else is delegated to the transport underneath. Clones share
-/// the caller's rule set.
+/// Repairs are the classified platform's; everything else is delegated to
+/// the transport underneath.
 pub struct CompatBmc<B: Bmc> {
     inner: Arc<B>,
     quirks: Arc<BmcQuirks>,
     /// The platform's enabled repairs.
     enabled: Enabled,
-    user: UserRules,
 }
 
 impl<B: Bmc> CompatBmc<B> {
@@ -159,28 +120,13 @@ impl<B: Bmc> CompatBmc<B> {
         Ok(Self::new(bmc, Arc::new(quirks)))
     }
 
-    /// The layer over `inner` for an already classified platform, with no
-    /// rules from the caller.
+    /// The layer over `inner` for an already classified platform.
     #[must_use]
     pub fn new(inner: Arc<B>, quirks: Arc<BmcQuirks>) -> Self {
         Self {
             inner,
             enabled: rules::enabled(&quirks),
             quirks,
-            user: UserRules::default(),
-        }
-    }
-
-    /// The same layer, applying the caller's `rules` after the platform's.
-    ///
-    /// Pass clones of one long-lived handle to every layer the rules should
-    /// reach — each `ServiceRoot` included. A set built anew is a new
-    /// generation, so results cached under another one are fetched again.
-    #[must_use]
-    pub fn with_user_rules(self, rules: UserRules) -> Self {
-        Self {
-            user: rules,
-            ..self
         }
     }
 
@@ -191,15 +137,13 @@ impl<B: Bmc> CompatBmc<B> {
         &self.inner
     }
 
-    /// The same layer, rules shared, over another transport for the same
-    /// endpoint.
+    /// The same layer over another transport for the same endpoint.
     #[must_use]
     pub fn replace_inner(&self, inner: Arc<B>) -> Self {
         Self {
             inner,
             quirks: Arc::clone(&self.quirks),
             enabled: self.enabled.clone(),
-            user: self.user.clone(),
         }
     }
 
@@ -209,27 +153,11 @@ impl<B: Bmc> CompatBmc<B> {
         &self.quirks
     }
 
-    /// The caller's rules, applied after the platform's. Replacing them
-    /// through this handle affects every layer that shares it.
-    #[must_use]
-    pub const fn user_rules(&self) -> &UserRules {
-        &self.user
-    }
-
-    /// The repairs for one read.
-    fn repairs(&self) -> Repairs<'_> {
-        Repairs {
-            enabled: &self.enabled,
-            user: self.user.current(),
-        }
-    }
-
     /// The repairs for the payloads of one event stream.
     fn stream_repairs(&self) -> StreamRepairs {
         StreamRepairs {
             events: EventRepairs::new(&self.quirks),
             enabled: self.enabled.clone(),
-            user: self.user.clone(),
         }
     }
 
@@ -243,7 +171,7 @@ impl<B: Bmc> CompatBmc<B> {
     where
         T: for<'de> Deserialize<'de>,
     {
-        self.repairs().repair(&mut document);
+        self.enabled.repair(&mut document);
         decode(document)
     }
 }
@@ -264,14 +192,14 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         id: &ODataId,
         query: ExpandQuery,
     ) -> Result<Arc<T>, Self::Error> {
-        self.inner.expand_repaired(id, query, &self.repairs()).await
+        self.inner.expand_repaired(id, query, &self.enabled).await
     }
 
     async fn get<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
         &self,
         id: &ODataId,
     ) -> Result<Arc<T>, Self::Error> {
-        self.inner.get_repaired(id, &self.repairs()).await
+        self.inner.get_repaired(id, &self.enabled).await
     }
 
     async fn filter<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
@@ -279,7 +207,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         id: &ODataId,
         query: FilterQuery,
     ) -> Result<Arc<T>, Self::Error> {
-        self.inner.filter_repaired(id, query, &self.repairs()).await
+        self.inner.filter_repaired(id, query, &self.enabled).await
     }
 
     // Another repair on top of the layer's: the document is read through

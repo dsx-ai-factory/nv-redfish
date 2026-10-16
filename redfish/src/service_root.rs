@@ -26,7 +26,6 @@ use nv_redfish_quirks::BmcQuirks;
 use nv_redfish_quirks::CompatBmc;
 use nv_redfish_quirks::Raw;
 use nv_redfish_quirks::RootEvidence;
-use nv_redfish_quirks::UserRules;
 
 use tagged_types::TaggedType;
 
@@ -112,25 +111,13 @@ impl<B: Bmc> Clone for ServiceRoot<B> {
 impl<B: Bmc> ServiceRoot<B> {
     /// Create a new service root.
     ///
+    /// Reads under it carry the platform's repairs; for the caller's own,
+    /// pass a [`RulesBmc`](crate::quirks::RulesBmc) as `bmc`.
+    ///
     /// # Errors
     ///
     /// Returns error if retrieving the root path via Redfish fails.
     pub async fn new(bmc: Arc<B>) -> Result<Self, Error<B>> {
-        Self::with_user_rules(bmc, UserRules::default()).await
-    }
-
-    /// Create a new service root whose reads apply `rules` after the
-    /// platform's repairs.
-    ///
-    /// The caller owns the rule set: keep one handle for as long as the
-    /// rules apply and pass clones of it to every root built for them, so
-    /// they reach every read and the transport's cached documents stay
-    /// valid from one root to the next.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if retrieving the root path via Redfish fails.
-    pub async fn with_user_rules(bmc: Arc<B>, rules: UserRules) -> Result<Self, Error<B>> {
         // The root is read once, raw: it decides the platform, and is then
         // repaired for it like any other document.
         let raw = NavProperty::<Raw>::new_reference(ODataId::service_root())
@@ -138,7 +125,7 @@ impl<B: Bmc> ServiceRoot<B> {
             .await
             .map_err(Error::Bmc)?;
         let quirks = BmcQuirks::classify(&RootEvidence::from_root(raw.value()));
-        let compat = CompatBmc::new(bmc, Arc::new(quirks)).with_user_rules(rules);
+        let compat = CompatBmc::new(bmc, Arc::new(quirks));
         let root = Arc::new(
             compat
                 .decode::<SchemaServiceRoot>(raw.value().clone())
@@ -168,9 +155,7 @@ impl<B: Bmc> ServiceRoot<B> {
     }
 
     /// The compatibility layer every wrapper under this root reads
-    /// through: documents carry the platform's repairs and the caller's.
-    /// Rules replaced through [`CompatBmc::user_rules`] apply to the
-    /// wrappers and to this handle alike.
+    /// through: documents carry the platform's repairs.
     #[must_use]
     pub fn compat(&self) -> CompatBmc<B> {
         self.bmc.compat()

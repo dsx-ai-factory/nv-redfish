@@ -169,10 +169,12 @@ pub trait Bmc: Send + Sync {
     ///
     /// A document that does not deserialize after the repair is
     /// [`RepairError::Decode`]. A transport that deserializes documents
-    /// itself repairs in the same pass and, if it caches results, keys them
-    /// by [`Repair::generation`]. Any other reads the document as
-    /// [`crate::Raw`] and hands it to [`crate::repair::decode_raw`]; a
-    /// decorator forwards to the BMC it wraps.
+    /// itself repairs in the same pass; if it caches results, it serves them
+    /// to later reads of the resource whatever repair those ask for, so
+    /// every read through one transport is repaired the same way. Any other
+    /// transport reads the document as [`crate::Raw`] and hands it to
+    /// [`crate::repair::decode_raw`]; a decorator forwards to the BMC it
+    /// wraps.
     fn get_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
         &self,
         id: &ODataId,

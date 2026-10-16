@@ -21,7 +21,7 @@
 //! `#Chassis.v1_22_0.Chassis` in any version, and not for another type of
 //! the schema, such as `#Chassis.v1_22_0.Links` — the quirk that enables it
 //! on the classified platform, and the rewrite. The rules for one type
-//! apply in table order, and the caller's [`UserRule`]s after them.
+//! apply in table order.
 //!
 //! A rule is scoped by document type, not by the route the document was
 //! fetched through: a repair for `SoftwareInventory` reaches a firmware
@@ -29,15 +29,13 @@
 
 use std::mem;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::PoisonError;
 
+use nv_redfish_core::Repair;
 use serde_json::Map;
 use serde_json::Value;
 
 use crate::fixes;
 use crate::BmcQuirks;
-use crate::UserRule;
 
 /// One document repair.
 struct Rule {
@@ -120,62 +118,48 @@ const RULES: &[Rule] = &[
     },
 ];
 
-/// The rules a platform enables, one flag per rule in the table, and the
-/// id of that set.
+/// The rules a platform enables, one flag per rule in the table.
 #[derive(Clone, Debug)]
-pub struct Enabled {
-    flags: Arc<[bool]>,
-    id: u64,
-}
+pub struct Enabled(Arc<[bool]>);
 
 impl Enabled {
     /// Whether no rule is enabled.
-    pub const fn is_empty(&self) -> bool {
-        self.id == 0
-    }
-
-    /// The id of the set: all a read's platform repairs depend on, so it
-    /// identifies them too. Equal sets have one id in the process and
-    /// different sets different ones; the empty set's is `0`.
-    pub const fn id(&self) -> u64 {
-        self.id
+    pub fn is_empty(&self) -> bool {
+        !self.0.contains(&true)
     }
 
     /// The enabled rules, in table order.
     fn rules(&self) -> impl Iterator<Item = &'static Rule> + '_ {
         RULES
             .iter()
-            .zip(self.flags.iter())
+            .zip(self.0.iter())
             .filter(|(_, enabled)| **enabled)
             .map(|(rule, _)| rule)
+    }
+}
+
+// The platform's document repairs as one: the enabled rules for a
+// document's type, in table order, at any depth.
+impl Repair for Enabled {
+    fn repair(&self, document: &mut Value) {
+        if self.is_empty() {
+            return;
+        }
+        walk(document, &|object| {
+            TypeName::of(object).map_or_else(Vec::new, |type_name| {
+                self.rules()
+                    .filter(|rule| type_name.is_named(rule.resource_type))
+                    .map(|rule| -> Fix<'static> { &rule.fix })
+                    .collect()
+            })
+        });
     }
 }
 
 /// The rules `quirks` enables. A platform that needs no document repair
 /// has none.
 pub fn enabled(quirks: &BmcQuirks) -> Enabled {
-    // Every set of rules a platform in the process enables, each once. A
-    // set's id is its place here, so ids stay distinct however many rules
-    // the table has.
-    static SETS: Mutex<Vec<Arc<[bool]>>> = Mutex::new(Vec::new());
-
-    let flags: Arc<[bool]> = RULES.iter().map(|rule| (rule.enabled)(quirks)).collect();
-    if !flags.contains(&true) {
-        return Enabled { flags, id: 0 };
-    }
-    let index = {
-        let mut sets = SETS.lock().unwrap_or_else(PoisonError::into_inner);
-        sets.iter()
-            .position(|set| *set == flags)
-            .unwrap_or_else(|| {
-                sets.push(Arc::clone(&flags));
-                sets.len() - 1
-            })
-    };
-    Enabled {
-        flags,
-        id: index as u64 + 1,
-    }
+    Enabled(RULES.iter().map(|rule| (rule.enabled)(quirks)).collect())
 }
 
 /// A type as an `@odata.type` names it, version aside: in
@@ -200,7 +184,7 @@ impl<'a> TypeName<'a> {
     }
 
     /// The type an object's `@odata.type` names.
-    fn of(object: &'a Map<String, Value>) -> Option<Self> {
+    pub fn of(object: &'a Map<String, Value>) -> Option<Self> {
         Self::parse(object.get("@odata.type")?.as_str()?)
     }
 
@@ -222,54 +206,32 @@ fn is_version(segment: &str) -> bool {
         .is_some_and(|number| number.starts_with(|c: char| c.is_ascii_digit()))
 }
 
-/// The document's `@odata.id`, unless the object is a bare reference: a
-/// link names a document, it is not one.
-fn document_id_of(object: &Map<String, Value>) -> Option<&str> {
-    let id = object.get("@odata.id")?.as_str()?;
-    (object.len() > 1).then_some(id)
-}
+/// A rewrite of one document.
+pub type Fix<'f> = &'f (dyn Fn(Value) -> Value + Send + Sync);
 
-/// Applies the platform's `enabled` repairs, then `user`'s, to every
-/// object in `value` that is a document, the object before its children,
-/// so a member a device expanded inline is repaired at any depth. An object
-/// no rule applies to is left where it is, untouched.
-pub fn repair_in_place(enabled: &Enabled, user: &[UserRule], value: &mut Value) {
+/// Applies to every object in `value` the fixes `pick` chooses for it, the
+/// object before its children, so a member a device expanded inline is
+/// repaired at any depth. An object nothing is chosen for is left where it
+/// is, untouched.
+pub fn walk<'f>(value: &mut Value, pick: &impl Fn(&Map<String, Value>) -> Vec<Fix<'f>>) {
     match value {
         Value::Object(object) => {
-            let type_name = TypeName::of(object);
-            // Collected while the object is borrowed; an empty list does not
+            // Chosen while the object is borrowed; an empty list does not
             // allocate, so an object nothing applies to costs no allocation.
-            let platform: Vec<fn(Value) -> Value> = type_name.map_or_else(Vec::new, |type_name| {
-                enabled
-                    .rules()
-                    .filter(|rule| type_name.is_named(rule.resource_type))
-                    .map(|rule| rule.fix)
-                    .collect()
-            });
-            let applying: Vec<&UserRule> = if user.is_empty() {
-                Vec::new()
-            } else {
-                let odata_id = document_id_of(object);
-                user.iter()
-                    .filter(|rule| rule.applies(type_name, odata_id))
-                    .collect()
-            };
-            if !platform.is_empty() || !applying.is_empty() {
+            let fixes = pick(object);
+            if !fixes.is_empty() {
                 let taken = mem::take(value);
-                let taken = platform.into_iter().fold(taken, |value, fix| fix(value));
-                *value = applying
-                    .into_iter()
-                    .fold(taken, |value, rule| rule.apply(value));
+                *value = fixes.into_iter().fold(taken, |value, fix| fix(value));
             }
             if let Value::Object(members) = value {
                 for child in members.values_mut() {
-                    repair_in_place(enabled, user, child);
+                    walk(child, pick);
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                repair_in_place(enabled, user, item);
+                walk(item, pick);
             }
         }
         _ => {}
@@ -281,16 +243,14 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::IdPattern;
-    use crate::Match;
     use crate::RootEvidence;
 
     fn enabled_for(root: &Value) -> Enabled {
         enabled(&BmcQuirks::classify(&RootEvidence::from_root(root)))
     }
 
-    fn repaired(enabled: &Enabled, user: &[UserRule], mut value: Value) -> Value {
-        repair_in_place(enabled, user, &mut value);
+    fn repaired(enabled: &Enabled, mut value: Value) -> Value {
+        enabled.repair(&mut value);
         value
     }
 
@@ -335,17 +295,6 @@ mod tests {
     }
 
     #[test]
-    fn platforms_enabling_the_same_rules_share_an_id() {
-        let dell = enabled_for(&json!({ "Vendor": "Dell" }));
-        assert_eq!(
-            dell.id(),
-            enabled_for(&json!({ "Vendor": "Dell", "Product": "PowerEdge R760" })).id()
-        );
-        assert_ne!(dell.id(), enabled_for(&json!({ "Vendor": "HPE" })).id());
-        assert_eq!(enabled_for(&json!({ "Vendor": "Contoso" })).id(), 0);
-    }
-
-    #[test]
     fn a_repair_reaches_a_member_expanded_inline() {
         let collection = json!({
             "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory",
@@ -359,13 +308,13 @@ mod tests {
         });
 
         let dell = enabled_for(&json!({ "Vendor": "Dell" }));
-        let mended = repaired(&dell, &[], collection.clone());
+        let mended = repaired(&dell, collection.clone());
         assert!(mended["Members"][0].get("ReleaseDate").is_none());
         assert_eq!(mended["Members"][0]["Id"], "BMC");
 
         // Another platform's documents are left exactly as they came.
         let hpe = enabled_for(&json!({ "Vendor": "HPE" }));
-        assert_eq!(repaired(&hpe, &[], collection.clone()), collection);
+        assert_eq!(repaired(&hpe, collection.clone()), collection);
     }
 
     #[test]
@@ -373,12 +322,12 @@ mod tests {
         let viking = enabled_for(&json!({ "Vendor": "AMI", "RedfishVersion": "1.11.0" }));
         let chassis = json!({ "@odata.type": "#Chassis.v1_2_0.Chassis", "Id": "1U" });
 
-        let patched = repaired(&viking, &[], chassis.clone());
+        let patched = repaired(&viking, chassis.clone());
         assert_eq!(patched["ChassisType"], "Other");
         assert_eq!(patched["Name"], "Unnamed chassis");
 
         let hpe = enabled_for(&json!({ "Vendor": "HPE" }));
-        assert_eq!(repaired(&hpe, &[], chassis.clone()), chassis);
+        assert_eq!(repaired(&hpe, chassis.clone()), chassis);
     }
 
     #[test]
@@ -391,7 +340,7 @@ mod tests {
             "Links": links,
         });
 
-        let patched = repaired(&viking, &[], chassis);
+        let patched = repaired(&viking, chassis);
         assert_eq!(patched["ChassisType"], "Other");
         assert_eq!(patched["Links"], links);
     }
@@ -405,43 +354,9 @@ mod tests {
         ] {
             let certificate = json!({ "@odata.type": odata_type, "CertificateType": "PEMChain" });
             assert_eq!(
-                repaired(&viking, &[], certificate)["CertificateType"],
+                repaired(&viking, certificate)["CertificateType"],
                 "PEMchain"
             );
         }
-    }
-
-    #[test]
-    fn user_rules_follow_the_platforms_and_skip_references() {
-        let viking = enabled_for(&json!({ "Vendor": "AMI", "RedfishVersion": "1.11.0" }));
-        let user = [
-            // Runs after the platform rule that names the chassis.
-            UserRule::new("rename", Match::Type("Chassis".into()), |mut v| {
-                v["Name"] = json!(format!("{} (renamed)", v["Name"].as_str().unwrap_or("")));
-                v
-            }),
-            UserRule::new(
-                "tag",
-                Match::Id(IdPattern::new("/redfish/v1/Chassis/*")),
-                |mut v| {
-                    v["Tagged"] = json!(true);
-                    v
-                },
-            ),
-        ];
-        let document = json!({
-            "@odata.id": "/redfish/v1/Chassis/1U",
-            "@odata.type": "#Chassis.v1_2_0.Chassis",
-            "Id": "1U",
-            "Links": { "Contains": [{ "@odata.id": "/redfish/v1/Chassis/2U" }] },
-        });
-
-        let patched = repaired(&viking, &user, document);
-        assert_eq!(patched["Name"], "Unnamed chassis (renamed)");
-        assert_eq!(patched["Tagged"], true);
-        assert_eq!(
-            patched["Links"]["Contains"][0],
-            json!({ "@odata.id": "/redfish/v1/Chassis/2U" })
-        );
     }
 }

@@ -13,25 +13,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Repairs supplied at runtime by the caller, applied after the
-//! platform's own. The set is shared by every clone of the layer that
-//! holds it and can be replaced while reads are in flight: a read takes
-//! the set as it stands when the document arrives.
+//! Repairs the caller supplies: [`UserRule`]s, applied by a [`RulesBmc`]
+//! to every document read through the transport it wraps, after any
+//! repair the read asks for.
 //!
-//! Each set carries a generation, so a transport that caches repaired
-//! results can tell a result repaired under a replaced set from a current
-//! one. A set with rules gets a generation of its own when it is installed;
-//! every empty set shares one, so layers without rules agree.
+//! The rules are the transport's for its whole life. A [`RulesBmc`] owns
+//! the transport it wraps, so whatever that transport caches was repaired
+//! with these rules and no others: new rules take a new transport.
 
 use std::fmt;
 use std::sync::Arc;
-use std::sync::LazyLock;
-use std::sync::PoisonError;
-use std::sync::RwLock;
 
-use nv_redfish_core::Generation;
+use futures_util::StreamExt as _;
+use nv_redfish_core::query::ExpandQuery;
+use nv_redfish_core::repair::decode;
+use nv_redfish_core::Action;
+use nv_redfish_core::Bmc;
+use nv_redfish_core::BoxTryStream;
+use nv_redfish_core::DecodeError;
+use nv_redfish_core::EntityTypeRef;
+use nv_redfish_core::Expandable;
+use nv_redfish_core::FilterQuery;
+use nv_redfish_core::ModificationResponse;
+use nv_redfish_core::MultipartUpdateRequest;
+use nv_redfish_core::ODataETag;
+use nv_redfish_core::ODataId;
+use nv_redfish_core::Repair;
+use nv_redfish_core::RepairError;
+use nv_redfish_core::SessionCreateResponse;
+use nv_redfish_core::StreamEvent;
+use nv_redfish_core::UploadReader;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::Map;
 use serde_json::Value;
 
+use crate::rules::walk;
+use crate::rules::Fix;
 use crate::rules::TypeName;
 
 /// A caller's document rewrite.
@@ -115,14 +133,6 @@ impl UserRule {
     pub fn name(&self) -> &str {
         &self.name
     }
-
-    pub(crate) fn applies(&self, type_name: Option<TypeName<'_>>, odata_id: Option<&str>) -> bool {
-        self.matches.applies(type_name, odata_id)
-    }
-
-    pub(crate) fn apply(&self, value: Value) -> Value {
-        (self.fix)(value)
-    }
 }
 
 impl fmt::Debug for UserRule {
@@ -134,74 +144,286 @@ impl fmt::Debug for UserRule {
     }
 }
 
-/// A rule set and its generation.
-#[derive(Clone)]
-pub struct RuleSet {
-    pub generation: Generation,
-    pub rules: Arc<[UserRule]>,
+/// The document's `@odata.id`, unless the object is a bare reference: a
+/// link names a document, it is not one.
+fn document_id_of(object: &Map<String, Value>) -> Option<&str> {
+    let id = object.get("@odata.id")?.as_str()?;
+    (object.len() > 1).then_some(id)
 }
 
-impl RuleSet {
-    fn of(rules: Vec<UserRule>) -> Self {
-        // Every empty set repairs nothing, so all of them share one
-        // generation and layers built without rules share cache entries.
-        static EMPTY: LazyLock<Generation> = LazyLock::new(Generation::unique);
-        let generation = if rules.is_empty() {
-            *EMPTY
-        } else {
-            Generation::unique()
-        };
+/// The caller's rules as one repair: each rule, in the order given, on
+/// every document it matches, at any depth.
+#[derive(Clone)]
+struct Rules(Arc<[UserRule]>);
+
+impl Repair for Rules {
+    fn repair(&self, document: &mut Value) {
+        if self.0.is_empty() {
+            return;
+        }
+        walk(document, &|object| {
+            let type_name = TypeName::of(object);
+            let odata_id = document_id_of(object);
+            self.0
+                .iter()
+                .filter(|rule| rule.matches.applies(type_name, odata_id))
+                .map(|rule| -> Fix<'_> { &*rule.fix })
+                .collect()
+        });
+    }
+}
+
+/// The repair a read asks for, then the caller's rules.
+struct Then<'a, R>(&'a R, &'a Rules);
+
+impl<R: Repair> Repair for Then<'_, R> {
+    fn repair(&self, document: &mut Value) {
+        self.0.repair(document);
+        self.1.repair(document);
+    }
+}
+
+/// A transport that repairs every document read through it with the
+/// caller's rules, after any repair the read asks for: the platform's, when
+/// a [`CompatBmc`](crate::CompatBmc) reads through it.
+///
+/// The rules are the transport's for its whole life. A `RulesBmc` owns the
+/// transport it wraps, so whatever that transport caches was repaired with
+/// these rules and no others: new rules take a new transport.
+///
+/// Each payload of an event stream gets the rules as it arrives, before
+/// the layer above repairs it. A payload that then does not deserialize is
+/// one error in the stream, not its end. Writes go through as they are.
+pub struct RulesBmc<B> {
+    inner: B,
+    rules: Rules,
+}
+
+impl<B> RulesBmc<B> {
+    /// `inner`, repairing what is read through it with `rules`, applied in
+    /// the order given.
+    #[must_use]
+    pub fn new(inner: B, rules: Vec<UserRule>) -> Self {
         Self {
-            generation,
-            rules: rules.into(),
+            inner,
+            rules: Rules(rules.into()),
         }
     }
-}
 
-/// The caller's rule set, shared by every clone of this handle.
-///
-/// Keep one handle for as long as the rules apply and pass clones of it to
-/// every layer they should reach: a set installed anew is a new
-/// generation, so results cached under the previous one are fetched again.
-#[derive(Clone)]
-pub struct UserRules(Arc<RwLock<RuleSet>>);
-
-impl Default for UserRules {
-    fn default() -> Self {
-        Self(Arc::new(RwLock::new(RuleSet::of(Vec::new()))))
-    }
-}
-
-impl UserRules {
-    /// Replaces the rule set; rules apply in the order given. Reads already
-    /// repairing finish with the set they started with.
-    pub fn replace(&self, rules: Vec<UserRule>) {
-        *self.0.write().unwrap_or_else(PoisonError::into_inner) = RuleSet::of(rules);
-    }
-
-    /// Removes every rule.
-    pub fn clear(&self) {
-        self.replace(Vec::new());
-    }
-
-    /// The rule set as it stands.
+    /// The rules, in the order they apply.
     #[must_use]
-    pub fn snapshot(&self) -> Arc<[UserRule]> {
-        self.current().rules
+    pub fn rules(&self) -> &[UserRule] {
+        &self.rules.0
     }
 
-    /// The rule set as it stands, with its generation.
-    pub(crate) fn current(&self) -> RuleSet {
-        self.0
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+    /// The transport underneath, for what it offers beyond [`Bmc`], such
+    /// as new credentials. A read made through it is not repaired.
+    #[must_use]
+    pub const fn inner(&self) -> &B {
+        &self.inner
     }
 }
 
-impl fmt::Debug for UserRules {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.snapshot().iter()).finish()
+/// A failed read through the transport, with a document that did not
+/// deserialize reported the way the transport reports one.
+fn flatten<E: From<DecodeError>>(error: RepairError<E>) -> E {
+    match error {
+        RepairError::Transport(error) => error,
+        RepairError::Decode(error) => error.into(),
+    }
+}
+
+impl<B: Bmc> Bmc for RulesBmc<B>
+where
+    B::Error: From<DecodeError>,
+{
+    type Error = B::Error;
+
+    async fn expand<T: Expandable>(
+        &self,
+        id: &ODataId,
+        query: ExpandQuery,
+    ) -> Result<Arc<T>, Self::Error> {
+        self.inner
+            .expand_repaired(id, query, &self.rules)
+            .await
+            .map_err(flatten)
+    }
+
+    async fn get<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+    ) -> Result<Arc<T>, Self::Error> {
+        self.inner
+            .get_repaired(id, &self.rules)
+            .await
+            .map_err(flatten)
+    }
+
+    async fn filter<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        query: FilterQuery,
+    ) -> Result<Arc<T>, Self::Error> {
+        self.inner
+            .filter_repaired(id, query, &self.rules)
+            .await
+            .map_err(flatten)
+    }
+
+    async fn get_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        self.inner
+            .get_repaired(id, &Then(repair, &self.rules))
+            .await
+    }
+
+    async fn expand_repaired<T: Expandable>(
+        &self,
+        id: &ODataId,
+        query: ExpandQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        self.inner
+            .expand_repaired(id, query, &Then(repair, &self.rules))
+            .await
+    }
+
+    async fn filter_repaired<T: EntityTypeRef + for<'de> Deserialize<'de> + 'static>(
+        &self,
+        id: &ODataId,
+        query: FilterQuery,
+        repair: &impl Repair,
+    ) -> Result<Arc<T>, RepairError<Self::Error>> {
+        self.inner
+            .filter_repaired(id, query, &Then(repair, &self.rules))
+            .await
+    }
+
+    async fn create<V: Send + Sync + Serialize, R: Send + Sync + for<'de> Deserialize<'de>>(
+        &self,
+        id: &ODataId,
+        query: &V,
+    ) -> Result<ModificationResponse<R>, Self::Error> {
+        self.inner.create(id, query).await
+    }
+
+    async fn create_session<
+        V: Send + Sync + Serialize,
+        R: Send + Sync + for<'de> Deserialize<'de>,
+    >(
+        &self,
+        id: &ODataId,
+        query: &V,
+    ) -> Result<SessionCreateResponse<R>, Self::Error> {
+        self.inner.create_session(id, query).await
+    }
+
+    async fn update<
+        V: Sync + Send + Serialize,
+        R: Send + Sync + Sized + for<'de> Deserialize<'de>,
+    >(
+        &self,
+        id: &ODataId,
+        etag: Option<&ODataETag>,
+        update: &V,
+    ) -> Result<ModificationResponse<R>, Self::Error> {
+        self.inner.update(id, etag, update).await
+    }
+
+    async fn delete<R: EntityTypeRef + for<'de> Deserialize<'de>>(
+        &self,
+        id: &ODataId,
+    ) -> Result<ModificationResponse<R>, Self::Error> {
+        self.inner.delete(id).await
+    }
+
+    async fn action<
+        T: Send + Sync + Serialize,
+        R: Send + Sync + Sized + for<'de> Deserialize<'de>,
+    >(
+        &self,
+        action: &Action<T, R>,
+        params: &T,
+    ) -> Result<ModificationResponse<R>, Self::Error> {
+        self.inner.action(action, params).await
+    }
+
+    async fn poll<R: Send + Sync + Sized + for<'de> Deserialize<'de>>(
+        &self,
+        uri: &ODataId,
+    ) -> Result<ModificationResponse<R>, Self::Error> {
+        self.inner.poll(uri).await
+    }
+
+    async fn multipart_update<U, V, R>(
+        &self,
+        uri: &str,
+        request: MultipartUpdateRequest<'_, U, V>,
+    ) -> Result<ModificationResponse<R>, Self::Error>
+    where
+        U: UploadReader,
+        R: Send + Sync + for<'de> Deserialize<'de>,
+        V: Send + Sync + Serialize,
+    {
+        self.inner.multipart_update(uri, request).await
+    }
+
+    nv_redfish_core::if_update_service_deprecated! {
+        async fn http_push_uri_update<U, R>(
+            &self,
+            uri: &str,
+            request: nv_redfish_core::HttpPushUriUpdateRequest<U>,
+        ) -> Result<ModificationResponse<R>, Self::Error>
+        where
+            U: UploadReader,
+            R: Send + Sync + for<'de> Deserialize<'de>,
+        {
+            self.inner.http_push_uri_update(uri, request).await
+        }
+    }
+
+    async fn stream<T: Sized + for<'de> Deserialize<'de> + Send + 'static>(
+        &self,
+        uri: &str,
+    ) -> Result<BoxTryStream<T, Self::Error>, Self::Error> {
+        let stream = self.inner.stream::<Value>(uri).await?;
+        let rules = self.rules.clone();
+        let mapped: BoxTryStream<T, Self::Error> = Box::pin(stream.map(move |item| {
+            let mut payload = item?;
+            rules.repair(&mut payload);
+            decode(payload).map_err(Into::into)
+        }));
+        Ok(mapped)
+    }
+
+    async fn stream_events<T: Sized + for<'de> Deserialize<'de> + Send + 'static>(
+        &self,
+        uri: &str,
+        last_event_id: Option<&str>,
+    ) -> Result<BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error> {
+        let stream = self
+            .inner
+            .stream_events::<Value>(uri, last_event_id)
+            .await?;
+        let rules = self.rules.clone();
+        let mapped: BoxTryStream<StreamEvent<T>, Self::Error> = Box::pin(stream.map(move |item| {
+            let StreamEvent {
+                last_event_id,
+                data: mut payload,
+            } = item?;
+            rules.repair(&mut payload);
+            decode(payload)
+                .map(|data| StreamEvent {
+                    last_event_id,
+                    data,
+                })
+                .map_err(Into::into)
+        }));
+        Ok(mapped)
     }
 }
 
@@ -210,6 +432,13 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::rules::enabled;
+    use crate::BmcQuirks;
+    use crate::RootEvidence;
+
+    fn rules(rules: Vec<UserRule>) -> Rules {
+        Rules(rules.into())
+    }
 
     #[test]
     fn an_id_pattern_matches_segment_by_segment() {
@@ -221,49 +450,57 @@ mod tests {
     }
 
     #[test]
-    fn a_replaced_set_is_seen_by_every_clone() {
-        let rules = UserRules::default();
-        let shared = rules.clone();
-        assert!(shared.snapshot().is_empty());
-
-        rules.replace(vec![UserRule::new(
-            "name",
-            Match::Type("Chassis".into()),
-            |mut v| {
+    fn a_rule_reaches_the_documents_it_matches_and_skips_references() {
+        let rules = rules(vec![
+            UserRule::new("name", Match::Type("Chassis".into()), |mut v| {
                 v["Name"] = json!("named");
                 v
-            },
-        )]);
-        let snapshot = shared.snapshot();
-        assert_eq!(snapshot.len(), 1);
-        let typed = TypeName::parse;
-        assert!(snapshot[0].applies(typed("#Chassis.v1_22_0.Chassis"), None));
-        assert!(!snapshot[0].applies(typed("#Chassis.v1_22_0.Links"), None));
-        assert!(!snapshot[0].applies(typed("#ChassisCollection.ChassisCollection"), None));
-        assert_eq!(snapshot[0].apply(json!({}))["Name"], "named");
+            }),
+            UserRule::new(
+                "tag",
+                Match::Id(IdPattern::new("/redfish/v1/Chassis/*")),
+                |mut v| {
+                    v["Tagged"] = json!(true);
+                    v
+                },
+            ),
+        ]);
+        let links = json!({
+            "@odata.type": "#Chassis.v1_22_0.Links",
+            "Contains": [{ "@odata.id": "/redfish/v1/Chassis/2U" }],
+        });
+        let mut document = json!({
+            "@odata.id": "/redfish/v1/Chassis/1U",
+            "@odata.type": "#Chassis.v1_22_0.Chassis",
+            "Links": links,
+        });
 
-        // A snapshot taken before a replacement keeps its rules.
-        rules.clear();
-        assert_eq!(snapshot.len(), 1);
-        assert!(shared.snapshot().is_empty());
+        rules.repair(&mut document);
+        assert_eq!(document["Name"], "named");
+        assert_eq!(document["Tagged"], true);
+        // Another type of the schema, and a link to another chassis, are
+        // left as they came.
+        assert_eq!(document["Links"], links);
     }
 
     #[test]
-    fn empty_sets_share_a_generation_and_installed_sets_do_not() {
-        let named = || vec![UserRule::new("name", Match::Type("Chassis".into()), |v| v)];
-        let first = UserRules::default();
-        let second = UserRules::default();
-        assert_eq!(first.current().generation, second.current().generation);
+    fn the_callers_rules_follow_the_repair_the_read_asks_for() {
+        let viking = enabled(&BmcQuirks::classify(&RootEvidence::from_root(&json!({
+            "Vendor": "AMI",
+            "RedfishVersion": "1.11.0",
+        }))));
+        let rules = rules(vec![UserRule::new(
+            "rename",
+            Match::Type("Chassis".into()),
+            |mut v| {
+                v["Name"] = json!(format!("{} (renamed)", v["Name"].as_str().unwrap_or("")));
+                v
+            },
+        )]);
+        let mut chassis = json!({ "@odata.type": "#Chassis.v1_2_0.Chassis", "Id": "1U" });
 
-        first.replace(named());
-        second.replace(named());
-        assert_ne!(first.current().generation, second.current().generation);
-
-        // Clearing returns to the shared empty generation.
-        first.clear();
-        assert_eq!(
-            first.current().generation,
-            UserRules::default().current().generation
-        );
+        // The platform names the chassis; the caller's rule renames it.
+        Then(&viking, &rules).repair(&mut chassis);
+        assert_eq!(chassis["Name"], "Unnamed chassis (renamed)");
     }
 }

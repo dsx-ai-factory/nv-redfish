@@ -22,9 +22,10 @@
 //! - OEM extension support (also under feature flags)
 //! - Platform quirks from `nv-redfish-quirks` (re-exported as [`quirks`]):
 //!   every wrapper reads through its [`Bmc`] layer, which applies the
-//!   platform's document repairs and the caller's runtime rules
-//!   ([`ServiceRoot::with_user_rules`]); schema types read directly through
-//!   the same layer ([`ServiceRoot::compat`]) get the same repairs
+//!   platform's document repairs, and through a
+//!   [`RulesBmc`](quirks::RulesBmc) transport the caller's own; schema
+//!   types read directly through the same layer ([`ServiceRoot::compat`])
+//!   get the same repairs
 //!
 //! Relationship to other crates
 //! - Depends on `nv-redfish-core` for transport-agnostic traits (`Bmc`) and
