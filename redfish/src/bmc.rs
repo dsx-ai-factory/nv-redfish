@@ -148,7 +148,8 @@ impl<B: Bmc> NvBmc<B> {
     ///
     /// # Errors
     ///
-    /// Returns `Error::Bmc` if the update fails.
+    /// Returns `Error::Bmc` if the update fails, or `Error::Decode` if the
+    /// reply does not deserialize into `R`.
     #[allow(dead_code)] // feature-enabled func
     pub(crate) async fn update<V, R>(
         &self,

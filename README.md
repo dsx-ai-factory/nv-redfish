@@ -28,7 +28,9 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
     default for this crate.
   - Supports custom default headers and session-token credential updates, so
     callers can use either basic credentials or a Redfish `X-Auth-Token`.
-  - Applies a `Repair` in its own decode, and caches the repaired document.
+  - Applies a `Repair` in its own decode. Its cache keeps each resource as
+    the last full read decoded it, so reads of one resource should share a
+    repair.
 
 - `nv-redfish-quirks`
   - Platform quirks of real BMCs, kept apart from the generated model.

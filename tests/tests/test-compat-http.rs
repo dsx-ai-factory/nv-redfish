@@ -24,12 +24,15 @@
 use std::error::Error as StdError;
 use std::sync::Arc;
 
+use nv_redfish::account::AccountServiceConfig;
+use nv_redfish::account::ManagerAccountUpdate;
 use nv_redfish::bmc_http::reqwest::Client;
 use nv_redfish::bmc_http::BmcCredentials;
 use nv_redfish::bmc_http::CacheSettings;
 use nv_redfish::bmc_http::HttpBmc;
 use nv_redfish::schema::software_inventory::SoftwareInventory;
 use nv_redfish::schema::software_inventory_collection::SoftwareInventoryCollection;
+use nv_redfish::ServiceRoot;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataETag;
@@ -315,5 +318,101 @@ async fn ami_firmware_is_sent_a_wildcard_if_match() -> Result<(), Box<dyn StdErr
         .update::<_, SoftwareInventory>(&id(FIRMWARE), Some(&etag), &update)
         .await?;
     assert!(matches!(reply, ModificationResponse::Empty));
+    Ok(())
+}
+
+#[test]
+async fn an_hpe_account_update_answered_with_a_success_message_is_empty(
+) -> Result<(), Box<dyn StdError>> {
+    const ROOT: &str = "/redfish/v1";
+    const ACCOUNT_SERVICE: &str = "/redfish/v1/AccountService";
+    const ACCOUNTS: &str = "/redfish/v1/AccountService/Accounts";
+    const ACCOUNT: &str = "/redfish/v1/AccountService/Accounts/1";
+
+    let server = MockServer::start().await;
+    for (at, body) in [
+        (
+            ROOT,
+            json!({
+                ODATA_ID: ROOT,
+                ODATA_TYPE: "#ServiceRoot.v1_13_0.ServiceRoot",
+                "Id": "RootService",
+                "Name": "Root Service",
+                "Vendor": "HPE",
+                "AccountService": { ODATA_ID: ACCOUNT_SERVICE },
+                "Links": { "Sessions": { ODATA_ID: format!("{ROOT}/SessionService/Sessions") } },
+            }),
+        ),
+        (
+            ACCOUNT_SERVICE,
+            json!({
+                ODATA_ID: ACCOUNT_SERVICE,
+                ODATA_TYPE: "#AccountService.v1_5_0.AccountService",
+                "Id": "AccountService",
+                "Name": "Account Service",
+                "Accounts": { ODATA_ID: ACCOUNTS },
+            }),
+        ),
+        (
+            ACCOUNTS,
+            json!({
+                ODATA_ID: ACCOUNTS,
+                ODATA_TYPE: "#ManagerAccountCollection.ManagerAccountCollection",
+                "Name": "User Accounts",
+                "Members": [{ ODATA_ID: ACCOUNT }],
+            }),
+        ),
+        // iLO's account, without the `AccountTypes` the schema requires.
+        (
+            ACCOUNT,
+            json!({
+                ODATA_ID: ACCOUNT,
+                ODATA_TYPE: "#ManagerAccount.v1_3_0.ManagerAccount",
+                "Id": "1",
+                "Name": "User Account",
+                "Enabled": true,
+                "UserName": "user",
+                "RoleId": "Operator",
+            }),
+        ),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(at))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("PATCH"))
+        .and(path(ACCOUNT))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "error": { "code": "Base.1.8.Success", "message": "Successfully Completed Request." }
+        })))
+        .mount(&server)
+        .await;
+
+    let root = ServiceRoot::new(transport(&server)?).await?;
+    let accounts = root
+        .account_service(AccountServiceConfig::standard())
+        .await?
+        .ok_or("account service")?
+        .accounts()
+        .await?
+        .ok_or("accounts")?;
+    let account = accounts
+        .all_accounts_data()
+        .await?
+        .into_iter()
+        .next()
+        .ok_or("account")?;
+    let update = ManagerAccountUpdate::builder()
+        .with_role_id("Operator".into())
+        .build();
+
+    // The reply is not an account, so the transport reads the success
+    // message as it would for any account update.
+    assert!(matches!(
+        account.update(&update).await?,
+        ModificationResponse::Empty
+    ));
     Ok(())
 }

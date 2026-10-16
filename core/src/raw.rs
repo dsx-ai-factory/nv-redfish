@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A document read as it came off the wire, before any repair or typed
-//! deserialization.
+//! A document as JSON, before typed deserialization: as it came off the
+//! wire, or with the repairs the read asked for.
 
 use crate::EntityTypeRef;
 use crate::Expandable;

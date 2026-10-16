@@ -13,8 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The repair table: the document quirks as rewrites, in one place, applied
-//! by [`CompatBmc`](crate::CompatBmc) to every document it reads.
+//! The repair table: the document quirks as rewrites, applied by
+//! [`CompatBmc`](crate::CompatBmc) to every document it reads. The crate
+//! documentation names the two the `nv-redfish` wrappers apply instead.
 //!
 //! A rule names the type it applies to as a
 //! [`Match::Type`](crate::Match::Type) does — `Chassis` for

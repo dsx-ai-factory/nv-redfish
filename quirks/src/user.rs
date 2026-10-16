@@ -18,8 +18,8 @@
 //! repair the read asks for.
 //!
 //! The rules are the transport's for its whole life. A [`RulesBmc`] owns
-//! the transport it wraps, so whatever that transport caches was repaired
-//! with these rules and no others: new rules take a new transport.
+//! the transport it wraps, so every read through it is repaired with these
+//! rules and no others: new rules take a new transport.
 
 use std::fmt;
 use std::sync::Arc;
@@ -184,15 +184,18 @@ impl<R: Repair> Repair for Then<'_, R> {
 }
 
 /// A transport that repairs every document read through it with the
-/// caller's rules, after any repair the read asks for: the platform's, when
-/// a [`CompatBmc`](crate::CompatBmc) reads through it.
+/// caller's rules.
+///
+/// The rules run after any repair the read asks for: the platform's, when a
+/// [`CompatBmc`](crate::CompatBmc) reads through it. A document the layer
+/// above repairs on its own afterwards, such as an event stream payload or
+/// the service root, gets the rules first.
 ///
 /// The rules are the transport's for its whole life. A `RulesBmc` owns the
-/// transport it wraps, so whatever that transport caches was repaired with
-/// these rules and no others: new rules take a new transport.
+/// transport it wraps, so every read through it is repaired with these
+/// rules and no others: new rules take a new transport.
 ///
-/// Each payload of an event stream gets the rules as it arrives, before
-/// the layer above repairs it. A payload that then does not deserialize is
+/// An event stream payload that does not deserialize after the rules is
 /// one error in the stream, not its end. Writes go through as they are.
 pub struct RulesBmc<B> {
     inner: B,
@@ -217,7 +220,10 @@ impl<B> RulesBmc<B> {
     }
 
     /// The transport underneath, for what it offers beyond [`Bmc`], such
-    /// as new credentials. A read made through it is not repaired.
+    /// as new credentials. Do not read through it: such a read is not
+    /// repaired, and a caching transport serves what it read to the
+    /// repaired reads of the same resource that follow, until the resource
+    /// changes.
     #[must_use]
     pub const fn inner(&self) -> &B {
         &self.inner

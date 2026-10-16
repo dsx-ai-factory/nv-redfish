@@ -161,8 +161,10 @@ impl<B: Bmc> CompatBmc<B> {
         }
     }
 
-    /// Repairs a document obtained some other way and deserializes it into
-    /// `T`, as a read through the layer would.
+    /// Repairs a document obtained some other way, such as a write's reply,
+    /// with the platform's repairs, and deserializes it into `T`. A
+    /// [`RulesBmc`](crate::RulesBmc) underneath applies the caller's rules
+    /// to what it reads, so a document it did not read does not get them.
     ///
     /// # Errors
     ///

@@ -33,15 +33,18 @@
 //!   applies the platform's repairs to every document it reads, members a
 //!   device expanded inline included. The high-level wrappers in
 //!   `nv-redfish` read through it, and a consumer reading generated schema
-//!   types directly gets the same repairs. Writes go through as they are,
+//!   types directly gets the same repairs, all but the two the wrappers
+//!   make themselves (below). Writes go through as they are,
 //!   so the transport's own reading of a reply still applies. Server-sent
 //!   events are repaired too, each payload under the SSE id it arrived
 //!   with.
 //! - [`RulesBmc`] wraps a transport with repairs the caller supplies:
 //!   [`UserRule`]s matched by type ([`Match::Type`]) or `@odata.id`
-//!   pattern, applied after the platform's to every document read through
-//!   it. The rules are the transport's for its whole life, so new rules
-//!   take a new transport.
+//!   pattern, applied to every document read through it: after the
+//!   platform's repairs on a read through the layer, and before them on a
+//!   document the layer repairs afterwards, such as an event stream payload
+//!   or the service root. The rules are the transport's for its whole
+//!   life, so new rules take a new transport.
 //!
 //! The crate does not depend on the generated model, only on
 //! `nv-redfish-core` and JSON values: a repair is a fact about a wire
@@ -49,10 +52,12 @@
 //! Quirks that change how a resource is navigated rather than what a
 //! document says — a root without links, collection members to ignore,
 //! vendor account slots — stay with the wrappers in `nv-redfish`, which
-//! consult the same classification. So does the one document repair that
-//! needs evidence the service root does not carry:
-//! [`BmcQuirks::power_supply_location_indicator_repair`], which depends on
-//! the manufacturer of the chassis holding the power supplies.
+//! consult the same classification. So do two document repairs: a DPU
+//! collection's `Members: null`, read as empty while the wrapper reads the
+//! collection ([`BmcQuirks::bug_nullable_members`]), and the Lite-On power
+//! supply repair, which needs evidence the service root does not carry,
+//! the manufacturer of the chassis holding the power supplies
+//! ([`BmcQuirks::power_supply_location_indicator_repair`]).
 
 #![deny(
     clippy::all,

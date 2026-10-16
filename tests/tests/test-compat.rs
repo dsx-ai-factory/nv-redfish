@@ -16,10 +16,12 @@
 //! The compatibility layer: a raw schema read through `CompatBmc` carries
 //! the platform's document repairs — the Dell firmware release date here —
 //! at the top level and inside an expanded collection, and a platform
-//! without the quirk gets the document as it came. The caller's rules,
-//! replaceable at runtime, reach the high-level wrappers as well as direct
-//! reads, and every root built with them. What a write answers with is
-//! the transport's reading of the reply.
+//! without the quirk gets the document as it came. The caller's rules, on a
+//! `RulesBmc` transport, reach the high-level wrappers, direct reads and
+//! event stream payloads, through every root built on it; a document a
+//! rule breaks is a decode error, and a payload a rule breaks one error in
+//! its stream. What a write answers with is the transport's reading of the
+//! reply.
 
 use std::error::Error as StdError;
 use std::sync::Arc;
@@ -31,6 +33,7 @@ use nv_redfish::schema::software_inventory::SoftwareInventory;
 use nv_redfish::schema::software_inventory_collection::SoftwareInventoryCollection;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::BmcError as _;
 use nv_redfish_core::ODataId;
 use nv_redfish_quirks::CompatBmc;
 use nv_redfish_quirks::CompatError;
@@ -336,6 +339,76 @@ async fn the_callers_rules_reach_event_stream_payloads() -> Result<(), Box<dyn S
     let event = stream.try_next().await?.ok_or("event")?;
     assert_eq!(event.data["Context"], "tagged");
     assert_eq!(event.last_event_id.as_deref(), Some("1"));
+    Ok(())
+}
+
+#[test]
+async fn a_document_a_rule_breaks_is_a_decode_error() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(RulesBmc::new(
+        MockBmc::default(),
+        vec![UserRule::new(
+            "break",
+            Match::Type("SoftwareInventory".into()),
+            |mut v| {
+                v["Version"] = json!(7);
+                v
+            },
+        )],
+    ));
+    bmc.inner().expect(Expect::get(ROOT, service_root("Dell")));
+    let compat = CompatBmc::classify(bmc.clone()).await?;
+
+    bmc.inner()
+        .expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
+    let through_layer = compat.get::<SoftwareInventory>(&firmware_id()).await;
+    assert!(matches!(through_layer, Err(CompatError::Decode(_))));
+
+    // Read around the layer, the transport reports it as its own.
+    bmc.inner()
+        .expect(Expect::get(BMC_FIRMWARE, undated_firmware()));
+    let Err(around) = bmc.get::<SoftwareInventory>(&firmware_id()).await else {
+        return Err("the rule breaks the document".into());
+    };
+    assert!(around.into_decode_error().is_ok());
+    Ok(())
+}
+
+/// An event payload, read only for its `Id`.
+#[derive(Debug, serde::Deserialize)]
+struct EventId {
+    #[serde(rename = "Id")]
+    id: String,
+}
+
+#[test]
+async fn a_payload_a_rule_breaks_is_one_error_in_its_stream() -> Result<(), Box<dyn StdError>> {
+    let bmc = RulesBmc::new(
+        MockBmc::default(),
+        vec![UserRule::new(
+            "break the first",
+            Match::Type("Event".into()),
+            |mut v| {
+                if v["Id"] == "1" {
+                    v["Id"] = json!(1);
+                }
+                v
+            },
+        )],
+    );
+    let event = |id: &str| json!({ ODATA_TYPE: "#Event.v1_9_0.Event", "Id": id });
+    bmc.inner().expect(Expect::stream_events(
+        SSE,
+        None,
+        [(Some("1"), event("1")), (Some("2"), event("2"))],
+    ));
+    let mut stream = bmc.stream_events::<EventId>(SSE, None).await?;
+
+    let Err(broken) = stream.try_next().await else {
+        return Err("the rule breaks the first payload".into());
+    };
+    assert!(broken.into_decode_error().is_ok());
+    let next = stream.try_next().await?.ok_or("the stream goes on")?;
+    assert_eq!(next.data.id, "2");
     Ok(())
 }
 

@@ -99,7 +99,9 @@ pub use nv_redfish_core::MultipartUpdateRequest;
 /// nv-redfish-bmc-http supports any HTTP implementation that
 /// implements this [`HttpClient`] trait.
 pub trait HttpClient: Send + Sync {
-    /// HTTP client error.
+    /// HTTP client error. A document that does not deserialize into the
+    /// type a read asks for is one [`BmcError::into_decode_error`] gives
+    /// back, so a repaired read reports it as [`RepairError::Decode`].
     type Error: BmcError + 'static;
 
     /// Perform an HTTP GET request with optional conditional headers,

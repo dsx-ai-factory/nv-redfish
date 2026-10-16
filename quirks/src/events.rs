@@ -15,8 +15,9 @@
 
 //! Repairs for event stream payloads, applied by
 //! [`CompatBmc`](crate::CompatBmc) to each `Event` or `MetricReport` a
-//! server-sent event stream delivers, before the document repairs and the
-//! caller's rules.
+//! server-sent event stream delivers, before the document repairs. A
+//! [`RulesBmc`](crate::RulesBmc) underneath has already applied the
+//! caller's rules, so they see the payload as the device sent it.
 //!
 //! No device is known to give a payload or its event records the
 //! `@odata.id`s the schema requires, so those are made up on every

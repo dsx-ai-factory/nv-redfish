@@ -26,6 +26,7 @@ mod collection;
 #[cfg(feature = "patch-collection")]
 mod payload;
 
+#[cfg(feature = "patch-collection")]
 #[doc(inline)]
 pub use serde_json::Value as JsonValue;
 

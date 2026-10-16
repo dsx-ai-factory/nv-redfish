@@ -87,9 +87,9 @@ pub enum Error<B: Bmc> {
     MetricReportDefinitionsNotAvailable,
     /// JSON parse error.
     Json(JsonError),
-    /// A document, after the platform's and the caller's repairs, did not
-    /// match the schema type it was read as. The error names the path to
-    /// the property that failed.
+    /// A document did not deserialize into the schema type it was read as:
+    /// a resource after its repairs, or the reply to a write as it came.
+    /// The error names the path to the property that failed.
     Decode(DecodeError),
 }
 
