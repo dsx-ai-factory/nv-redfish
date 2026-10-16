@@ -32,6 +32,8 @@ use std::sync::RwLock;
 use nv_redfish_core::Generation;
 use serde_json::Value;
 
+use crate::rules::TypeName;
+
 /// A caller's document rewrite.
 pub type UserFix = Arc<dyn Fn(Value) -> Value + Send + Sync>;
 
@@ -39,18 +41,20 @@ pub type UserFix = Arc<dyn Fn(Value) -> Value + Send + Sync>;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Match {
-    /// Documents whose `@odata.type` family is this, e.g.
-    /// `"ManagerNetworkProtocol"` for
-    /// `#ManagerNetworkProtocol.v1_9_0.ManagerNetworkProtocol`.
+    /// Documents of this type, in any version. A resource type is named by
+    /// its schema, `"ManagerNetworkProtocol"` for
+    /// `#ManagerNetworkProtocol.v1_9_0.ManagerNetworkProtocol`; any type by
+    /// its schema and name, `"Chassis.Links"` for `#Chassis.v1_22_0.Links`,
+    /// which `"Chassis"` does not match.
     Type(String),
     /// Documents whose `@odata.id` matches this pattern.
     Id(IdPattern),
 }
 
 impl Match {
-    fn applies(&self, resource_type: Option<&str>, odata_id: Option<&str>) -> bool {
+    fn applies(&self, type_name: Option<TypeName<'_>>, odata_id: Option<&str>) -> bool {
         match self {
-            Self::Type(family) => resource_type == Some(family.as_str()),
+            Self::Type(named) => type_name.is_some_and(|type_name| type_name.is_named(named)),
             Self::Id(pattern) => odata_id.is_some_and(|id| pattern.matches(id)),
         }
     }
@@ -112,8 +116,8 @@ impl UserRule {
         &self.name
     }
 
-    pub(crate) fn applies(&self, resource_type: Option<&str>, odata_id: Option<&str>) -> bool {
-        self.matches.applies(resource_type, odata_id)
+    pub(crate) fn applies(&self, type_name: Option<TypeName<'_>>, odata_id: Option<&str>) -> bool {
+        self.matches.applies(type_name, odata_id)
     }
 
     pub(crate) fn apply(&self, value: Value) -> Value {
@@ -232,8 +236,10 @@ mod tests {
         )]);
         let snapshot = shared.snapshot();
         assert_eq!(snapshot.len(), 1);
-        assert!(snapshot[0].applies(Some("Chassis"), None));
-        assert!(!snapshot[0].applies(Some("ChassisCollection"), None));
+        let typed = TypeName::parse;
+        assert!(snapshot[0].applies(typed("#Chassis.v1_22_0.Chassis"), None));
+        assert!(!snapshot[0].applies(typed("#Chassis.v1_22_0.Links"), None));
+        assert!(!snapshot[0].applies(typed("#ChassisCollection.ChassisCollection"), None));
         assert_eq!(snapshot[0].apply(json!({}))["Name"], "named");
 
         // A snapshot taken before a replacement keeps its rules.

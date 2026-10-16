@@ -38,6 +38,7 @@
 
 use crate::account::Account;
 use crate::account::AccountConfig;
+use crate::account::AccountReply;
 use crate::account::ManagerAccountCreate;
 use crate::account::ManagerAccountUpdate;
 use crate::patch_support::CollectionWithPatch;
@@ -57,7 +58,6 @@ use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataId;
-use nv_redfish_core::ReferenceLeaf;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -246,23 +246,17 @@ impl<B: Bmc> AccountCollection<B> {
             Err(Error::AccountSlotNotAvailable)
         } else if self.bmc.quirks.bug_no_account_type_in_accounts() {
             // The platform answers with an account that lacks
-            // `AccountTypes`, which only a read through the compatibility
-            // layer repairs: take the reply as a reference and read the new
-            // account.
-            self.bmc
+            // `AccountTypes`: the reply is repaired as a read is.
+            Ok(self
+                .bmc
                 .as_ref()
-                .create::<_, ReferenceLeaf>(self.collection.odata_id(), &create)
+                .create::<_, AccountReply>(self.collection.odata_id(), &create)
                 .await
                 .map_err(Error::from)?
-                .try_map_entity_async(|created| async move {
-                    Account::new(
-                        &self.bmc,
-                        &NavProperty::new_reference(created.odata_id),
-                        &self.config.account,
-                    )
-                    .await
-                })
-                .await
+                .try_map_entity(|reply| reply.into_account(&self.bmc))?
+                .map_entity(|account| {
+                    Account::from_data(self.bmc.clone(), account, self.config.account.clone())
+                }))
         } else {
             Ok(self
                 .collection

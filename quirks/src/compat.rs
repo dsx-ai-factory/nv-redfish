@@ -72,6 +72,7 @@ use serde::Serialize;
 
 use crate::events::EventRepairs;
 use crate::rules;
+use crate::rules::Enabled;
 use crate::user::RuleSet;
 use crate::BmcQuirks;
 use crate::DecodeError;
@@ -83,30 +84,30 @@ pub type CompatError<E> = RepairError<E>;
 
 /// One read's repairs: the platform's, then the caller's rules as they
 /// stood when the read began.
-struct Repairs {
-    /// The platform's enabled repairs, as a mask over the table.
-    mask: u64,
+struct Repairs<'a> {
+    /// The platform's enabled repairs.
+    enabled: &'a Enabled,
     user: RuleSet,
 }
 
-impl Repairs {
+impl Repairs<'_> {
     /// Whether the repairs leave every document as it came.
     fn is_noop(&self) -> bool {
-        self.mask == 0 && self.user.rules.is_empty()
+        self.enabled.is_empty() && self.user.rules.is_empty()
     }
 }
 
-impl Repair for Repairs {
+impl Repair for Repairs<'_> {
     fn repair(&self, document: &mut serde_json::Value) {
         if !self.is_noop() {
-            rules::repair_in_place(self.mask, &self.user.rules, document);
+            rules::repair_in_place(self.enabled, &self.user.rules, document);
         }
     }
 
     // Built from what the repairs do, so that layers with the same repairs
     // agree, and one that repairs nothing shares the plain read's entries.
     fn generation(&self) -> Option<Generation> {
-        (!self.is_noop()).then(|| self.user.generation.variant(self.mask))
+        (!self.is_noop()).then(|| self.user.generation.variant(self.enabled.id()))
     }
 }
 
@@ -114,7 +115,7 @@ impl Repair for Repairs {
 /// taken as they stand when each payload arrives.
 struct StreamRepairs {
     events: EventRepairs,
-    mask: u64,
+    enabled: Enabled,
     user: UserRules,
 }
 
@@ -122,7 +123,7 @@ impl StreamRepairs {
     fn repair(&self, payload: &mut serde_json::Value, last_event_id: Option<&str>) {
         self.events.repair(payload, last_event_id);
         Repairs {
-            mask: self.mask,
+            enabled: &self.enabled,
             user: self.user.current(),
         }
         .repair(payload);
@@ -137,8 +138,8 @@ impl StreamRepairs {
 pub struct CompatBmc<B: Bmc> {
     inner: Arc<B>,
     quirks: Arc<BmcQuirks>,
-    /// The platform's enabled repairs, as a mask over the table.
-    mask: u64,
+    /// The platform's enabled repairs.
+    enabled: Enabled,
     user: UserRules,
 }
 
@@ -164,7 +165,7 @@ impl<B: Bmc> CompatBmc<B> {
     pub fn new(inner: Arc<B>, quirks: Arc<BmcQuirks>) -> Self {
         Self {
             inner,
-            mask: rules::enabled(&quirks),
+            enabled: rules::enabled(&quirks),
             quirks,
             user: UserRules::default(),
         }
@@ -197,7 +198,7 @@ impl<B: Bmc> CompatBmc<B> {
         Self {
             inner,
             quirks: Arc::clone(&self.quirks),
-            mask: self.mask,
+            enabled: self.enabled.clone(),
             user: self.user.clone(),
         }
     }
@@ -216,9 +217,9 @@ impl<B: Bmc> CompatBmc<B> {
     }
 
     /// The repairs for one read.
-    fn repairs(&self) -> Repairs {
+    fn repairs(&self) -> Repairs<'_> {
         Repairs {
-            mask: self.mask,
+            enabled: &self.enabled,
             user: self.user.current(),
         }
     }
@@ -227,7 +228,7 @@ impl<B: Bmc> CompatBmc<B> {
     fn stream_repairs(&self) -> StreamRepairs {
         StreamRepairs {
             events: EventRepairs::new(&self.quirks),
-            mask: self.mask,
+            enabled: self.enabled.clone(),
             user: self.user.clone(),
         }
     }

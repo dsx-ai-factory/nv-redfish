@@ -21,33 +21,30 @@ use serde_json::Value;
 use crate::fixes;
 
 /// What a service root says about the device: the evidence the quirk
-/// rules match. Built from the raw root with [`RootEvidence::from_root`].
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// rules match, borrowed from the raw root with
+/// [`RootEvidence::from_root`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct RootEvidence {
+pub struct RootEvidence<'a> {
     /// The root's `Vendor`.
-    pub vendor: Option<String>,
+    pub vendor: Option<&'a str>,
     /// The root's `Product`.
-    pub product: Option<String>,
+    pub product: Option<&'a str>,
     /// The root's `RedfishVersion`.
-    pub redfish_version: Option<String>,
+    pub redfish_version: Option<&'a str>,
     /// The root's `Oem.Ami.RtpVersion`, which the GB300 host BMC exposes
     /// and other AMI BMCs do not.
-    pub ami_rtp_version: Option<String>,
+    pub ami_rtp_version: Option<&'a str>,
     /// Whether the root carries an `Oem.Ami` object, as Lenovo trays
     /// running AMI firmware do under their own vendor.
     pub ami_oem: bool,
 }
 
-impl RootEvidence {
+impl<'a> RootEvidence<'a> {
     /// The evidence a raw service root document carries.
     #[must_use]
-    pub fn from_root(root: &Value) -> Self {
-        let text = |pointer: &str| {
-            root.pointer(pointer)
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        };
+    pub fn from_root(root: &'a Value) -> Self {
+        let text = |pointer: &str| root.pointer(pointer).and_then(Value::as_str);
         Self {
             vendor: text("/Vendor"),
             product: text("/Product"),
@@ -58,19 +55,19 @@ impl RootEvidence {
     }
 
     fn vendor_is(&self, vendor: &str) -> bool {
-        self.vendor.as_deref() == Some(vendor)
+        self.vendor == Some(vendor)
     }
 
     fn product_is(&self, product: &str) -> bool {
-        self.product.as_deref() == Some(product)
+        self.product == Some(product)
     }
 
     fn redfish_version_is(&self, version: &str) -> bool {
-        self.redfish_version.as_deref() == Some(version)
+        self.redfish_version == Some(version)
     }
 
     fn ami_rtp_version_is(&self, version: &str) -> bool {
-        self.ami_rtp_version.as_deref() == Some(version)
+        self.ami_rtp_version == Some(version)
     }
 }
 
@@ -109,7 +106,7 @@ enum Quirk {
 
 // Devices whose service root `covers` matches have `quirks`.
 struct Rule {
-    covers: fn(&RootEvidence) -> bool,
+    covers: fn(&RootEvidence<'_>) -> bool,
     quirks: &'static [Quirk],
 }
 
@@ -207,7 +204,6 @@ const RULES: &[Rule] = &[
     Rule {
         covers: |root| {
             root.vendor
-                .as_deref()
                 .is_some_and(|vendor| vendor.starts_with("LITE-ON"))
         },
         quirks: &[
@@ -236,7 +232,7 @@ impl BmcQuirks {
     /// those of every rule it matches. An endpoint no rule matches has no
     /// quirks.
     #[must_use]
-    pub fn classify(evidence: &RootEvidence) -> Self {
+    pub fn classify(evidence: &RootEvidence<'_>) -> Self {
         let mut quirks = Vec::new();
         for rule in RULES.iter().filter(|rule| (rule.covers)(evidence)) {
             for quirk in rule.quirks {

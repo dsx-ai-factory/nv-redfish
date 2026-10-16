@@ -949,27 +949,25 @@ async fn dell_standard_collection_uses_post_and_resource_delete() -> TestResult<
 }
 
 // Create account (HPE-like vendor): response omits `AccountTypes`, expect
-// defaulting to `[Redfish]` from the account read back through the
-// compatibility layer.
+// defaulting to `[Redfish]` by the compatibility layer's repair.
 #[test]
 async fn create_account_hpe_patched() -> TestResult<()> {
     let (bmc, accounts_id, accounts) = account_fixture("HPE", &[]).await?;
     let create_req = create_request("user");
     let create_json = serde_json::to_value(&create_req).unwrap();
 
-    // iLO answers with the account, without the `AccountTypes` the schema
-    // requires; the wrapper takes its id and reads it through the
-    // compatibility layer, which supplies the default.
-    let created = json!({
-        ODATA_ID: format!("{accounts_id}/1"),
-        ODATA_TYPE: MANAGER_ACCOUNT_DATA_TYPE,
-        "Id": "1",
-        "Name": "User Account",
-        "UserName": "user",
-        "RoleId": "Operator"
-    });
-    bmc.expect(Expect::create(&accounts_id, create_json, created.clone()));
-    bmc.expect(Expect::get(&format!("{accounts_id}/1"), created));
+    bmc.expect(Expect::create(
+        &accounts_id,
+        create_json,
+        json!({
+            ODATA_ID: format!("{accounts_id}/1"),
+            ODATA_TYPE: MANAGER_ACCOUNT_DATA_TYPE,
+            "Id": "1",
+            "Name": "User Account",
+            "UserName": "user",
+            "RoleId": "Operator"
+        }),
+    ));
 
     let account = into_entity(accounts.create_account(create_req).await?).raw();
 
@@ -1444,11 +1442,10 @@ fn hpe_account_reply(accounts_id: &str) -> JsonValue {
     })
 }
 
-// Update account (HPE-like vendor): the reply omits `AccountTypes`, so the
-// account is read back through the compatibility layer, which supplies the
-// schema's default.
+// Update account (HPE-like vendor): the reply omits `AccountTypes`, which
+// the compatibility layer's repair supplies; the account is not read back.
 #[test]
-async fn update_account_hpe_reads_the_account_back() -> TestResult<()> {
+async fn update_account_hpe_repairs_the_reply() -> TestResult<()> {
     let (bmc, accounts_id, accounts) = account_fixture("HPE", &[(1, true, "user")]).await?;
     let account = accounts
         .all_accounts_data()
@@ -1466,36 +1463,9 @@ async fn update_account_hpe_reads_the_account_back() -> TestResult<()> {
         serde_json::to_value(&update)?,
         hpe_account_reply(&accounts_id),
     ));
-    bmc.expect(Expect::get(&account_id, hpe_account_reply(&accounts_id)));
 
     let updated = into_entity(account.update(&update).await?).raw();
     assert_eq!(updated.account_types, Some(vec![AccountTypes::Redfish]));
     assert_eq!(updated.role_id, Some("Operator".into()));
-    Ok(())
-}
-
-// Update password (HPE-like vendor): the account is not read back, as the
-// changed password may be the session's own; the update reads as empty.
-#[test]
-async fn update_account_password_hpe_does_not_read_the_account_back() -> TestResult<()> {
-    let (bmc, accounts_id, accounts) = account_fixture("HPE", &[(1, true, "user")]).await?;
-    let account = accounts
-        .all_accounts_data()
-        .await?
-        .into_iter()
-        .next()
-        .ok_or("account missing")?;
-    let update = ManagerAccountUpdate::builder()
-        .with_password("secret".into())
-        .build();
-
-    bmc.expect(Expect::update(
-        format!("{accounts_id}/1"),
-        serde_json::to_value(&update)?,
-        hpe_account_reply(&accounts_id),
-    ));
-
-    // Nothing else is queued: a read-back would fail.
-    assert_empty(account.update_password("secret".into()).await?);
     Ok(())
 }

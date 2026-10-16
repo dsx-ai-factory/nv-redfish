@@ -37,7 +37,10 @@ use nv_redfish_core::Bmc;
 use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
-use nv_redfish_core::ReferenceLeaf;
+use serde::de::Error as _;
+use serde::Deserialize;
+use serde::Deserializer;
+use serde_json::Value as JsonValue;
 use std::convert::identity;
 use std::sync::Arc;
 
@@ -51,6 +54,34 @@ pub enum DeletionStrategy {
 pub struct Config {
     /// How account deletion is performed.
     pub deletion_strategy: DeletionStrategy,
+}
+
+/// What an account write answers with when it is a document, kept as it
+/// came so that the account is repaired before it is read. A success
+/// message or a bare reference is not one, so the transport reads it as it
+/// would for an account.
+pub struct AccountReply(JsonValue);
+
+impl AccountReply {
+    /// The account, repaired as a read through the compatibility layer
+    /// repairs it.
+    pub fn into_account<B: Bmc>(self, bmc: &NvBmc<B>) -> Result<ManagerAccount, Error<B>> {
+        bmc.as_ref().decode(self.0).map_err(Error::Decode)
+    }
+}
+
+impl<'de> Deserialize<'de> for AccountReply {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let reply = JsonValue::deserialize(deserializer)?;
+        let is_document = reply
+            .as_object()
+            .is_some_and(|object| object.contains_key("@odata.id") && object.len() > 1);
+        if is_document {
+            Ok(Self(reply))
+        } else {
+            Err(D::Error::custom("the reply is not an account"))
+        }
+    }
 }
 
 /// Represents a Redfish `ManagerAccount`.
@@ -118,39 +149,19 @@ impl<B: Bmc> Account<B> {
     ) -> Result<ModificationResponse<Self>, Error<B>> {
         let id = self.data.odata_id();
         let etag = self.data.etag();
-        if !self.bmc.quirks.bug_no_account_type_in_accounts() {
-            return Ok(self
-                .bmc
+        let updated = if self.bmc.quirks.bug_no_account_type_in_accounts() {
+            // The platform answers with an account that lacks
+            // `AccountTypes`: the reply is repaired as a read is.
+            self.bmc
+                .update::<_, AccountReply>(id, etag, update)
+                .await?
+                .try_map_entity(|reply| reply.into_account(&self.bmc))?
+        } else {
+            self.bmc
                 .update::<_, ManagerAccount>(id, etag, update)
                 .await?
-                .map_entity(|ma| Self::from_data(self.bmc.clone(), ma, self.config.clone())));
-        }
-        // The platform answers with an account that lacks `AccountTypes`,
-        // which only a read through the compatibility layer repairs: take
-        // the reply as a reference and read the account again. Not after a
-        // password change, which can be the session's own credentials.
-        let reply = self
-            .bmc
-            .update::<_, ReferenceLeaf>(id, etag, update)
-            .await?;
-        if update.password.is_some() {
-            return Ok(match reply {
-                ModificationResponse::Task(task) => ModificationResponse::Task(task),
-                ModificationResponse::Entity(_) | ModificationResponse::Empty => {
-                    ModificationResponse::Empty
-                }
-            });
-        }
-        reply
-            .try_map_entity_async(|_| async move {
-                Self::new(
-                    &self.bmc,
-                    &NavProperty::new_reference(id.clone()),
-                    &self.config,
-                )
-                .await
-            })
-            .await
+        };
+        Ok(updated.map_entity(|ma| Self::from_data(self.bmc.clone(), ma, self.config.clone())))
     }
 
     /// Update the account's password.
@@ -235,5 +246,30 @@ impl<B: Bmc> Account<B> {
                     .await
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AccountReply;
+    use serde_json::json;
+    use serde_json::Value as JsonValue;
+
+    #[test]
+    fn only_a_document_is_an_account_reply() {
+        let read = |reply: JsonValue| serde_json::from_value::<AccountReply>(reply).is_ok();
+        assert!(read(json!({
+            "@odata.id": "/redfish/v1/AccountService/Accounts/1",
+            "UserName": "user",
+        })));
+        // Neither a success message nor a bare reference is an account: the
+        // transport reads them as it would for one.
+        assert!(!read(json!({
+            "error": { "code": "Base.1.8.Success", "message": "Success" },
+        })));
+        assert!(!read(json!({ "@Message.ExtendedInfo": [] })));
+        assert!(!read(json!({
+            "@odata.id": "/redfish/v1/AccountService/Accounts/1",
+        })));
     }
 }

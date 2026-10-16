@@ -61,6 +61,7 @@ pub use item::Account;
 pub use collection::AccountCollection;
 #[doc(inline)]
 pub(crate) use collection::FixedSlotConfig;
+pub(crate) use item::AccountReply;
 #[doc(inline)]
 pub(crate) use item::Config as AccountConfig;
 pub(crate) use item::DeletionStrategy;

@@ -27,9 +27,10 @@
 //!   product cannot take away those its vendor's rules give it.
 //!   Classification is a pure function; the caller decides what it fetches.
 //! - The repair table turns the document quirks into rewrites keyed by the
-//!   document's `@odata.type` family.
+//!   document's type: the schema and type its `@odata.type` names, in any
+//!   version.
 //! - [`UserRules`] holds repairs a caller supplies at runtime, matched by
-//!   `@odata.type` family or `@odata.id` pattern and applied after the
+//!   type ([`Match::Type`]) or `@odata.id` pattern and applied after the
 //!   platform's. The set can be replaced while the layer is in use.
 //! - [`CompatBmc`] is a [`Bmc`](nv_redfish_core::Bmc) over another that
 //!   applies both to every document it reads, members a device expanded
