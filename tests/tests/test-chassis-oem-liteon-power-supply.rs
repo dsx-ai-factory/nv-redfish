@@ -16,6 +16,7 @@
 
 use nv_redfish::chassis::Chassis;
 use nv_redfish::ServiceRoot;
+use nv_redfish_core::LocationIndicatorActive;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::anonymous_1_9_service_root;
 use nv_redfish_tests::json_merge;
@@ -33,7 +34,47 @@ const CHASSIS_COLLECTION_DATA_TYPE: &str = "#ChassisCollection.ChassisCollection
 const CHASSIS_DATA_TYPE: &str = "#Chassis.v1_23_0.Chassis";
 const POWER_SUBSYSTEM_DATA_TYPE: &str = "#PowerSubsystem.v1_1_0.PowerSubsystem";
 const PSU_COLLECTION_DATA_TYPE: &str = "#PowerSupplyCollection.PowerSupplyCollection";
-const PSU_DATA_TYPE: &str = "#PowerSupply.v1_5_0.PowerSupply";
+const LITEON_PSU_DATA_TYPE: &str = "#LiteonPowerSupply.v1_0_0.LiteonPowerSupply";
+
+#[test]
+async fn liteon_power_supply_fetch_location_indicator_led_object() -> Result<(), Box<dyn StdError>>
+{
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let chassis =
+        get_liteon_chassis(bmc.clone(), &ids, liteon_chassis_member(&ids, json!({}))).await?;
+    expect_power_subsystem(bmc.clone(), &ids);
+    expect_psu_collection(
+        bmc.clone(),
+        &ids,
+        vec![format!("{}/0", ids.psu_collection_id)],
+    );
+
+    let links = chassis.oem_liteon_power_supply_links().await?.unwrap();
+    let psu_id = format!("{}/0", ids.psu_collection_id);
+    bmc.expect(Expect::get(
+        &psu_id,
+        json_merge([
+            &psu_payload(&psu_id, "0", true),
+            &json!({
+                "LocationIndicatorActive": {
+                    "FaultLed": "OFF",
+                    "PowerLed": "Solid"
+                }
+            }),
+        ]),
+    ));
+    let psu = links[0].fetch().await?;
+    assert_eq!(
+        psu.location_indicator_active,
+        Some(Some(LocationIndicatorActive::LedIndicators {
+            fault_led: "OFF".into(),
+            power_led: "Solid".into(),
+        }))
+    );
+
+    Ok(())
+}
 
 #[test]
 async fn liteon_power_supply_links_happy_path() -> Result<(), Box<dyn StdError>> {
@@ -404,7 +445,7 @@ fn liteon_chassis_member(ids: &Ids, extra: Value) -> Value {
 fn psu_payload(psu_id: &str, id: &str, power_state: bool) -> Value {
     json!({
         ODATA_ID: psu_id,
-        ODATA_TYPE: PSU_DATA_TYPE,
+        ODATA_TYPE: LITEON_PSU_DATA_TYPE,
         "Id": id,
         "Name": format!("Power Supply {id}"),
         "Manufacturer": "LITE-ON TECHNOLOGY CORP.",
