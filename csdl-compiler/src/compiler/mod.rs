@@ -116,6 +116,8 @@ pub use context::EntityTypeFilter;
 #[doc(inline)]
 pub use context::EntityTypeFilterPattern;
 #[doc(inline)]
+pub use context::ExcerptDependencies;
+#[doc(inline)]
 pub use context::PropertyFilter;
 #[doc(inline)]
 pub use context::PropertyPattern;

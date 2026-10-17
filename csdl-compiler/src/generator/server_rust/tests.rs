@@ -17,6 +17,8 @@ use super::{Builder, Config, Error, Input};
 use crate::compiler::SchemaBundle;
 use crate::edmx::{Edmx, QualifiedTypeName};
 
+mod excerpts;
+
 fn root(name: &str) -> QualifiedTypeName {
     name.parse().expect("valid qualified name in test fixture")
 }

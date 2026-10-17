@@ -20,6 +20,7 @@ use crate::compiler::ComplexType;
 use crate::compiler::Context;
 use crate::compiler::EntityType;
 use crate::compiler::Error;
+use crate::compiler::ExcerptDependencies;
 use crate::compiler::MapType;
 use crate::compiler::MustHaveId;
 use crate::compiler::OData;
@@ -137,7 +138,11 @@ impl<'a> Properties<'a> {
     ) -> Result<Compiled<'a>, Error<'a>> {
         let qname = v.ptype.qualified_type_name().into();
         let redfish = RedfishProperty::new(v);
-        if ctx.root_set_entities.contains(&qname) || ctx.config.entity_type_filter.matches(&qname) {
+        if ctx.root_set_entities.contains(&qname)
+            || ctx.config.entity_type_filter.matches(&qname)
+            || (redfish.excerpt_copy.is_some()
+                && ctx.config.excerpt_dependencies == ExcerptDependencies::Include)
+        {
             // Find the deepest available child in the type hierarchy
             // for the singleton, to target the most recent protocol
             // version.

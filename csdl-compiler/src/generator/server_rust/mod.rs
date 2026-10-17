@@ -16,8 +16,9 @@
 //! Serializable server models, independent of the client read-model generator.
 //!
 //! Explicit entity/complex roots select a schema family. Inheritance is flattened,
-//! structural dependencies are included, and navigation properties remain links.
-//! Write-only properties are omitted from response models.
+//! structural and excerpt dependencies are included. Ordinary navigation properties
+//! remain links; excerpt copies use separate models containing the selected fields.
+//! Write-only and excerpt-only properties are omitted from full response models.
 //! The output is one file with inline namespace modules, suitable for `include!`.
 //! Types pass through the same optimizer as client models before emission.
 //! All entry points take [`QualifiedName`](crate::compiler::QualifiedName) roots; callers parse names.
@@ -44,15 +45,15 @@ use std::io::Error as IoError;
 use std::path::PathBuf;
 
 use crate::compiler::{
-    Config as CompilerConfig, EntityTypeFilter, EntityTypeFilterPattern, QualifiedName,
-    SchemaBundle,
+    Config as CompilerConfig, EntityTypeFilter, EntityTypeFilterPattern, ExcerptDependencies,
+    QualifiedName, SchemaBundle,
 };
 use crate::edmx::{Edmx, QualifiedTypeName, ValidateError};
 use crate::optimizer::{optimize, Config as OptimizerConfig};
 
 use enum_def::EnumDef;
 use mod_def::{Definition, ModDef};
-use struct_def::StructDef;
+use struct_def::{GenerateType, StructDef};
 use type_def::TypeDef;
 
 pub use config::Config;
@@ -177,6 +178,7 @@ impl<'a> Builder<'a> {
                 self.roots,
                 CompilerConfig {
                     entity_type_filter: EntityTypeFilter::new_restrictive(Vec::new()),
+                    excerpt_dependencies: ExcerptDependencies::Include,
                     ..CompilerConfig::default()
                 },
             )
@@ -200,9 +202,25 @@ impl<'a> Builder<'a> {
             } else if let Some(value) = compiled.type_definitions.get(&name) {
                 Definition::Type(TypeDef::new(value))
             } else {
-                Definition::Struct(StructDef::new(&compiled, name, self.config))
+                Definition::Struct(StructDef::new(
+                    &compiled,
+                    name,
+                    self.config,
+                    GenerateType::Response,
+                ))
             };
             root.add(name, definition);
+            for excerpt in compiled.sorted_excerpt_copies(name) {
+                root.add(
+                    name,
+                    Definition::Struct(StructDef::new(
+                        &compiled,
+                        name,
+                        self.config,
+                        GenerateType::Excerpt(excerpt),
+                    )),
+                );
+            }
         }
         let syntax = syn::parse2::<syn::File>(root.generate()?).map_err(Error::Syntax)?;
         Ok(format!(

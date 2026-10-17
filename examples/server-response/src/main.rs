@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A service root, one chassis, and two sensors serialized directly into stdout.
+//! A chassis with sensors, thermal metrics, and sensor excerpts serialized into stdout.
 
 use std::convert::TryFrom;
 use std::io::{self, Write};
@@ -23,9 +23,11 @@ use server_response::schema::chassis::{Chassis, ChassisRequired, ChassisType};
 use server_response::schema::chassis_collection::ChassisCollection;
 use server_response::schema::physical_context::PhysicalContext;
 use server_response::schema::resource::{Health, State, Status};
-use server_response::schema::sensor::{ReadingType, Sensor};
+use server_response::schema::sensor::{ReadingType, Sensor, SensorExcerpt, SensorExcerptArray};
 use server_response::schema::sensor_collection::SensorCollection;
 use server_response::schema::service_root::{Links, ServiceRoot, ServiceRootRequired};
+use server_response::schema::thermal_metrics::{TemperatureSummary, ThermalMetrics};
+use server_response::schema::thermal_subsystem::ThermalSubsystem;
 
 const CHASSIS_URI: &str = "/redfish/v1/Chassis/HGX_CPU_0";
 const SENSORS_URI: &str = "/redfish/v1/Chassis/HGX_CPU_0/Sensors";
@@ -54,7 +56,7 @@ fn enabled_status() -> Status {
         .conditions([])
 }
 
-fn chassis_response(sensors: &SensorCollection) -> Chassis {
+fn chassis_response(sensors: &SensorCollection, thermal_subsystem: &ThermalSubsystem) -> Chassis {
     Chassis::new(ChassisRequired {
         odata_id: CHASSIS_URI.into(),
         id: "HGX_CPU_0".into(),
@@ -65,6 +67,7 @@ fn chassis_response(sensors: &SensorCollection) -> Chassis {
     .model("Grace A02P")
     .serial_number("0x000000017844A04120000000120081C0")
     .sensors(&sensors.odata_id)
+    .thermal_subsystem(&thermal_subsystem.odata_id)
     .status(enabled_status())
 }
 
@@ -117,6 +120,38 @@ fn sensor_collection_response(sensors: &[Sensor]) -> SensorCollection {
     .members_count(sensors.len() as u64)
 }
 
+fn thermal_metrics_response(temperature: &Sensor) -> ThermalMetrics {
+    let reading = SensorExcerptArray {
+        reading: temperature.reading,
+        ..SensorExcerptArray::new()
+    }
+    .data_source_uri(&temperature.odata_id)
+    .device_name(&temperature.name);
+    let internal = SensorExcerpt {
+        reading: temperature.reading,
+        ..SensorExcerpt::new()
+    }
+    .data_source_uri(&temperature.odata_id);
+
+    ThermalMetrics::new(
+        format!("{CHASSIS_URI}/ThermalSubsystem/ThermalMetrics"),
+        "ThermalMetrics",
+        "Thermal Metrics",
+    )
+    .temperature_readings_celsius([reading])
+    .temperature_summary_celsius(TemperatureSummary::new().internal(internal))
+}
+
+fn thermal_subsystem_response(metrics: &ThermalMetrics) -> ThermalSubsystem {
+    ThermalSubsystem::new(
+        format!("{CHASSIS_URI}/ThermalSubsystem"),
+        "ThermalSubsystem",
+        "Thermal Subsystem",
+    )
+    .thermal_metrics(&metrics.odata_id)
+    .status(enabled_status())
+}
+
 #[derive(serde::Serialize)]
 struct Responses {
     #[serde(rename = "ServiceRoot")]
@@ -129,12 +164,19 @@ struct Responses {
     sensor_collection: SensorCollection,
     #[serde(rename = "Sensors")]
     sensors: [Sensor; 2],
+    #[serde(rename = "ThermalSubsystem")]
+    thermal_subsystem: ThermalSubsystem,
+    #[serde(rename = "ThermalMetrics")]
+    thermal_metrics: ThermalMetrics,
 }
 
 fn responses() -> Result<Responses, Box<dyn std::error::Error>> {
     let sensors = sensor_responses()?;
     let sensor_collection = sensor_collection_response(&sensors);
-    let chassis = chassis_response(&sensor_collection);
+    let [temperature, _] = &sensors;
+    let thermal_metrics = thermal_metrics_response(temperature);
+    let thermal_subsystem = thermal_subsystem_response(&thermal_metrics);
+    let chassis = chassis_response(&sensor_collection, &thermal_subsystem);
     let chassis_collection = chassis_collection_response(&chassis);
     let service_root = service_root_response(&chassis_collection)?;
     Ok(Responses {
@@ -143,6 +185,8 @@ fn responses() -> Result<Responses, Box<dyn std::error::Error>> {
         chassis,
         sensor_collection,
         sensors,
+        thermal_subsystem,
+        thermal_metrics,
     })
 }
 

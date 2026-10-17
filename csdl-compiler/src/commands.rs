@@ -225,6 +225,7 @@ fn process_command_inner(
                     ),
                     action_filter: ActionFilter::new_restrictive(action_patterns.clone()),
                     rigid_array_filter: PropertyFilter::new(rigid_array_patterns.clone()),
+                    ..CompilerConfig::default()
                 })
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());

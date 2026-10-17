@@ -13,16 +13,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::{self, Display, Formatter};
+
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
 
 use super::Error;
 use crate::compiler::QualifiedName;
+use crate::generator::common_rust::type_name::TypeNameForExcerptCopy;
 use crate::generator::common_rust::{ident::escaped, ModName, TypeName};
+use crate::redfish::ExcerptCopy;
+
+/// A full schema model or a selected excerpt of that model.
+#[derive(Clone, Copy)]
+pub(super) enum ResponseTypeName<'a> {
+    Schema(TypeName<'a>),
+    Excerpt(TypeNameForExcerptCopy<'a>),
+}
+
+impl Display for ResponseTypeName<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Schema(name) => Display::fmt(name, f),
+            Self::Excerpt(name) => Display::fmt(name, f),
+        }
+    }
+}
+
+impl ToTokens for ResponseTypeName<'_> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Schema(name) => name.to_tokens(tokens),
+            Self::Excerpt(name) => name.to_tokens(tokens),
+        }
+    }
+}
 
 /// Name of the required-fields helper associated with a schema type.
 #[derive(Clone, Copy)]
-pub(super) struct RequiredTypeName<'a>(pub TypeName<'a>);
+pub(super) struct RequiredTypeName<'a>(pub ResponseTypeName<'a>);
 
 impl RequiredTypeName<'_> {
     pub(super) fn ident(self) -> Ident {
@@ -48,10 +77,21 @@ pub(super) fn namespace(name: QualifiedName<'_>) -> Vec<ModName<'_>> {
 }
 
 pub(super) fn path(name: QualifiedName<'_>, depth: usize) -> TokenStream {
+    path_with_name(name, depth, type_name(name))
+}
+
+pub(super) fn excerpt_path(
+    name: QualifiedName<'_>,
+    excerpt: &ExcerptCopy,
+    depth: usize,
+) -> TokenStream {
+    path_with_name(name, depth, type_name(name).for_excerpt_copy(excerpt))
+}
+
+fn path_with_name(name: QualifiedName<'_>, depth: usize, type_name: impl ToTokens) -> TokenStream {
     let parents = (0..depth).map(|_| quote! { super:: });
     let modules = namespace(name);
-    let name = type_name(name);
-    quote! { #(#parents)* #(#modules::)* #name }
+    quote! { #(#parents)* #(#modules::)* #type_name }
 }
 
 pub(super) fn is_string(name: QualifiedName<'_>) -> bool {

@@ -33,6 +33,9 @@
 //! needed for output, module merging, or collision checks.
 //! Optimizations must preserve the wire identity of selected roots: identical
 //! fields do not make two schema versions interchangeable for `@odata.type`.
+//! Excerpt copies are separate model shapes, not resource references or full
+//! entities. Select fields by excerpt key, keep excerpt-only fields out of full
+//! resources, and do not add automatic resource metadata to excerpt models.
 //!
 //! Rendering may construct and reuse tokens locally. For example, the server's
 //! `Property` describes a borrowed source declaration or protocol annotation,

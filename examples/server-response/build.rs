@@ -32,6 +32,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Chassis.Chassis",
         "SensorCollection.SensorCollection",
         "Sensor.Sensor",
+        "ThermalSubsystem.ThermalSubsystem",
+        "ThermalMetrics.ThermalMetrics",
     ]
     .iter()
     .map(|name| name.parse())

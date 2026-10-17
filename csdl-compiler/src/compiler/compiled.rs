@@ -118,6 +118,22 @@ impl<'a> Compiled<'a> {
         names
     }
 
+    /// Required excerpts of a type, ordered by their schema keys.
+    #[must_use]
+    pub fn sorted_excerpt_copies(&self, name: QualifiedName<'a>) -> Vec<&ExcerptCopy> {
+        let mut copies: Vec<_> = self
+            .excerpt_copies
+            .get(&name)
+            .into_iter()
+            .flatten()
+            .collect();
+        copies.sort_unstable_by_key(|copy| match copy {
+            ExcerptCopy::AllKeys => None,
+            ExcerptCopy::Key(key) => Some(key.inner()),
+        });
+        copies
+    }
+
     /// Create a compiled structure containing a single compiled
     /// entity type.
     #[must_use]

@@ -20,10 +20,14 @@ use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 
 use super::{
-    enum_def::EnumDef, struct_def::StructDef, type_def::TypeDef, types::RequiredTypeName, Error,
+    enum_def::EnumDef,
+    struct_def::StructDef,
+    type_def::TypeDef,
+    types::{RequiredTypeName, ResponseTypeName},
+    Error,
 };
 use crate::compiler::QualifiedName;
-use crate::generator::common_rust::{ident::escaped, ModName, TypeName};
+use crate::generator::common_rust::{ident::escaped, ModName};
 
 pub(super) enum Definition<'a> {
     Struct(StructDef<'a>),
@@ -32,11 +36,11 @@ pub(super) enum Definition<'a> {
 }
 
 impl<'a> Definition<'a> {
-    const fn name(&self) -> TypeName<'a> {
+    const fn name(&self) -> ResponseTypeName<'a> {
         match self {
             Self::Struct(definition) => definition.name,
-            Self::Enum(definition) => definition.name,
-            Self::Type(definition) => definition.name,
+            Self::Enum(definition) => ResponseTypeName::Schema(definition.name),
+            Self::Type(definition) => ResponseTypeName::Schema(definition.name),
         }
     }
 

@@ -22,7 +22,8 @@ cargo run -p server-response
 ```
 
 Prints a document containing `ServiceRoot`, `ChassisCollection`, one `Chassis`,
-`SensorCollection`, and two `Sensors`. The outer document is an example container,
+`SensorCollection`, two `Sensors`, `ThermalSubsystem`, and `ThermalMetrics`.
+The outer document is an example container,
 not a Redfish resource. The program serializes ordinary Rust structs directly
 into stdout; it does not construct an intermediate JSON tree.
 
@@ -32,25 +33,40 @@ The responses form this chain of resource links:
 /redfish/v1
 └── Chassis
     └── HGX_CPU_0
-        └── Sensors
-            ├── ProcessorModule_0_CPU_0_TempAvg_0   34.25 Cel
-            └── ProcessorModule_0_CPU_0_Power_0     56.315 W
+        ├── Sensors
+        │   ├── ProcessorModule_0_CPU_0_TempAvg_0   34.25 Cel
+        │   └── ProcessorModule_0_CPU_0_Power_0     56.315 W
+        └── ThermalSubsystem
+            └── ThermalMetrics
 ```
 
-Names, identifiers, readings, ranges, and status values come from the Supermicro
-GB300 NVL72 capture in `redfish-test-vectors`:
+Chassis and sensor names, identifiers, readings, ranges, and status values come
+from the Supermicro GB300 NVL72 capture in `redfish-test-vectors`:
 
 ```text
 vectors/supermicro/gb300-nvl72/70-01-00-14-2026-06-05-307dcf085158/redfish/v1/
 ```
 
 Only the selected chassis and sensors are included, with collection counts
-adjusted accordingly. `ServiceRoot.Links.Sessions` retains the required session
+adjusted accordingly. Thermal metrics reuse the selected temperature sensor's
+reading and URI in two generated excerpt models:
+
+- `TemperatureReadingsCelsius` contains a `SensorExcerptArray`, including the
+  sensor's `Reading`, `DataSourceUri`, and `DeviceName`.
+- `TemperatureSummaryCelsius.Internal` contains a `SensorExcerpt` with the same
+  `Reading` and `DataSourceUri`.
+
+These nested objects contain excerpt fields, without automatic `@odata.id`,
+`@odata.type`, or collection count annotations. The full sensor responses remain
+separate resources referenced by `DataSourceUri`.
+
+`ServiceRoot.Links.Sessions` retains the required session
 collection link; its target is outside this example. No external test-vector
 checkout is needed to build or run it.
 
 `build.rs` selects `ServiceRoot.ServiceRoot`, `ChassisCollection.ChassisCollection`,
-`Chassis.Chassis`, `SensorCollection.SensorCollection`, and `Sensor.Sensor` from
+`Chassis.Chassis`, `SensorCollection.SensorCollection`, `Sensor.Sensor`,
+`ThermalSubsystem.ThermalSubsystem`, and `ThermalMetrics.ThermalMetrics` from
 the bundled schemas and generates one `OUT_DIR/redfish_server.rs` file with inline
 namespace modules. See `src/main.rs` for their use. Generated `@odata.type` values
 follow these bundled schemas rather than the older versions in the capture.
@@ -131,7 +147,12 @@ setters. Public fields also permit normal Rust struct access.
 
 Wire keys and enum spellings remain exactly as declared in CSDL. Rust fields
 and setters use snake_case. Enums are closed; there is no client-style
-`UnsupportedValue` variant. Navigation properties are simple resource references.
+`UnsupportedValue` variant. Ordinary navigation properties are simple resource
+references. `Redfish.ExcerptCopy` properties contain separate excerpt models
+such as `SensorExcerpt` or `SensorExcerptArray`, including sources that were not
+selected as roots. Excerpt models contain only fields selected by `Redfish.Excerpt`
+and `Redfish.ExcerptCopyOnly`, without automatic resource metadata or collection
+counts. Excerpt-only fields are excluded from full resource models.
 
 `nv-redfish-server-core` contains only shared serialization primitives:
 references, finite numbers, and extension-property maps. Raw JSON values are

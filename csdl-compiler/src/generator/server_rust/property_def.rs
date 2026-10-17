@@ -106,13 +106,32 @@ impl<'a> PropertyDef<'a> {
                 (prop_type, ptype, docs)
             }
             Property::Navigation(property) => {
-                let (odata, redfish) = match property {
-                    NavProperty::Expandable(value) => (&value.odata, &value.redfish),
-                    NavProperty::Reference { odata, redfish, .. } => (odata, redfish),
+                let reference = || {
+                    (
+                        quote! { nv_redfish_server_core::Reference },
+                        PropertyType::Reference,
+                    )
+                };
+                let (odata, redfish, (prop_type, ptype)) = match property {
+                    NavProperty::Expandable(value) => (
+                        &value.odata,
+                        &value.redfish,
+                        value
+                            .redfish
+                            .excerpt_copy
+                            .as_ref()
+                            .map_or_else(reference, |excerpt| {
+                                (
+                                    types::excerpt_path(*value.ptype.inner(), excerpt, depth),
+                                    PropertyType::Value,
+                                )
+                            }),
+                    ),
+                    NavProperty::Reference { odata, redfish, .. } => (odata, redfish, reference()),
                 };
                 (
-                    quote! { nv_redfish_server_core::Reference },
-                    PropertyType::Reference,
+                    prop_type,
+                    ptype,
                     format_and_generate_with_deprecation(
                         property.name(),
                         odata,

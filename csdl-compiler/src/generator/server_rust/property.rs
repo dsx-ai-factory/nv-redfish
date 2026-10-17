@@ -20,11 +20,13 @@ use std::iter::once;
 use tagged_types::TaggedType;
 
 use super::annotation::Annotation;
+use crate::compiler::redfish::RedfishProperty;
 use crate::compiler::{
     Compiled, NavProperty, Property as CompiledProperty, QualifiedName, TypeDefinition,
 };
 use crate::edmx::PropertyName as EdmxPropertyName;
 use crate::generator::common_rust::InheritedProperties;
+use crate::redfish::ExcerptCopy;
 use crate::{IsNullable, IsRequired, OneOrCollection};
 
 /// A borrowed schema declaration or a generated protocol field.
@@ -59,30 +61,14 @@ pub(super) fn collect<'a>(
         .flat_map(|_| Annotation::entity_metadata())
         .map(Property::Annotation)
         .chain(
-            inherited
-                .structural_properties()
-                .into_iter()
-                .map(|property| {
-                    let (_, target) = property.ptype.inner();
-                    Property::Structural {
-                        property,
-                        type_definition: compiled.type_definitions.get(target),
-                    }
+            schema_properties(compiled, inherited)
+                .filter(|property| {
+                    !property.is_write_only()
+                        && property
+                            .redfish()
+                            .is_none_or(|redfish| !redfish.is_excerpt_only.into_inner())
                 })
-                .filter(|property| !property.is_write_only()),
-        )
-        .chain(
-            inherited
-                .navigation_properties()
-                .into_iter()
-                .filter(|(_, property)| !Property::Navigation(property).is_write_only())
-                .flat_map(|(key, property)| {
-                    let reference = Property::Navigation(property);
-                    let count = reference
-                        .is_collection()
-                        .then_some(Property::Annotation(Annotation::Count(key)));
-                    once(reference).chain(count)
-                }),
+                .flat_map(|property| once(property).chain(property.collection_count())),
         )
         .chain(
             inherited
@@ -93,7 +79,69 @@ pub(super) fn collect<'a>(
         .collect()
 }
 
+/// Only explicitly marked excerpt fields, without resource metadata or extensions.
+pub(super) fn excerpt<'a>(
+    compiled: &'a Compiled<'a>,
+    inherited: &InheritedProperties<'a>,
+    copy: &ExcerptCopy,
+) -> Vec<Property<'a>> {
+    schema_properties(compiled, inherited)
+        .filter(|property| {
+            !property.is_write_only()
+                && property
+                    .redfish()
+                    .and_then(|redfish| redfish.excerpt.as_ref())
+                    .is_some_and(|excerpt| excerpt.matches(copy))
+        })
+        .collect()
+}
+
+fn schema_properties<'a>(
+    compiled: &'a Compiled<'a>,
+    inherited: &InheritedProperties<'a>,
+) -> impl Iterator<Item = Property<'a>> {
+    inherited
+        .structural_properties()
+        .into_iter()
+        .map(move |property| {
+            let (_, target) = property.ptype.inner();
+            Property::Structural {
+                property,
+                type_definition: compiled.type_definitions.get(target),
+            }
+        })
+        .chain(
+            inherited
+                .navigation_properties()
+                .into_values()
+                .map(Property::Navigation),
+        )
+}
+
 impl<'a> Property<'a> {
+    const fn redfish(self) -> Option<&'a RedfishProperty<'a>> {
+        match self {
+            Self::Structural { property, .. } => Some(&property.redfish),
+            Self::Navigation(NavProperty::Expandable(property)) => Some(&property.redfish),
+            Self::Navigation(NavProperty::Reference { redfish, .. }) => Some(redfish),
+            Self::Annotation(_) | Self::Additional => None,
+        }
+    }
+
+    fn collection_count(self) -> Option<Self> {
+        match self {
+            Self::Navigation(property)
+                if self.is_collection()
+                    && self
+                        .redfish()
+                        .is_none_or(|redfish| redfish.excerpt_copy.is_none()) =>
+            {
+                Some(Self::Annotation(Annotation::Count(property.name())))
+            }
+            _ => None,
+        }
+    }
+
     fn is_write_only(self) -> bool {
         match self {
             Self::Structural { property, .. } => property.odata.permissions_is_write_only(),

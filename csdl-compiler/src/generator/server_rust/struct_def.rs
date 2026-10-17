@@ -26,11 +26,18 @@ use super::{
 };
 use crate::compiler::{Compiled, OData, QualifiedName};
 use crate::generator::common_rust::{
-    doc::format_and_generate, ident::escaped, InheritedProperties, TypeName,
+    doc::format_and_generate, ident::escaped, InheritedProperties,
 };
+use crate::redfish::ExcerptCopy;
+
+#[derive(Clone, Copy)]
+pub(super) enum GenerateType<'a> {
+    Response,
+    Excerpt(&'a ExcerptCopy),
+}
 
 pub(super) struct StructDef<'a> {
-    pub(super) name: TypeName<'a>,
+    pub(super) name: types::ResponseTypeName<'a>,
     pub(super) helper: Option<types::RequiredTypeName<'a>>,
     properties: Vec<Property<'a>>,
     depth: usize,
@@ -43,23 +50,34 @@ impl<'a> StructDef<'a> {
         compiled: &'a Compiled<'a>,
         qname: QualifiedName<'a>,
         config: Config,
+        generate: GenerateType<'a>,
     ) -> Self {
         let inherited = InheritedProperties::new(compiled, qname);
         let name = types::type_name(qname);
-        let properties = property::collect(compiled, qname, &inherited);
+        let (name, properties, odata_type) = match generate {
+            GenerateType::Response => (
+                types::ResponseTypeName::Schema(name),
+                property::collect(compiled, qname, &inherited),
+                compiled
+                    .entity_types
+                    .contains_key(&qname)
+                    .then(|| QualifiedName {
+                        namespace: qname.namespace.original(),
+                        ..qname
+                    }),
+            ),
+            GenerateType::Excerpt(copy) => (
+                types::ResponseTypeName::Excerpt(name.for_excerpt_copy(copy)),
+                property::excerpt(compiled, &inherited, copy),
+                None,
+            ),
+        };
         let required_count = properties
             .iter()
             .filter(|property| property.constructor_required())
             .count();
         let helper = (required_count > config.constructor_max_param_number_threshold)
             .then_some(types::RequiredTypeName(name));
-        let odata_type = compiled
-            .entity_types
-            .contains_key(&qname)
-            .then(|| QualifiedName {
-                namespace: qname.namespace.original(),
-                ..qname
-            });
         Self {
             name,
             helper,
@@ -180,7 +198,7 @@ fn constructor(
         quote! { #name: #value, }
     });
     quote! {
-        /// Construct a response with required properties and the generated CSDL type.
+        /// Construct a model with its required properties.
         /// Optional properties are omitted until assigned.
         pub fn new(#parameters) -> Self {
             Self { #(#initializers)* }

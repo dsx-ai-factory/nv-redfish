@@ -54,10 +54,22 @@ pub struct Context<'a> {
 pub struct Config {
     /// Entity type filter applied during compilation.
     pub entity_type_filter: EntityTypeFilter,
+    /// Whether excerpt sources must be included independently of entity selection.
+    pub excerpt_dependencies: ExcerptDependencies,
     /// Action filter applied during compilation.
     pub action_filter: ActionFilter,
     /// Array properties that should be generated as rigid.
     pub rigid_array_filter: PropertyFilter,
+}
+
+/// Selection of entity dependencies referenced through `Redfish.ExcerptCopy`.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExcerptDependencies {
+    /// Follow the same roots and entity filter as ordinary navigation properties.
+    #[default]
+    SelectedEntities,
+    /// Include excerpt sources even when ordinary navigation remains a reference.
+    Include,
 }
 
 /// Action filter specified by wildcard patterns.

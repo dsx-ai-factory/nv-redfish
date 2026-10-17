@@ -129,6 +129,7 @@ impl ToTokens for TypeNameForCreate<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct TypeNameForExcerptCopy<'a>(TypeName<'a>, &'a ExcerptCopy);
 
 impl Display for TypeNameForExcerptCopy<'_> {
