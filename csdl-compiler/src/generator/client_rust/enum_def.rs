@@ -16,10 +16,10 @@
 use crate::compiler::EnumType;
 use crate::edmx::attribute_values::SimpleIdentifier;
 use crate::generator::casemungler;
-use crate::generator::rust::doc::format_and_generate as doc_format_and_generate;
-use crate::generator::rust::ident;
-use crate::generator::rust::Config;
-use crate::generator::rust::TypeName;
+use crate::generator::client_rust::Config;
+use crate::generator::client_rust::TypeName;
+use crate::generator::common_rust::doc::format_and_generate as doc_format_and_generate;
+use crate::generator::common_rust::ident;
 use proc_macro2::Delimiter;
 use proc_macro2::Group;
 use proc_macro2::Literal;

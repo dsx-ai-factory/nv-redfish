@@ -21,7 +21,7 @@ tagged-types = { workspace = true }
 quote = { workspace = true }
 proc-macro2 = { workspace = true }
 prettyplease = { workspace = true }
-syn = { workspace = true }
+syn = { workspace = true, features = ["extra-traits"] }
 clap = { workspace = true, features = [ "derive" ] }
 clap_derive = { workspace = true }
 toml = { workspace = true, features = [ "parse", "serde" ] }

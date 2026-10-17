@@ -15,9 +15,9 @@
 
 use crate::compiler::QualifiedName;
 use crate::compiler::TypeClass;
-use crate::generator::rust::Config;
-use crate::generator::rust::ModName;
-use crate::generator::rust::TypeName;
+use crate::generator::client_rust::Config;
+use crate::generator::client_rust::ModName;
+use crate::generator::client_rust::TypeName;
 use crate::redfish::ExcerptCopy;
 use proc_macro2::Punct;
 use proc_macro2::Spacing;

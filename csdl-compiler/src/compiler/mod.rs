@@ -116,6 +116,8 @@ pub use context::EntityTypeFilter;
 #[doc(inline)]
 pub use context::EntityTypeFilterPattern;
 #[doc(inline)]
+pub use context::ExcerptDependencies;
+#[doc(inline)]
 pub use context::PropertyFilter;
 #[doc(inline)]
 pub use context::PropertyPattern;
@@ -223,6 +225,69 @@ pub struct RootSet<'a> {
 }
 
 impl SchemaBundle {
+    /// Compile explicit entity or complex type roots, following each family's
+    /// unambiguous descendant chain with the same rules as singleton roots.
+    ///
+    /// Returns the resolved roots alongside their compiled dependencies.
+    /// Returned names borrow the bundle, independently of the input names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unknown roots or unresolved schema dependencies.
+    pub fn compile_named_types(
+        &self,
+        names: &[QualifiedName<'_>],
+        config: Config,
+    ) -> Result<(Compiled<'_>, Vec<QualifiedName<'_>>), Error<'_>> {
+        let schema_index = SchemaIndex::build(self.all_docs())?;
+        let mut roots = names
+            .iter()
+            .map(|name| {
+                schema_index
+                    .get(&name.namespace)
+                    .and_then(|schema| {
+                        schema
+                            .entity_types
+                            .get(name.name)
+                            .map(|entity| {
+                                (
+                                    QualifiedName::new(&schema.namespace, entity.name.inner()),
+                                    true,
+                                )
+                            })
+                            .or_else(|| match schema.types.get(name.name) {
+                                Some(Type::ComplexType(complex)) => Some((
+                                    QualifiedName::new(&schema.namespace, complex.name.inner()),
+                                    false,
+                                )),
+                                _ => None,
+                            })
+                    })
+                    .map(|(qname, is_entity)| (schema_index.find_child_type(qname), is_entity))
+                    .ok_or_else(|| Error::RootTypeNotFound(name.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        roots.sort_unstable();
+        roots.dedup();
+        let root_set = RootSet {
+            entity_types: roots
+                .iter()
+                .filter_map(|(name, is_entity)| is_entity.then_some(*name))
+                .collect(),
+            complex_types: roots
+                .iter()
+                .filter_map(|(name, is_entity)| (!is_entity).then_some(*name))
+                .collect(),
+        };
+        let resolved = roots.into_iter().map(|(name, _)| name).collect();
+        let ctx = Context {
+            schema_index,
+            config,
+            root_set_entities: root_set.entity_types.iter().copied().collect(),
+        };
+        Ok((self.compile_root_set(&root_set, &ctx)?, resolved))
+    }
+
     /// Build a bundle from root documents and, optionally, resolve
     /// documents used only to resolve type references from the root
     /// documents; resolve documents are never compiled themselves.
@@ -597,6 +662,20 @@ mod test {
     use super::*;
     use crate::edmx::Edmx;
     use crate::edmx::QualifiedTypeName;
+
+    #[test]
+    fn compile_named_types_rejects_unknown_names_and_other_type_kinds() {
+        let bundle = scaffolded(
+            r#"<Schema Namespace="Sample"><EnumType Name="Item"><Member Name="One"/></EnumType></Schema>"#,
+        );
+        for name in ["Missing.Item", "Sample.Missing", "Sample.Item"] {
+            let parsed: QualifiedTypeName = name.parse().expect("valid qualified name");
+            assert!(matches!(
+                bundle.compile_named_types(&[(&parsed).into()], Config::default()),
+                Err(Error::RootTypeNotFound(root)) if root == name
+            ));
+        }
+    }
 
     #[test]
     fn compile_all_propagates_cyclic_type_error() {

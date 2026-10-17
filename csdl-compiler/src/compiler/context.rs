@@ -30,6 +30,7 @@ use std::error::Error as StdError;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fmt::Result as FmtResult;
+use std::iter::once;
 use std::str::FromStr;
 
 /// Compilation context.
@@ -53,10 +54,22 @@ pub struct Context<'a> {
 pub struct Config {
     /// Entity type filter applied during compilation.
     pub entity_type_filter: EntityTypeFilter,
+    /// Whether excerpt sources must be included independently of entity selection.
+    pub excerpt_dependencies: ExcerptDependencies,
     /// Action filter applied during compilation.
     pub action_filter: ActionFilter,
     /// Array properties that should be generated as rigid.
     pub rigid_array_filter: PropertyFilter,
+}
+
+/// Selection of entity dependencies referenced through `Redfish.ExcerptCopy`.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum ExcerptDependencies {
+    /// Follow the same roots and entity filter as ordinary navigation properties.
+    #[default]
+    SelectedEntities,
+    /// Include excerpt sources even when ordinary navigation remains a reference.
+    Include,
 }
 
 /// Action filter specified by wildcard patterns.
@@ -81,6 +94,16 @@ impl Default for EntityTypeFilter {
 }
 
 impl EntityTypeFilter {
+    /// Include additional patterns without removing any existing matches.
+    #[must_use]
+    pub fn including(self, patterns: impl IntoIterator<Item = EntityTypeFilterPattern>) -> Self {
+        if self.permissive && self.patterns.is_empty() {
+            self
+        } else {
+            Self::new_restrictive(self.patterns.into_iter().chain(patterns).collect())
+        }
+    }
+
     /// Create a new filter from a list of patterns. If patterns are empty,
     /// matches nothing.
     #[must_use]
@@ -143,6 +166,17 @@ impl EntityTypeFilterPattern {
             }
         }
         true
+    }
+}
+
+impl From<QualifiedName<'_>> for EntityTypeFilterPattern {
+    fn from(name: QualifiedName<'_>) -> Self {
+        Self {
+            ns_ids: (0..name.namespace.len())
+                .map(|depth| name.namespace.get_id(depth).cloned())
+                .collect(),
+            names: once(name.name.clone()).collect(),
+        }
     }
 }
 

@@ -23,26 +23,13 @@
 //!  - If namespace more than one ids then submodules are generated in according to namespace.
 //!
 
-/// Escaped identifier construction
-pub mod ident;
-
-/// Mod name
-pub mod mod_name;
-
-/// Documentation generation
-pub mod doc;
+pub use crate::generator::common_rust::{doc, ident, mod_name, property_name, type_name};
 
 /// Configuration of generation
 pub mod config;
 
-/// Short type name (only name)
-pub mod type_name;
-
 /// Full type name (name with fully qualified path)
 pub mod full_type_name;
-
-/// Property name for structs
-pub mod property_name;
 
 /// Protocol annotation types included in the generated schema.
 pub mod action_annotations;
@@ -64,7 +51,7 @@ pub mod type_def;
 pub mod enum_def;
 
 /// Schema properties collected through inheritance.
-pub mod inherited_properties;
+pub use crate::generator::common_rust::inherited_properties;
 /// Generation helpers for properties in create and update request structures.
 pub mod serializable_properties;
 

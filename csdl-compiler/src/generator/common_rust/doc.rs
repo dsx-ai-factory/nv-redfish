@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Generation of Rust doc by comment lines.
+//! Shared generation of Rust documentation from schema annotations.
 
 use crate::compiler::OData;
 use crate::redfish::Deprecation;
@@ -89,13 +89,22 @@ fn deprecation_text(deprecation: Deprecation<'_>) -> String {
 /// Generate muliple lines in doc strings in `TokenStream`.
 #[must_use]
 pub fn generate(lines: &[impl ToString]) -> TokenStream {
+    fn ensure_leading_whitespace(line: String) -> String {
+        if line.is_empty() || line.starts_with(char::is_whitespace) {
+            line
+        } else {
+            format!(" {line}")
+        }
+    }
+
     let mut ts = TokenStream::new();
     for l in lines {
+        let line = ensure_leading_whitespace(l.to_string());
         let mut attr_inner = TokenStream::new();
         attr_inner.extend([
             TokenTree::Ident(Ident::new("doc", Span::call_site())),
             TokenTree::Punct(Punct::new('=', Spacing::Alone)),
-            TokenTree::Literal(Literal::string(&l.to_string())),
+            TokenTree::Literal(Literal::string(&line)),
         ]);
         ts.extend([
             TokenTree::Punct(Punct::new('#', Spacing::Alone)),

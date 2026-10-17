@@ -15,6 +15,7 @@
 
 use crate::compiler::Namespace;
 use crate::edmx::Namespace as EdmxNamespace;
+use crate::edmx::QualifiedName as EdmxQualifiedName;
 use crate::edmx::QualifiedTypeName;
 use crate::edmx::SimpleIdentifier;
 use std::fmt::Display;
@@ -47,6 +48,20 @@ impl<'a> From<&'a QualifiedTypeName> for QualifiedName<'a> {
             namespace: Namespace::new(&v.inner().namespace),
             name: &v.inner().name,
         }
+    }
+}
+
+impl From<QualifiedName<'_>> for QualifiedTypeName {
+    fn from(value: QualifiedName<'_>) -> Self {
+        Self::new(EdmxQualifiedName {
+            namespace: EdmxNamespace {
+                ids: (0..value.namespace.len())
+                    .filter_map(|depth| value.namespace.get_id(depth))
+                    .cloned()
+                    .collect(),
+            },
+            name: value.name.clone(),
+        })
     }
 }
 

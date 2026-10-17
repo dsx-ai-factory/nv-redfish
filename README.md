@@ -42,6 +42,11 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
     `UserRule`s. The rules are the transport's for its whole life, so new
     rules take a new transport.
 
+- `nv-redfish-server-core`
+  - Shared serialization primitives for generated server response structs.
+  - Provides resource references, finite numbers, and schema extension properties.
+  - Does not depend on the client core, an HTTP framework, or specific schemas.
+
 - `nv-redfish`
   - High-level Redfish API over generated schema types.
   - Exposes `ServiceRoot` and feature-gated wrappers for services such as
@@ -168,6 +173,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 See `examples/readme-minimal` for this example as a workspace target.
+See [`examples/server-response`](examples/server-response) for CSDL-generated
+server response structs. Run `cargo run -p server-response` to print example
+Chassis and ChassisCollection JSON responses.
 See `examples/session-token` for Redfish SessionService authentication using
 `X-Auth-Token`.
 See `examples/task-service` for polling a Redfish Task through TaskService.
