@@ -98,6 +98,7 @@ enum Quirk {
     WrongManagerMembers,
     ResetToDefaultsTypeParameter,
     PowerSupplyLocationIndicatorObject,
+    StandbyState,
     ExpandIsNotWorkingProperly,
     NullableMembers,
     RejectsOwnEtag,
@@ -215,13 +216,14 @@ const RULES: &[Rule] = &[
             Quirk::MissingRootNavProperties,
             Quirk::ResetToDefaultsTypeParameter,
             Quirk::PowerSupplyLocationIndicatorObject,
+            Quirk::StandbyState,
         ],
     },
     // A service root that names no vendor and reports Redfish 1.9.0, as
-    // Lite-On power shelves often do.
+    // Lite-On power shelves often do; Delta shelves do too.
     Rule {
         covers: |root| root.vendor.is_none() && root.redfish_version_is("1.9.0"),
-        quirks: &[Quirk::MissingRootNavProperties],
+        quirks: &[Quirk::MissingRootNavProperties, Quirk::StandbyState],
     },
 ];
 
@@ -309,6 +311,14 @@ impl BmcQuirks {
     /// A chassis omits `Name`, which every resource requires.
     pub(crate) fn bug_missing_chassis_name_field(&self) -> bool {
         self.has(Quirk::MissingChassisNameField)
+    }
+
+    /// Lite-On power shelves report `Status.State` `Standby`, which is not a
+    /// `Resource.State`, on their power supplies, manager and chassis. A
+    /// vendor-less Redfish 1.9.0 root, a Lite-On or a Delta shelf, gets the
+    /// repair too: it rewrites only that one value, which no schema allows.
+    pub(crate) fn bug_standby_state(&self) -> bool {
+        self.has(Quirk::StandbyState)
     }
 
     /// A DPU in NIC mode reports an empty-string `UUID` on chassis and
@@ -573,11 +583,12 @@ mod tests {
                     Quirk::MissingRootNavProperties,
                     Quirk::ResetToDefaultsTypeParameter,
                     Quirk::PowerSupplyLocationIndicatorObject,
+                    Quirk::StandbyState,
                 ],
             ),
             (
                 json!({ "RedfishVersion": "1.9.0" }),
-                &[Quirk::MissingRootNavProperties],
+                &[Quirk::MissingRootNavProperties, Quirk::StandbyState],
             ),
             (json!({ "Vendor": "Contoso" }), &[]),
             (json!({}), &[]),

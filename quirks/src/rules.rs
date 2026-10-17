@@ -95,6 +95,21 @@ const RULES: &[Rule] = &[
         fix: fixes::normalize_vera_rubin_composite_boot_order,
     },
     Rule {
+        resource_type: "Chassis",
+        enabled: BmcQuirks::bug_standby_state,
+        fix: fixes::normalize_standby_state,
+    },
+    Rule {
+        resource_type: "Manager",
+        enabled: BmcQuirks::bug_standby_state,
+        fix: fixes::normalize_standby_state,
+    },
+    Rule {
+        resource_type: "PowerSupply",
+        enabled: BmcQuirks::bug_standby_state,
+        fix: fixes::normalize_standby_state,
+    },
+    Rule {
         resource_type: "ManagerAccount",
         enabled: BmcQuirks::bug_no_account_type_in_accounts,
         fix: fixes::append_default_account_type,
@@ -291,8 +306,41 @@ mod tests {
     fn a_platform_without_document_repairs_enables_none() {
         assert!(enabled_for(&json!({ "Vendor": "Contoso" })).is_empty());
         assert!(enabled_for(&json!({ "Vendor": "Supermicro" })).is_empty());
-        assert!(enabled_for(&json!({ "Vendor": "LITE-ON Technology" })).is_empty());
         assert!(!enabled_for(&json!({ "Vendor": "Dell" })).is_empty());
+    }
+
+    #[test]
+    fn a_power_shelfs_standby_state_reads_as_standby_spare() {
+        for root in [
+            json!({ "Vendor": "LITE-ON Technology" }),
+            json!({ "RedfishVersion": "1.9.0" }),
+        ] {
+            let shelf = enabled_for(&root);
+            for odata_type in [
+                "#Chassis.v1_23_0.Chassis",
+                "#Manager.v1_19_0.Manager",
+                "#PowerSupply.v1_5_0.PowerSupply",
+            ] {
+                let standby = json!({
+                    "@odata.type": odata_type,
+                    "Status": { "State": "Standby", "Health": "OK" },
+                });
+                assert_eq!(
+                    repaired(&shelf, standby.clone())["Status"],
+                    json!({ "State": "StandbySpare", "Health": "OK" }),
+                    "{root} {odata_type}"
+                );
+
+                let enabled = json!({
+                    "@odata.type": odata_type,
+                    "Status": { "State": "Enabled" },
+                });
+                assert_eq!(repaired(&shelf, enabled.clone()), enabled);
+
+                let hpe = enabled_for(&json!({ "Vendor": "HPE" }));
+                assert_eq!(repaired(&hpe, standby.clone()), standby);
+            }
+        }
     }
 
     #[test]

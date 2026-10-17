@@ -184,6 +184,17 @@ pub fn normalize_dpu_certificate_collection_stubs(mut v: Value) -> Value {
     v
 }
 
+/// `Status.State` `Standby`, which is not a `Resource.State`, is read as
+/// `StandbySpare`; every other state stays.
+pub fn normalize_standby_state(mut v: Value) -> Value {
+    if let Some(state) = v.pointer_mut("/Status/State") {
+        if state == "Standby" {
+            *state = Value::String("StandbySpare".into());
+        }
+    }
+    v
+}
+
 /// Lite-On's LED-state object in `PowerSupply.LocationIndicatorActive`,
 /// where the schema has a boolean, is removed; schema-valid values stay.
 pub fn remove_invalid_power_supply_location_indicator_active(mut v: Value) -> Value {

@@ -15,6 +15,7 @@
 //! Integration tests for LiteOn OEM power supply links via chassis.
 
 use nv_redfish::chassis::Chassis;
+use nv_redfish::resource::State;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ODataId;
 use nv_redfish_tests::anonymous_1_9_service_root;
@@ -282,6 +283,59 @@ async fn liteon_location_indicator_active_is_patched_on_standard_fetch(
                     Some("PSU-123")
                 );
             }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+async fn liteon_standby_state_reads_as_standby_spare() -> Result<(), Box<dyn StdError>> {
+    for expanded in [false, true] {
+        for root_fields in [json!({}), json!({ "Vendor": "LITE-ON TECHNOLOGY CORP." })] {
+            let bmc = Arc::new(Bmc::default());
+            let ids = ids();
+            let member = liteon_chassis_member(
+                &ids,
+                json!({ "Status": { "State": "Standby", "Health": "OK" } }),
+            );
+            let chassis = get_chassis(bmc.clone(), &ids, member, root_fields).await?;
+            assert_eq!(
+                chassis
+                    .raw()
+                    .status
+                    .as_ref()
+                    .and_then(|status| status.state.flatten()),
+                Some(State::StandbySpare)
+            );
+
+            let psu_id = format!("{}/0", ids.psu_collection_id);
+            let payload = json_merge([
+                &psu_payload(&psu_id, "0", true),
+                &json!({ "Status": { "State": "Standby" } }),
+            ]);
+            expect_power_subsystem(bmc.clone(), &ids);
+            expect_psu_members(
+                &bmc,
+                &ids,
+                vec![if expanded {
+                    payload.clone()
+                } else {
+                    json!({ ODATA_ID: &psu_id })
+                }],
+            );
+            if !expanded {
+                bmc.expect(Expect::get(&psu_id, payload));
+            }
+            let supplies = chassis.power_supplies().await?;
+            assert_eq!(supplies.len(), 1);
+            assert_eq!(
+                supplies[0]
+                    .raw()
+                    .status
+                    .as_ref()
+                    .and_then(|status| status.state.flatten()),
+                Some(State::StandbySpare)
+            );
         }
     }
     Ok(())

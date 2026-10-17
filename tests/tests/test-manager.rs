@@ -24,6 +24,7 @@ use nv_redfish::manager::ManagerNetworkProtocolUpdate;
 use nv_redfish::manager::ManagerResetToDefaultsType;
 use nv_redfish::manager::ManagerUpdate;
 use nv_redfish::resource::ResetType;
+use nv_redfish::resource::State;
 use nv_redfish::schema::manager_network_protocol::ProtocolUpdate;
 use nv_redfish::schema::serial_interface::FlowControl;
 use nv_redfish::schema::serial_interface::Parity;
@@ -770,7 +771,8 @@ async fn ami_viking_missing_root_managers_nav_workaround() -> Result<(), Box<dyn
 #[test]
 async fn anonymous_1_9_0_wrong_manager_status_state_workaround() -> Result<(), Box<dyn StdError>> {
     // Platform under test: Liteon powershelf class (anonymous Redfish 1.9.0 root).
-    // Quirk under test: invalid Manager.Status.State="Standby".
+    // Quirk under test: invalid Manager.Status.State="Standby", read as
+    // StandbySpare.
     let bmc = Arc::new(Bmc::default());
     let ids = ids();
     let root = expect_anonymous_1_9_service_root(
@@ -800,6 +802,14 @@ async fn anonymous_1_9_0_wrong_manager_status_state_workaround() -> Result<(), B
     ));
     let members = collection.members().await?;
     assert_eq!(members.len(), 1);
+    assert_eq!(
+        members[0]
+            .raw()
+            .status
+            .as_ref()
+            .and_then(|status| status.state.flatten()),
+        Some(State::StandbySpare)
+    );
 
     Ok(())
 }
