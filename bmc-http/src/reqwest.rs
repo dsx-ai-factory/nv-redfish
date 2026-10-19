@@ -1160,7 +1160,10 @@ fn etag_from_headers(headers: &HeaderMap) -> Option<ODataETag> {
 /// The `Task` resource a `202 Accepted` body represents, if the body is one.
 fn task_from_body(body: &[u8]) -> Option<ODataId> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-    if !ODataType::parse_from(&value).is_some_and(|odata_type| odata_type.is_named("Task")) {
+    let is_task = ODataType::parse_from(&value).is_some_and(|odata_type| {
+        odata_type.namespace.first() == Some(&"Task") && odata_type.type_name == "Task"
+    });
+    if !is_task {
         return None;
     }
     value

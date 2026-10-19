@@ -56,16 +56,16 @@ impl<'de> Deserialize<'de> for EventStreamPayload {
         let odata_type = ODataType::parse_from(&value)
             .ok_or_else(|| de::Error::missing_field("missing @odata.type in SSE payload"))?;
 
-        if odata_type.name() == "MetricReport" {
+        if odata_type.type_name == "MetricReport" {
             let payload =
                 serde_json::from_value::<MetricReport>(value).map_err(de::Error::custom)?;
             Ok(Self::MetricReport(payload))
-        } else if odata_type.name() == "Event" {
+        } else if odata_type.type_name == "Event" {
             let payload = serde_json::from_value::<Event>(value).map_err(de::Error::custom)?;
             Ok(Self::Event(payload))
         } else {
             Err(de::Error::custom(format!(
-                "unsupported @odata.type in SSE payload: {}, should be either Event or MetricReport", odata_type.name()
+                "unsupported @odata.type in SSE payload: {}, should be either Event or MetricReport", odata_type.type_name
             )))
         }
     }

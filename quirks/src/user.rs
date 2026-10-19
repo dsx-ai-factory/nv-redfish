@@ -25,7 +25,6 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures_util::StreamExt as _;
-use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::repair::decode;
 use nv_redfish_core::Action;
@@ -51,6 +50,7 @@ use serde_json::Value;
 
 use crate::rules::walk;
 use crate::rules::Fix;
+use crate::rules::TypeName;
 
 /// A caller's document rewrite.
 pub type UserFix = Arc<dyn Fn(Value) -> Value + Send + Sync>;
@@ -70,7 +70,7 @@ pub enum Match {
 }
 
 impl Match {
-    fn applies(&self, type_name: Option<ODataType<'_>>, odata_id: Option<&str>) -> bool {
+    fn applies(&self, type_name: Option<TypeName<'_>>, odata_id: Option<&str>) -> bool {
         match self {
             Self::Type(named) => type_name.is_some_and(|type_name| type_name.is_named(named)),
             Self::Id(pattern) => odata_id.is_some_and(|id| pattern.matches(id)),
@@ -162,7 +162,7 @@ impl Repair for Rules {
             return;
         }
         walk(document, &|object| {
-            let type_name = ODataType::of(object);
+            let type_name = TypeName::of(object);
             let odata_id = document_id_of(object);
             self.0
                 .iter()

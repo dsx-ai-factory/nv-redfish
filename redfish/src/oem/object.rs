@@ -76,6 +76,6 @@ pub fn oem_value<'a>(oem: &'a ResourceOemSchema, key: &str) -> Option<&'a Value>
 #[must_use]
 pub fn declares(value: &Value, namespace: &str, type_name: &str) -> bool {
     ODataType::parse_from(value).is_some_and(|odata_type| {
-        odata_type.name() == type_name && odata_type.schema() == namespace
+        odata_type.type_name == type_name && odata_type.namespace.first() == Some(&namespace)
     })
 }
