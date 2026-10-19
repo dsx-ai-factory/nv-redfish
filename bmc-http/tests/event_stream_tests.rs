@@ -20,6 +20,7 @@ mod tests {
     use crate::common::test_utils::*;
     use futures_util::StreamExt;
     use nv_redfish_bmc_http::reqwest::BmcError;
+    use nv_redfish_bmc_http::reqwest::SseOpenShape;
     use nv_redfish_core::Bmc;
     use serde::Deserialize;
     use serde_json::Value as JsonValue;
@@ -346,6 +347,161 @@ mod tests {
             matches!(read, Ok(0)),
             "the connection must close with an end of file, got {:?}",
             read
+        );
+    }
+
+    /// A `503` is one of the ways a service rejects an open it has no slots for.
+    #[tokio::test]
+    async fn an_sse_open_answered_503_is_a_rejection() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .respond_with(
+                ResponseTemplate::new(503).set_body_string("Max SSE subscriptions reached"),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let error = bmc.stream::<JsonValue>(SSE_URI).await.err();
+
+        assert!(
+            matches!(
+                error,
+                Some(BmcError::SseOpenRejected {
+                    shape: SseOpenShape::ServiceUnavailable
+                })
+            ),
+            "the 503 must be reported as a rejection, got {:?}",
+            error
+        );
+    }
+
+    #[tokio::test]
+    async fn an_sse_open_that_ends_before_its_first_frame_is_a_rejection() {
+        let mock_server = MockServer::start().await;
+
+        // Headers then EOF: the service closes before sending an event.
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .respond_with(sse_response(""))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+
+        let mut stream = bmc
+            .stream::<JsonValue>(SSE_URI)
+            .await
+            .expect("the response headers must open the stream");
+
+        let item = stream.next().await;
+
+        assert!(
+            matches!(
+                item,
+                Some(Err(BmcError::SseOpenRejected {
+                    shape: SseOpenShape::EmptyStream
+                }))
+            ),
+            "the stream must report the rejection, got {:?}",
+            item
+        );
+
+        assert!(
+            stream.next().await.is_none(),
+            "the stream must end after reporting the rejection"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_sse_open_on_a_closed_connection_is_a_rejection() {
+        use nv_redfish_bmc_http::reqwest::Client;
+        use nv_redfish_bmc_http::{CacheSettings, HttpBmc};
+        use tokio::net::TcpListener;
+        use url::Url;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            drop(socket);
+        });
+
+        let bmc = HttpBmc::new(
+            Client::new().unwrap(),
+            Url::parse(&format!("http://{addr}")).unwrap(),
+            create_test_credentials(),
+            CacheSettings::default(),
+        );
+
+        let error = bmc.stream::<JsonValue>(SSE_URI).await.err();
+
+        assert!(
+            matches!(
+                error,
+                Some(BmcError::SseOpenRejected {
+                    shape: SseOpenShape::NoResponse
+                })
+            ),
+            "the closed connection must be reported as a rejection, got {:?}",
+            error
+        );
+    }
+
+    /// Every other failure of an open stays the error it was.
+    #[tokio::test]
+    async fn other_sse_open_failures_are_not_rejections() {
+        use nv_redfish_bmc_http::reqwest::Client;
+        use nv_redfish_bmc_http::{CacheSettings, HttpBmc};
+        use tokio::net::TcpListener;
+        use url::Url;
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let error = bmc.stream::<JsonValue>(SSE_URI).await.err();
+
+        assert!(
+            matches!(
+                error,
+                Some(BmcError::InvalidResponse { status, .. })
+                    if status == reqwest::StatusCode::BAD_GATEWAY
+            ),
+            "a non-capacity status must stay an invalid response, got {:?}",
+            error
+        );
+
+        // Nothing listens on this port.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        drop(listener);
+
+        let bmc = HttpBmc::new(
+            Client::new().unwrap(),
+            Url::parse(&format!("http://{addr}")).unwrap(),
+            create_test_credentials(),
+            CacheSettings::default(),
+        );
+
+        let error = bmc.stream::<JsonValue>(SSE_URI).await.err();
+
+        assert!(
+            matches!(&error, Some(BmcError::ReqwestError(error)) if error.is_connect()),
+            "a refused connection must stay a transport error, got {:?}",
+            error
         );
     }
 

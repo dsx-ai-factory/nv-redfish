@@ -106,8 +106,39 @@ pub enum BmcError {
         /// Idle duration that elapsed with no event.
         idle: Duration,
     },
+
+    /// The service rejected an SSE open, typically because its subscription
+    /// slots are exhausted. Each shape can also be an ordinary fault.
+    SseOpenRejected {
+        /// How the service answered the open.
+        shape: SseOpenShape,
+    },
+
     /// The service does not advertise the requested action.
     ActionNotSupported,
+}
+
+/// How a service answered an SSE open it rejected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SseOpenShape {
+    /// `503 Service Unavailable`.
+    ServiceUnavailable,
+
+    /// `200 OK`, then EOF before the first frame (bmcweb).
+    EmptyStream,
+
+    /// Connection closed before any response (LiteOn).
+    NoResponse,
+}
+
+impl fmt::Display for SseOpenShape {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::ServiceUnavailable => "the service answered 503 Service Unavailable",
+            Self::EmptyStream => "the stream ended before its first event frame",
+            Self::NoResponse => "the connection closed before any HTTP response",
+        })
+    }
 }
 
 impl From<reqwest::Error> for BmcError {
@@ -175,6 +206,9 @@ impl fmt::Display for BmcError {
             Self::SseIdleTimeout { idle } => {
                 write!(f, "SSE stream idle for longer than {idle:?}")
             }
+            Self::SseOpenRejected { shape } => {
+                write!(f, "SSE open rejected: {shape}")
+            }
             Self::ActionNotSupported => write!(f, "Action is not supported by the service"),
         }
     }
@@ -206,6 +240,10 @@ impl nv_redfish_core::BmcError for BmcError {
             },
             Self::JsonError(_) | Self::DecodeError(_) => BmcErrorClass::ResponseParse,
             Self::ReqwestError(_) => BmcErrorClass::Transport,
+            Self::SseOpenRejected { shape } => match shape {
+                SseOpenShape::ServiceUnavailable => BmcErrorClass::HttpResponse { status: 503 },
+                SseOpenShape::EmptyStream | SseOpenShape::NoResponse => BmcErrorClass::Transport,
+            },
             _ => BmcErrorClass::Other,
         }
     }
@@ -1488,7 +1526,21 @@ impl Client {
             request = request.header(LAST_EVENT_ID, value);
         }
 
-        let response = self.send(request.build()?).await?;
+        let response = match self.send(request.build()?).await {
+            Ok(response) => response,
+            Err(BmcError::ReqwestError(error)) if closed_before_response(&error) => {
+                return Err(BmcError::SseOpenRejected {
+                    shape: SseOpenShape::NoResponse,
+                });
+            }
+            Err(error) => return Err(error),
+        };
+
+        if response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err(BmcError::SseOpenRejected {
+                shape: SseOpenShape::ServiceUnavailable,
+            });
+        }
 
         if !response.status().is_success() {
             return Err(BmcError::InvalidResponse {
@@ -1502,9 +1554,10 @@ impl Client {
         let frames = sse_stream::SseStream::from_bytes_stream(capped).map_err(map_sse_error);
 
         let idle = self.sse.idle_timeout;
+
         let bounded = unfold(
-            (Box::pin(frames), false),
-            move |(mut frames, done)| async move {
+            (Box::pin(frames), false, false),
+            move |(mut frames, done, framed)| async move {
                 if done {
                     return None;
                 }
@@ -1518,16 +1571,34 @@ impl Client {
                 match next {
                     Some(Err(e)) => {
                         let terminal = e.is_stream_fatal();
-                        Some((Err(e), (frames, terminal)))
+                        Some((Err(e), (frames, terminal, true)))
                     }
-                    Some(ok) => Some((ok, (frames, false))),
-                    None => None,
+                    Some(ok) => Some((ok, (frames, false, true))),
+                    None if framed => None,
+                    None => Some((
+                        Err(BmcError::SseOpenRejected {
+                            shape: SseOpenShape::EmptyStream,
+                        }),
+                        (frames, true, true),
+                    )),
                 }
             },
         );
 
         Ok(Box::pin(bounded))
     }
+}
+
+/// Whether `error` is a connection that closed before any HTTP response.
+///
+/// A connection that never opened reports a connect failure instead.
+fn closed_before_response(error: &reqwest::Error) -> bool {
+    error.is_request()
+        && !error.is_connect()
+        && !error.is_timeout()
+        && !error.is_body()
+        && !error.is_decode()
+        && !error.is_redirect()
 }
 
 fn build_update_parameters_part<V>(update_parameters: &V) -> Result<Part, BmcError>
