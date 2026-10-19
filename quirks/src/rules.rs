@@ -66,6 +66,11 @@ const RULES: &[Rule] = &[
     },
     Rule {
         resource_type: "Chassis",
+        enabled: BmcQuirks::bug_annotated_chassis_certificates_link,
+        fix: fixes::certificates_as_reference,
+    },
+    Rule {
+        resource_type: "Chassis",
         enabled: BmcQuirks::bug_missing_chassis_type_field,
         fix: fixes::add_default_chassis_type,
     },

@@ -56,6 +56,15 @@ pub fn remove_invalid_contained_by_fields(mut v: Value) -> Value {
     v
 }
 
+pub fn certificates_as_reference(mut v: Value) -> Value {
+    if let Value::Object(ref mut obj) = v {
+        if let Some(Value::Object(ref mut certificates)) = obj.get_mut("Certificates") {
+            certificates.retain(|k, _| k == "@odata.id");
+        }
+    }
+    v
+}
+
 pub fn add_default_chassis_type(v: Value) -> Value {
     if let Value::Object(mut obj) = v {
         obj.entry("ChassisType")

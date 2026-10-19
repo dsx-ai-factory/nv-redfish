@@ -378,6 +378,52 @@ async fn bios_actions_use_advertised_targets() -> Result<(), Box<dyn StdError>> 
 }
 
 #[test]
+async fn bios_change_password_accepted_without_task_is_empty_only_on_supermicro(
+) -> Result<(), Box<dyn StdError>> {
+    for (vendor, empty) in [("Supermicro", true), ("Lenovo", false)] {
+        let bmc = Arc::new(Bmc::default());
+        let ids = bios_ids();
+        let password_target = format!("{}/Actions/Bios.ChangePassword", ids.bios_id);
+        let system = get_computer_system(bmc.clone(), &ids, vendor).await?;
+        bmc.expect(Expect::get(
+            &ids.bios_id,
+            bios_payload(
+                &ids.bios_id,
+                json!({
+                    "Actions": {
+                        "#Bios.ChangePassword": { "target": &password_target }
+                    }
+                }),
+            ),
+        ));
+        let bios = system.bios().await?.ok_or("BIOS missing")?;
+
+        bmc.expect(Expect::action_status(
+            &password_target,
+            json!({
+                "PasswordName": "AdministratorPassword",
+                "OldPassword": "",
+                "NewPassword": "new-secret"
+            }),
+            202,
+        ));
+        let changed = bios
+            .change_password(
+                "AdministratorPassword".into(),
+                Some(String::new()),
+                "new-secret".into(),
+            )
+            .await;
+        assert_eq!(
+            matches!(changed, Ok(ModificationResponse::Empty)),
+            empty,
+            "{vendor}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 async fn bios_actions_must_be_advertised() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = bios_ids();

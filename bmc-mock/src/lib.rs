@@ -463,6 +463,15 @@ where
             } if target == action.target && request == in_request => {
                 Ok(ModificationResponse::Empty)
             }
+            Expect {
+                request:
+                    ExpectedRequest::ActionStatus {
+                        target,
+                        request,
+                        status,
+                    },
+                ..
+            } if target == action.target && request == in_request => Err(Error::HttpStatus(status)),
             _ => Err(Error::UnexpectedAction(
                 action.target.clone(),
                 in_request.to_string(),

@@ -80,6 +80,7 @@ enum Quirk {
     FwInventoryWrongReleaseDate,
     JobLocationInCreateResponse,
     InvalidContainedByFields,
+    AnnotatedChassisCertificatesLink,
     MissingRootNavProperties,
     MissingChassisTypeField,
     MissingChassisNameField,
@@ -102,6 +103,7 @@ enum Quirk {
     NullableMembers,
     RejectsOwnEtag,
     AcceptedUpdateWithoutTask,
+    AcceptedActionWithoutTask,
 }
 
 // Devices whose service root `covers` matches have `quirks`.
@@ -139,6 +141,7 @@ const RULES: &[Rule] = &[
         covers: |root| root.vendor_is("AMI") && root.redfish_version_is("1.11.0"),
         quirks: &[
             Quirk::InvalidContainedByFields,
+            Quirk::AnnotatedChassisCertificatesLink,
             Quirk::MissingRootNavProperties,
             Quirk::MissingChassisTypeField,
             Quirk::MissingChassisNameField,
@@ -203,7 +206,10 @@ const RULES: &[Rule] = &[
     },
     Rule {
         covers: |root| root.vendor_is("Supermicro"),
-        quirks: &[Quirk::AcceptedUpdateWithoutTask],
+        quirks: &[
+            Quirk::AcceptedUpdateWithoutTask,
+            Quirk::AcceptedActionWithoutTask,
+        ],
     },
     // Lite-On power shelves that name their vendor.
     Rule {
@@ -291,6 +297,13 @@ impl BmcQuirks {
     /// `Links.ContainedBy` on a chassis carries fields beyond `@odata.id`.
     pub(crate) fn bug_invalid_contained_by_fields(&self) -> bool {
         self.has(Quirk::InvalidContainedByFields)
+    }
+
+    /// The `Certificates` link on a chassis carries `Members@odata.count`, so
+    /// it reads as an expanded collection that lacks the required
+    /// `@odata.type`.
+    pub(crate) fn bug_annotated_chassis_certificates_link(&self) -> bool {
+        self.has(Quirk::AnnotatedChassisCertificatesLink)
     }
 
     /// The service root omits navigation properties that a direct GET
@@ -457,6 +470,13 @@ impl BmcQuirks {
     pub(crate) fn bug_accepted_update_without_task(&self) -> bool {
         self.has(Quirk::AcceptedUpdateWithoutTask)
     }
+
+    /// Supermicro answers an action that stages a change, such as a BIOS
+    /// password change, with `202 Accepted` and nothing to poll: no
+    /// `Location` and no Task.
+    pub(crate) fn bug_accepted_action_without_task(&self) -> bool {
+        self.has(Quirk::AcceptedActionWithoutTask)
+    }
 }
 
 /// Whether a resource's `Manufacturer` names a Lite-On device.
@@ -504,6 +524,7 @@ mod tests {
                 &[
                     Quirk::RejectsOwnEtag,
                     Quirk::InvalidContainedByFields,
+                    Quirk::AnnotatedChassisCertificatesLink,
                     Quirk::MissingRootNavProperties,
                     Quirk::MissingChassisTypeField,
                     Quirk::MissingChassisNameField,
@@ -565,7 +586,10 @@ mod tests {
             (json!({ "Vendor": "WIWYNN" }), &nvidia),
             (
                 json!({ "Vendor": "Supermicro" }),
-                &[Quirk::AcceptedUpdateWithoutTask],
+                &[
+                    Quirk::AcceptedUpdateWithoutTask,
+                    Quirk::AcceptedActionWithoutTask,
+                ],
             ),
             (
                 json!({ "Vendor": "LITE-ON Technology" }),

@@ -290,6 +290,42 @@ async fn ami_viking_invalid_contained_by_fields_workaround() -> Result<(), Box<d
 }
 
 #[test]
+async fn ami_viking_annotated_certificates_link_workaround() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let root = expect_viking_service_root(
+        bmc.clone(),
+        &ids,
+        json!({
+            "Chassis": { ODATA_ID: &ids.chassis_collection_id }
+        }),
+    )
+    .await?;
+    expect_chassis_collection(bmc.clone(), &ids);
+
+    let collection = root.chassis().await?.unwrap();
+    expect_chassis_get(
+        bmc.clone(),
+        &ids,
+        json!({
+            ODATA_ID: &ids.chassis_id,
+            ODATA_TYPE: CHASSIS_DATA_TYPE,
+            "Id": "1",
+            "Name": "Chassis",
+            "ChassisType": "Component",
+            "Certificates": {
+                ODATA_ID: format!("{}/Certificates", ids.chassis_id),
+                "Members@odata.count": 1
+            }
+        }),
+    );
+    let members = collection.members().await?;
+    assert_eq!(members.len(), 1);
+
+    Ok(())
+}
+
+#[test]
 async fn ami_viking_missing_chassis_type_workaround() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = ids();

@@ -28,7 +28,7 @@
 //! What a write answers with is the transport's: creates, updates,
 //! deletes, polls, actions and uploads go through as they are, so the
 //! transport's own reading of a reply still applies. The layer adds only
-//! the platform's protocol quirks for an update.
+//! the platform's protocol quirks for an update or an action.
 //!
 //! Each payload of an event stream is repaired as it arrives: first the
 //! event repairs, which may take the SSE id the payload arrived under, then
@@ -310,10 +310,15 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         action: &Action<T, R>,
         params: &T,
     ) -> Result<ModificationResponse<R>, Self::Error> {
-        self.inner
-            .action(action, params)
-            .await
-            .map_err(CompatError::from_transport)
+        match self.inner.action(action, params).await {
+            Err(error)
+                if self.quirks.bug_accepted_action_without_task()
+                    && error.error_class() == BmcErrorClass::HttpResponse { status: 202 } =>
+            {
+                Ok(ModificationResponse::Empty)
+            }
+            result => result.map_err(CompatError::from_transport),
+        }
     }
 
     async fn poll<R: Send + Sync + Sized + for<'de> Deserialize<'de>>(
