@@ -80,7 +80,7 @@ impl EventRepairs {
     /// it came.
     pub fn repair(&self, payload: &mut Value, last_event_id: Option<&str>) {
         if !matches!(
-            ODataType::parse_from(payload).map(|kind| kind.type_name),
+            ODataType::parse_from(payload).map(|kind| kind.name()),
             Some("Event" | "MetricReport")
         ) {
             return;
@@ -104,7 +104,7 @@ fn missing_event_id(payload: &mut Value, last_event_id: Option<&str>) {
     let Some(id) = last_event_id.filter(|id| !id.is_empty()) else {
         return;
     };
-    if ODataType::parse_from(payload).is_none_or(|kind| kind.type_name != "Event") {
+    if ODataType::parse_from(payload).is_none_or(|kind| kind.name() != "Event") {
         return;
     }
     if let Some(payload) = payload.as_object_mut() {

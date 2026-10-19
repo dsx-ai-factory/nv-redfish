@@ -122,29 +122,69 @@ impl Display for ODataETag {
     }
 }
 
-/// Type for retrieving `@odata.type` from a JSON payload.
+/// A type as an `@odata.type` names it, version aside: in
+/// `#Chassis.v1_22_0.Links`, the type `Links` of the schema `Chassis`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ODataType<'a> {
-    /// Namespace of the data type. For example: `["Chassis", "v1_22_0"]`.
-    pub namespace: Vec<&'a str>,
-    /// Name of the type. For example "Chassis".
-    pub type_name: &'a str,
+    schema: &'a str,
+    name: &'a str,
 }
 
-impl ODataType<'_> {
-    /// Get `@odata.type` from a JSON payload and parse it.
+impl<'a> ODataType<'a> {
+    /// The type `odata_type` names, with or without its `#` and version:
+    /// `#Chassis.v1_22_0.Chassis` and `Chassis.Chassis` name one type.
     #[must_use]
-    pub fn parse_from(v: &serde_json::Value) -> Option<ODataType<'_>> {
-        v.get("@odata.type")
-            .and_then(|v| v.as_str())
-            .and_then(|v| v.strip_prefix('#'))
-            .and_then(|v| {
-                let mut all = v.split('.').collect::<Vec<_>>();
-                all.pop().map(|type_name| ODataType {
-                    namespace: all,
-                    type_name,
-                })
-            })
+    pub fn parse(odata_type: &'a str) -> Option<Self> {
+        let qualified = odata_type.strip_prefix('#').unwrap_or(odata_type);
+        let (schema, name) = qualified.rsplit_once('.')?;
+        let schema = schema
+            .rsplit_once('.')
+            .filter(|(_, version)| is_version(version))
+            .map_or(schema, |(schema, _)| schema);
+        (!schema.is_empty() && !name.is_empty()).then_some(Self { schema, name })
     }
+
+    /// The type an object's `@odata.type` names.
+    #[must_use]
+    pub fn of(object: &'a serde_json::Map<String, serde_json::Value>) -> Option<Self> {
+        Self::parse(object.get("@odata.type")?.as_str()?)
+    }
+
+    /// The type a JSON payload's `@odata.type` names.
+    #[must_use]
+    pub fn parse_from(value: &'a serde_json::Value) -> Option<Self> {
+        Self::of(value.as_object()?)
+    }
+
+    /// The schema the type belongs to: `Chassis` for `#Chassis.v1_22_0.Links`.
+    #[must_use]
+    pub const fn schema(&self) -> &'a str {
+        self.schema
+    }
+
+    /// The type's name within its schema: `Links` for `#Chassis.v1_22_0.Links`.
+    #[must_use]
+    pub const fn name(&self) -> &'a str {
+        self.name
+    }
+
+    /// Whether this is the type `named`: a schema and a type in it,
+    /// `Chassis.Links`, or a resource type by its schema alone, `Chassis`
+    /// for `Chassis.Chassis`.
+    #[must_use]
+    pub fn is_named(self, named: &str) -> bool {
+        ODataType::parse(named).map_or_else(
+            || self.schema == named && self.name == named,
+            |named| named == self,
+        )
+    }
+}
+
+/// Whether a segment of an `@odata.type` is a version, such as `v1_22_0`.
+fn is_version(segment: &str) -> bool {
+    segment
+        .strip_prefix('v')
+        .is_some_and(|number| number.starts_with(|c: char| c.is_ascii_digit()))
 }
 
 #[cfg(test)]
@@ -158,6 +198,38 @@ mod tests {
         let odata_type = ODataType::parse_from(&value);
 
         assert!(odata_type.is_none());
+    }
+
+    #[test]
+    fn a_type_is_its_schema_and_name_in_any_version() {
+        let named = |odata_type: &str, named: &str| {
+            ODataType::parse(odata_type).is_some_and(|odata_type| odata_type.is_named(named))
+        };
+        let inventory = "#SoftwareInventory.v1_4_0.SoftwareInventory";
+        assert!(named(inventory, "SoftwareInventory"));
+        assert!(named(inventory, "SoftwareInventory.SoftwareInventory"));
+        assert!(named(
+            inventory,
+            "#SoftwareInventory.v1_0_0.SoftwareInventory"
+        ));
+        assert!(named(
+            "#SoftwareInventoryCollection.SoftwareInventoryCollection",
+            "SoftwareInventoryCollection"
+        ));
+        assert!(named("Chassis.v1_2_0.Chassis", "Chassis"));
+        assert!(named("#Chassis.v1_22_0.Links", "Chassis.Links"));
+        assert!(named(
+            "#NvidiaChassis.v1_4_0.NvidiaCBCChassis",
+            "NvidiaChassis.NvidiaCBCChassis"
+        ));
+
+        // Another type of the schema is not its resource type.
+        assert!(!named("#Chassis.v1_22_0.Links", "Chassis"));
+        assert!(!named("#Chassis.v1_22_0.Chassis", "Chassis.Links"));
+        assert!(!named("#ChassisCollection.ChassisCollection", "Chassis"));
+
+        assert!(ODataType::parse("#").is_none());
+        assert!(ODataType::parse("#Chassis").is_none());
     }
 
     #[test]

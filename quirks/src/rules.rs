@@ -31,6 +31,7 @@
 use std::mem;
 use std::sync::Arc;
 
+use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Repair;
 use serde_json::Map;
 use serde_json::Value;
@@ -40,7 +41,7 @@ use crate::BmcQuirks;
 
 /// One document repair.
 struct Rule {
-    /// The type the rule applies to, named as [`TypeName::is_named`] reads
+    /// The type the rule applies to, named as [`ODataType::is_named`] reads
     /// it.
     resource_type: &'static str,
     /// The quirk that enables it on the classified platform.
@@ -167,7 +168,7 @@ impl Repair for Enabled {
             return;
         }
         walk(document, &|object| {
-            TypeName::of(object).map_or_else(Vec::new, |type_name| {
+            ODataType::of(object).map_or_else(Vec::new, |type_name| {
                 self.rules()
                     .filter(|rule| type_name.is_named(rule.resource_type))
                     .map(|rule| -> Fix<'static> { &rule.fix })
@@ -181,50 +182,6 @@ impl Repair for Enabled {
 /// has none.
 pub fn enabled(quirks: &BmcQuirks) -> Enabled {
     Enabled(RULES.iter().map(|rule| (rule.enabled)(quirks)).collect())
-}
-
-/// A type as an `@odata.type` names it, version aside: in
-/// `#Chassis.v1_22_0.Links`, the type `Links` of the schema `Chassis`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TypeName<'a> {
-    schema: &'a str,
-    name: &'a str,
-}
-
-impl<'a> TypeName<'a> {
-    /// The type `odata_type` names, with or without its `#` and version:
-    /// `#Chassis.v1_22_0.Chassis` and `Chassis.Chassis` name one type.
-    pub fn parse(odata_type: &'a str) -> Option<Self> {
-        let qualified = odata_type.strip_prefix('#').unwrap_or(odata_type);
-        let (schema, name) = qualified.rsplit_once('.')?;
-        let schema = schema
-            .rsplit_once('.')
-            .filter(|(_, version)| is_version(version))
-            .map_or(schema, |(schema, _)| schema);
-        (!schema.is_empty() && !name.is_empty()).then_some(Self { schema, name })
-    }
-
-    /// The type an object's `@odata.type` names.
-    pub fn of(object: &'a Map<String, Value>) -> Option<Self> {
-        Self::parse(object.get("@odata.type")?.as_str()?)
-    }
-
-    /// Whether this is the type `named`: a schema and a type in it,
-    /// `Chassis.Links`, or a resource type by its schema alone, `Chassis`
-    /// for `Chassis.Chassis`.
-    pub fn is_named(self, named: &str) -> bool {
-        TypeName::parse(named).map_or_else(
-            || self.schema == named && self.name == named,
-            |named| named == self,
-        )
-    }
-}
-
-/// Whether a segment of an `@odata.type` is a version, such as `v1_22_0`.
-fn is_version(segment: &str) -> bool {
-    segment
-        .strip_prefix('v')
-        .is_some_and(|number| number.starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// A rewrite of one document.
@@ -273,38 +230,6 @@ mod tests {
     fn repaired(enabled: &Enabled, mut value: Value) -> Value {
         enabled.repair(&mut value);
         value
-    }
-
-    #[test]
-    fn a_type_is_its_schema_and_name_in_any_version() {
-        let named = |odata_type: &str, named: &str| {
-            TypeName::parse(odata_type).is_some_and(|type_name| type_name.is_named(named))
-        };
-        let inventory = "#SoftwareInventory.v1_4_0.SoftwareInventory";
-        assert!(named(inventory, "SoftwareInventory"));
-        assert!(named(inventory, "SoftwareInventory.SoftwareInventory"));
-        assert!(named(
-            inventory,
-            "#SoftwareInventory.v1_0_0.SoftwareInventory"
-        ));
-        assert!(named(
-            "#SoftwareInventoryCollection.SoftwareInventoryCollection",
-            "SoftwareInventoryCollection"
-        ));
-        assert!(named("Chassis.v1_2_0.Chassis", "Chassis"));
-        assert!(named("#Chassis.v1_22_0.Links", "Chassis.Links"));
-        assert!(named(
-            "#NvidiaChassis.v1_4_0.NvidiaCBCChassis",
-            "NvidiaChassis.NvidiaCBCChassis"
-        ));
-
-        // Another type of the schema is not its resource type.
-        assert!(!named("#Chassis.v1_22_0.Links", "Chassis"));
-        assert!(!named("#Chassis.v1_22_0.Chassis", "Chassis.Links"));
-        assert!(!named("#ChassisCollection.ChassisCollection", "Chassis"));
-
-        assert!(TypeName::parse("#").is_none());
-        assert!(TypeName::parse("#Chassis").is_none());
     }
 
     #[test]

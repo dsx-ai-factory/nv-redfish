@@ -39,6 +39,7 @@ use futures_util::StreamExt as _;
 use futures_util::TryStreamExt as _;
 use http::header;
 use http::HeaderMap;
+use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::ActionError;
 use nv_redfish_core::AsyncTask;
 use nv_redfish_core::BmcErrorClass;
@@ -1159,11 +1160,7 @@ fn etag_from_headers(headers: &HeaderMap) -> Option<ODataETag> {
 /// The `Task` resource a `202 Accepted` body represents, if the body is one.
 fn task_from_body(body: &[u8]) -> Option<ODataId> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let is_task = value
-        .get("@odata.type")
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|odata_type| odata_type.starts_with("#Task."));
-    if !is_task {
+    if !ODataType::parse_from(&value).is_some_and(|odata_type| odata_type.is_named("Task")) {
         return None;
     }
     value

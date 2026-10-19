@@ -909,6 +909,13 @@ mod reqwest_client_tests {
                 ),
                 None,
             ),
+            (
+                "another type of the Task schema",
+                Some(
+                    serde_json::json!({ "@odata.id": task, "@odata.type": "#Task.v1_4_3.Payload" }),
+                ),
+                None,
+            ),
         ];
         for (scenario, body, expected) in cases {
             let mock_server = MockServer::start().await;
