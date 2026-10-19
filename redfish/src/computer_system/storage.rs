@@ -208,6 +208,7 @@ impl<B: Bmc> VolumeCollection<B> {
                     return Ok(ModificationResponse::Task(AsyncTask {
                         location: location.clone().into(),
                         retry_after: None,
+                        task: None,
                     }));
                 }
             }

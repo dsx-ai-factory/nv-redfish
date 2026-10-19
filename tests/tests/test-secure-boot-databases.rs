@@ -280,6 +280,7 @@ fn task_monitor(location: &str) -> AsyncTask {
     AsyncTask {
         location: ODataId::from(location.to_string()).into(),
         retry_after: Some(Duration::from_secs(30)),
+        task: None,
     }
 }
 

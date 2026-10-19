@@ -71,6 +71,7 @@ impl<B: Bmc> DellJobs<B> {
                     ModificationResponse::Task(AsyncTask {
                         location: job.odata_id().clone().into(),
                         retry_after: None,
+                        task: None,
                     })
                 }
                 ModificationResponse::Task(task) => ModificationResponse::Task(task),

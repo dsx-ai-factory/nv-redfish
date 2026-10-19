@@ -229,6 +229,10 @@ pub struct AsyncTask {
 
     /// Recommended duration to wait before polling again.
     pub retry_after: Option<Duration>,
+
+    /// The `Task` resource the `202 Accepted` body represents, if it had
+    /// one. It can be read after the task monitor is gone.
+    pub task: Option<ODataId>,
 }
 
 /// Outcome of a mutating Redfish operation.
@@ -420,6 +424,7 @@ mod tests {
         ModificationResponse::Task(AsyncTask {
             location: ODataId::from("/redfish/v1/TaskService/Tasks/1".to_string()).into(),
             retry_after: None,
+            task: None,
         })
     }
 

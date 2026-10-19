@@ -99,6 +99,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
         )
         .into(),
         retry_after: None,
+        task: None,
     };
 
     let Err(error) = task_service.task_link(invalid_task) else {
@@ -113,6 +114,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
     let collection_task = AsyncTask {
         location: ODataId::from("/redfish/v1/TaskService/Tasks".to_string()).into(),
         retry_after: None,
+        task: None,
     };
 
     let Err(error) = task_service.task_link(collection_task) else {
@@ -127,6 +129,7 @@ async fn task_link_fetch_exposes_schema_fields() -> Result<(), Box<dyn StdError>
     let async_task = AsyncTask {
         location: ODataId::from(TASK_PATH.to_string()).into(),
         retry_after: None,
+        task: None,
     };
 
     let task_link = task_service.task_link(async_task)?;

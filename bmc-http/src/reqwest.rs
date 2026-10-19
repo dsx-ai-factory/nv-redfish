@@ -847,9 +847,16 @@ impl Client {
             reqwest::StatusCode::ACCEPTED => {
                 let location = location_from_headers(headers, url, status)?
                     .unwrap_or_else(|| odata_path_from_url(url).into());
+                let retry_after = retry_after_from_headers(headers);
+                let task = response
+                    .bytes()
+                    .await
+                    .ok()
+                    .and_then(|body| task_from_body(&body));
                 Ok(ModificationResponse::Task(AsyncTask {
                     location: location.into(),
-                    retry_after: retry_after_from_headers(headers),
+                    retry_after,
+                    task,
                 }))
             }
             reqwest::StatusCode::NO_CONTENT => location_from_headers(headers, url, status)?.map_or(
@@ -901,9 +908,15 @@ impl Client {
                     });
                 };
 
+                let task = response
+                    .bytes()
+                    .await
+                    .ok()
+                    .and_then(|body| task_from_body(&body));
                 Ok(ModificationResponse::Task(AsyncTask {
                     location: task_location.into(),
                     retry_after: retry_after_from_headers(&headers),
+                    task,
                 }))
             }
             reqwest::StatusCode::OK | reqwest::StatusCode::CREATED => {
@@ -1141,6 +1154,22 @@ fn etag_from_headers(headers: &HeaderMap) -> Option<ODataETag> {
         .get(header::ETAG)
         .and_then(|value| value.to_str().ok())
         .map(|v| v.to_string().into())
+}
+
+/// The `Task` resource a `202 Accepted` body represents, if the body is one.
+fn task_from_body(body: &[u8]) -> Option<ODataId> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let is_task = value
+        .get("@odata.type")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|odata_type| odata_type.starts_with("#Task."));
+    if !is_task {
+        return None;
+    }
+    value
+        .get("@odata.id")
+        .and_then(serde_json::Value::as_str)
+        .map(|id| ODataId::from(id.to_string()))
 }
 
 fn retry_after_from_headers(headers: &HeaderMap) -> Option<Duration> {

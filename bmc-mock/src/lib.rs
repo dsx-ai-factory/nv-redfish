@@ -694,6 +694,7 @@ where
             } if id == *location => Ok(ModificationResponse::Task(AsyncTask {
                 location: next_location.unwrap_or_else(|| location.clone()).into(),
                 retry_after,
+                task: None,
             })),
             Expect {
                 request: ExpectedRequest::PollEmpty { id },

@@ -882,6 +882,71 @@ mod reqwest_client_tests {
         assert!(no_etag.is_ok());
     }
 
+    /// A `202 Accepted` body representing the `Task` names the task, which
+    /// outlives the monitor in `Location`; any other body names none.
+    #[tokio::test]
+    async fn accepted_update_names_the_task_its_body_represents(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let resource_path = "/redfish/v1/Managers/Self/NetworkProtocol";
+        let monitor = "/redfish/v1/TaskService/TaskMonitors/15";
+        let task = "/redfish/v1/TaskService/Tasks/15";
+        let cases = [
+            (
+                "a Task body",
+                Some(serde_json::json!({
+                    "@odata.id": task,
+                    "@odata.type": "#Task.v1_4_3.Task",
+                    "Id": "15",
+                    "TaskMonitor": monitor,
+                })),
+                Some(task),
+            ),
+            ("no body", None, None),
+            (
+                "a body that is not a Task",
+                Some(
+                    serde_json::json!({ "@odata.id": resource_path, "@odata.type": "#ManagerNetworkProtocol.v1_5_0.ManagerNetworkProtocol" }),
+                ),
+                None,
+            ),
+        ];
+        for (scenario, body, expected) in cases {
+            let mock_server = MockServer::start().await;
+            let accepted = ResponseTemplate::new(202).insert_header("Location", monitor);
+            Mock::given(method("PATCH"))
+                .and(path(resource_path))
+                .respond_with(match body {
+                    Some(body) => accepted.set_body_json(body),
+                    None => accepted,
+                })
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+            let bmc = create_test_bmc(&mock_server);
+
+            let response = bmc
+                .update::<UpdateRequest, TestResource>(
+                    &create_odata_id(resource_path),
+                    None,
+                    &UpdateRequest {
+                        name: None,
+                        value: Some(1),
+                    },
+                )
+                .await?;
+            let ModificationResponse::Task(accepted) = response else {
+                return Err(format!("{scenario}: expected a task").into());
+            };
+            assert_eq!(accepted.location.0.to_string(), monitor, "{scenario}");
+            assert_eq!(
+                accepted.task.map(|task| task.to_string()).as_deref(),
+                expected,
+                "{scenario}"
+            );
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_http_patch_returns_typed_body_without_odata_id(
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1024,6 +1089,10 @@ mod reqwest_client_tests {
         };
         assert_eq!(task.location.0.to_string(), next_monitor_path);
         assert_eq!(task.retry_after, Some(Duration::from_secs(30)));
+        assert_eq!(
+            task.task.map(|task| task.to_string()).as_deref(),
+            Some("/redfish/v1/TaskService/Tasks/HGX_0")
+        );
 
         Ok(())
     }

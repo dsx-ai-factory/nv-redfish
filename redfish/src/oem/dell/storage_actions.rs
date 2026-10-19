@@ -83,6 +83,7 @@ impl<B: Bmc> DellStorageActions<B> {
                 ModificationResponse::Entity(job) => ModificationResponse::Task(AsyncTask {
                     location: job.odata_id.into(),
                     retry_after: None,
+                    task: None,
                 }),
                 ModificationResponse::Task(task) => ModificationResponse::Task(task),
                 ModificationResponse::Empty => ModificationResponse::Empty,

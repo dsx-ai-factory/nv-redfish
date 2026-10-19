@@ -284,6 +284,7 @@ fn pending_at(location: ODataId) -> AsyncTask {
     AsyncTask {
         location: location.into(),
         retry_after: None,
+        task: None,
     }
 }
 

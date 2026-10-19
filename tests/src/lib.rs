@@ -52,6 +52,7 @@ pub fn async_task(location: &str, retry_after_secs: u64) -> AsyncTask {
     AsyncTask {
         location: ODataId::from(location.to_string()).into(),
         retry_after: Some(Duration::from_secs(retry_after_secs)),
+        task: None,
     }
 }
 

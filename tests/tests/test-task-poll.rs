@@ -68,6 +68,7 @@ fn monitor_task(retry_after: Option<Duration>) -> AsyncTask {
     AsyncTask {
         location: ODataId::from(MONITOR.to_string()).into(),
         retry_after,
+        task: None,
     }
 }
 
@@ -240,6 +241,7 @@ async fn finished_without_result_is_unavailable() -> Result<(), Box<dyn StdError
         AsyncTask {
             location: ODataId::from(TASK.to_string()).into(),
             retry_after: None,
+            task: None,
         },
     );
     bmc.expect(Expect::poll_result(

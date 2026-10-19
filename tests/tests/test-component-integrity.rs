@@ -310,6 +310,7 @@ fn async_task(location: &str) -> AsyncTask {
     AsyncTask {
         location: ODataId::from(location.to_string()).into(),
         retry_after: None,
+        task: None,
     }
 }
 

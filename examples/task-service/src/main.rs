@@ -77,6 +77,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     let async_task = AsyncTask {
         location: ODataId::from(args.location).into(),
         retry_after: None,
+        task: None,
     };
 
     let task_link = task_service.task_link(async_task)?;

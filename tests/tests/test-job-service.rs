@@ -97,6 +97,7 @@ async fn job_service_follows_advertised_collection_and_job_links() -> Result<(),
     let link = jobs.job_link(AsyncTask {
         location: ODataId::from(job_id.to_string()).into(),
         retry_after: None,
+        task: None,
     })?;
     bmc.expect(Expect::get(
         job_id,
@@ -113,6 +114,7 @@ async fn job_service_follows_advertised_collection_and_job_links() -> Result<(),
     let outside = AsyncTask {
         location: ODataId::from("/redfish/v1/TaskService/Tasks/JID_42".to_string()).into(),
         retry_after: None,
+        task: None,
     };
     assert!(matches!(
         jobs.job_link(outside),

@@ -300,6 +300,7 @@ async fn manager_top_level_configuration_job_links_to_its_dell_job() -> Result<(
     let outside = AsyncTask {
         location: ODataId::from("/redfish/v1/TaskService/Tasks/JID_43".to_string()).into(),
         retry_after: None,
+        task: None,
     };
     assert!(matches!(
         jobs.job_link(outside),
@@ -452,6 +453,7 @@ async fn manager_imports_system_configuration() -> Result<(), Box<dyn StdError>>
         AsyncTask {
             location: ODataId::from("/redfish/v1/TaskService/Tasks/JID_1".to_string()).into(),
             retry_after: None,
+            task: None,
         },
     ));
     let params = ManagerImportSystemConfigurationAction {
