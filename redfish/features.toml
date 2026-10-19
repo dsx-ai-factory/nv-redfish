@@ -303,6 +303,8 @@ csdl_files = [
 ]
 patterns = [
     "EventService.*",
+    "EventDestination.*",
+    "EventDestinationCollection.*",
     "MetricReport.*",
     "PhysicalContext.*",
     "Schedule.*",

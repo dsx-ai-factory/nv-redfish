@@ -25,6 +25,7 @@ use futures_util::TryStreamExt as _;
 use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::BoxTryStream;
+use nv_redfish_core::ODataId;
 use nv_redfish_core::StreamEvent;
 use serde::de;
 use serde::Deserialize;
@@ -102,6 +103,29 @@ impl<B: Bmc> EventService<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<EventServiceSchema> {
         self.data.clone()
+    }
+
+    /// List the `EventDestination`s in `Subscriptions`; empty if the service
+    /// doesn't advertise it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the collection cannot be fetched or deserialized.
+    pub async fn subscriptions(&self) -> Result<Vec<ODataId>, Error<B>> {
+        let Some(subscriptions) = &self.data.subscriptions else {
+            return Ok(Vec::new());
+        };
+
+        let collection = subscriptions
+            .get(self.bmc.as_ref())
+            .await
+            .map_err(Error::from)?;
+
+        Ok(collection
+            .members
+            .iter()
+            .map(|member| member.id().clone())
+            .collect())
     }
 
     /// Open an SSE stream of Redfish event payloads.
