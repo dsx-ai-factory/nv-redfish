@@ -85,6 +85,7 @@ enum Quirk {
     MissingChassisTypeField,
     MissingChassisNameField,
     EmptyUuidField,
+    InvalidChassisUuidField,
     DpuOemComputerSystem,
     MissingUpdateServiceNameField,
     CertificateTypeWrongPemChainCase,
@@ -195,6 +196,7 @@ const RULES: &[Rule] = &[
         quirks: &[
             Quirk::IncompleteAccountServiceCertificateCollection,
             Quirk::EmptyUuidField,
+            Quirk::InvalidChassisUuidField,
             Quirk::DpuOemComputerSystem,
             Quirk::NullableMembers,
         ],
@@ -203,7 +205,11 @@ const RULES: &[Rule] = &[
     // than `NVIDIA`.
     Rule {
         covers: |root| root.vendor_is("WIWYNN"),
-        quirks: &[Quirk::SseNoMemberId, Quirk::SseMissingEventType],
+        quirks: &[
+            Quirk::SseNoMemberId,
+            Quirk::SseMissingEventType,
+            Quirk::InvalidChassisUuidField,
+        ],
     },
     Rule {
         covers: |root| root.vendor_is("Supermicro"),
@@ -334,10 +340,18 @@ impl BmcQuirks {
         self.has(Quirk::StandbyState)
     }
 
-    /// A DPU in NIC mode reports an empty-string `UUID` on chassis and
-    /// computer system documents.
+    /// A DPU in NIC mode reports an empty-string `UUID` on computer system
+    /// documents.
     pub(crate) fn bug_empty_uuid_field(&self) -> bool {
         self.has(Quirk::EmptyUuidField)
+    }
+
+    /// A chassis reports a `UUID` that is not a UUID: a DPU in NIC mode
+    /// sends an empty string, and the HGX chassis a GB200 NVL host BMC
+    /// serves report unresolved templates (`STATIC:3:0`, `$DEVICE_UUID`)
+    /// while the HGX BMC is still booting.
+    pub(crate) fn bug_invalid_chassis_uuid_field(&self) -> bool {
+        self.has(Quirk::InvalidChassisUuidField)
     }
 
     /// A DPU serves the computer system's `Oem.Nvidia` object as a separate
@@ -512,6 +526,7 @@ mod tests {
         let dpu = [
             Quirk::IncompleteAccountServiceCertificateCollection,
             Quirk::EmptyUuidField,
+            Quirk::InvalidChassisUuidField,
             Quirk::DpuOemComputerSystem,
             Quirk::NullableMembers,
         ];
@@ -593,7 +608,14 @@ mod tests {
                 &dpu,
             ),
             (json!({ "Vendor": "Nvidia", "Product": "Other" }), &[]),
-            (json!({ "Vendor": "WIWYNN" }), &nvidia),
+            (
+                json!({ "Vendor": "WIWYNN" }),
+                &[
+                    Quirk::SseNoMemberId,
+                    Quirk::SseMissingEventType,
+                    Quirk::InvalidChassisUuidField,
+                ],
+            ),
             (
                 json!({ "Vendor": "Supermicro" }),
                 &[

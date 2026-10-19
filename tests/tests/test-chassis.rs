@@ -570,6 +570,70 @@ async fn nvidia_dpu_empty_chassis_uuid_in_expanded_members_workaround(
 }
 
 #[test]
+async fn wiwynn_invalid_chassis_uuid_in_expanded_members_workaround(
+) -> Result<(), Box<dyn StdError>> {
+    // Platform under test: Wiwynn GB200 NVL host BMC.
+    // Quirk under test: while the HGX BMC is still booting after a firmware
+    // update, the HGX chassis it serves through the host BMC report
+    // unresolved template values instead of UUIDs. Captured from a live BMC:
+    // - `STATIC:3:0` on HGX_Chassis_0, HGX_FPGA_0 and HGX_ProcessorModule_0,
+    //   which later resolves to `c01dc250-5678-11ed-9b6a-0242ac120002`;
+    // - `$DEVICE_UUID` on HGX_GPU_0..3, which later resolves to the GPU UUID.
+    // A single such value fails the whole expanded collection.
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let gpu_chassis_id = format!("{}/HGX_GPU_0", ids.chassis_collection_id);
+    let root = expect_wiwynn_service_root(
+        bmc.clone(),
+        &ids,
+        json!({
+            "Chassis": { ODATA_ID: &ids.chassis_collection_id }
+        }),
+    )
+    .await?;
+    bmc.expect(Expect::expand(
+        &ids.chassis_collection_id,
+        json!({
+            ODATA_ID: &ids.chassis_collection_id,
+            ODATA_TYPE: CHASSIS_COLLECTION_DATA_TYPE,
+            "Id": "Chassis",
+            "Name": "Chassis Collection",
+            "Members": [
+                chassis_payload(
+                    &ids,
+                    json!({ "UUID": "f72d6fa0-5675-11ed-9b6a-0242ac120002" })
+                ),
+                {
+                    ODATA_ID: &ids.container_chassis_id,
+                    ODATA_TYPE: CHASSIS_DATA_TYPE,
+                    "Id": "HGX_Chassis_0",
+                    "Name": "HGX_Chassis_0",
+                    "ChassisType": "Zone",
+                    "UUID": "STATIC:3:0"
+                },
+                {
+                    ODATA_ID: &gpu_chassis_id,
+                    ODATA_TYPE: CHASSIS_DATA_TYPE,
+                    "Id": "HGX_GPU_0",
+                    "Name": "HGX_GPU_0",
+                    "ChassisType": "Component",
+                    "UUID": "$DEVICE_UUID"
+                }
+            ]
+        }),
+    ));
+
+    let collection = root.chassis().await?.unwrap();
+    let members = collection.members().await?;
+    assert_eq!(members.len(), 3);
+    assert!(matches!(members[0].raw().uuid, Some(Some(_))));
+    assert_eq!(members[1].raw().uuid, Some(None));
+    assert_eq!(members[2].raw().uuid, Some(None));
+
+    Ok(())
+}
+
+#[test]
 async fn nvidia_dpu_empty_chassis_uuid_on_member_fetch_workaround() -> Result<(), Box<dyn StdError>>
 {
     // Platform under test: NVIDIA DPU.
@@ -767,6 +831,38 @@ async fn expect_nvidia_gb300_service_root(
                 "Name": "RootService",
                 "Vendor": "NVIDIA",
                 "Product": "GB BMC",
+                "ProtocolFeaturesSupported": {
+                    "ExpandQuery": {
+                        "NoLinks": true
+                    }
+                },
+                "Links": {
+                    "Sessions": {
+                        ODATA_ID: format!("{}/SessionService/Sessions", ids.root_id),
+                    }
+                },
+            }),
+            &fields,
+        ]),
+    ));
+    ServiceRoot::new(bmc).await.map_err(Into::into)
+}
+
+async fn expect_wiwynn_service_root(
+    bmc: Arc<Bmc>,
+    ids: &Ids,
+    fields: Value,
+) -> Result<ServiceRoot<Bmc>, Box<dyn StdError>> {
+    bmc.expect(Expect::get(
+        &ids.root_id,
+        json_merge([
+            &json!({
+                ODATA_ID: &ids.root_id,
+                ODATA_TYPE: "#ServiceRoot.v1_13_0.ServiceRoot",
+                "Id": "RootService",
+                "Name": "RootService",
+                "Vendor": "WIWYNN",
+                "Product": "GB200 NVL",
                 "ProtocolFeaturesSupported": {
                     "ExpandQuery": {
                         "NoLinks": true

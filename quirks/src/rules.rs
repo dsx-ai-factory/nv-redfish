@@ -81,8 +81,8 @@ const RULES: &[Rule] = &[
     },
     Rule {
         resource_type: "Chassis",
-        enabled: BmcQuirks::bug_empty_uuid_field,
-        fix: fixes::normalize_empty_uuid_field,
+        enabled: BmcQuirks::bug_invalid_chassis_uuid_field,
+        fix: fixes::normalize_invalid_uuid_field,
     },
     Rule {
         resource_type: "ComputerSystem",

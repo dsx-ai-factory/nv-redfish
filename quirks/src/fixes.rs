@@ -16,6 +16,7 @@
 //! The rewrites the repair table composes. Each takes one document and
 //! returns it repaired; a document without the fault comes back unchanged.
 
+use nv_redfish_core::EdmGuid;
 use serde_json::Value;
 
 pub fn add_default_update_service_name(v: Value) -> Value {
@@ -90,6 +91,22 @@ pub fn normalize_empty_uuid_field(mut v: Value) -> Value {
         if let Some(uuid) = obj.get_mut("UUID") {
             let is_empty = uuid.as_str().is_some_and(str::is_empty);
             if is_empty {
+                *uuid = Value::Null;
+            }
+        }
+    }
+    v
+}
+
+// `UUID` is optional, so a value that does not parse as one, an empty
+// string or an unresolved template, is read as absent.
+pub fn normalize_invalid_uuid_field(mut v: Value) -> Value {
+    if let Value::Object(ref mut obj) = v {
+        if let Some(uuid) = obj.get_mut("UUID") {
+            let is_invalid = uuid
+                .as_str()
+                .is_some_and(|s| EdmGuid::parse_str(s).is_err());
+            if is_invalid {
                 *uuid = Value::Null;
             }
         }
