@@ -1175,6 +1175,38 @@ mod reqwest_client_tests {
             .is_empty());
     }
 
+    /// Anonymous credentials send neither `Authorization` nor
+    /// `X-Auth-Token`, as a read of a resource served without
+    /// authentication needs.
+    #[tokio::test]
+    async fn anonymous_credentials_send_no_authentication() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let mock_server = MockServer::start().await;
+        let root_path = "/redfish/v1";
+        Mock::given(method("GET"))
+            .and(path(root_path))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(create_test_resource(
+                    root_path,
+                    None,
+                    "Root Service",
+                    1,
+                )),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+        let bmc = create_test_bmc_with_credentials(&mock_server, BmcCredentials::anonymous());
+
+        bmc.get::<TestResource>(&create_odata_id(root_path)).await?;
+
+        let requests = mock_server.received_requests().await.unwrap_or_default();
+        assert_eq!(requests.len(), 1);
+        assert!(!requests[0].headers.contains_key("authorization"));
+        assert!(!requests[0].headers.contains_key("x-auth-token"));
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_action_request_absolute_target() -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;

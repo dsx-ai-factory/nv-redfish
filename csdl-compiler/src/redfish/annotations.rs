@@ -114,24 +114,19 @@ pub trait RedfishAnnotations {
             )
     }
 
-    /// Returns excerpt keyse of the property. If None then it is not
-    /// except property.
+    /// Excerpt membership, with an explicit key list taking precedence over
+    /// the implicit membership supplied by `ExcerptCopyOnly`.
     fn excerpt(&self) -> Option<Excerpt> {
         self.annotations()
             .iter()
-            .find(|a| {
-                a.is_redfish_annotation("Excerpt") || a.is_redfish_annotation("ExcerptCopyOnly")
-            })
-            .and_then(|v| {
+            .find(|a| a.is_redfish_annotation("Excerpt"))
+            .map(|v| {
                 v.string.as_ref().map_or_else(
-                    || Some(Excerpt::All),
-                    |s| {
-                        Some(Excerpt::Keys(
-                            s.split(',').map(Into::into).map(ExcerptKey::new).collect(),
-                        ))
-                    },
+                    || Excerpt::All,
+                    |s| Excerpt::Keys(s.split(',').map(Into::into).map(ExcerptKey::new).collect()),
                 )
             })
+            .or_else(|| self.is_excerpt_only().into_inner().then_some(Excerpt::All))
     }
 
     /// Returns if property is marked as excerpt copy.

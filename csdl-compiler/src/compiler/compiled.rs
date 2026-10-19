@@ -103,6 +103,37 @@ pub struct Compiled<'a> {
 }
 
 impl<'a> Compiled<'a> {
+    /// Names of all compiled entity, complex, enum, and definition types in sorted order.
+    #[must_use]
+    pub fn sorted_type_names(&self) -> Vec<QualifiedName<'a>> {
+        let mut names: Vec<_> = self
+            .entity_types
+            .keys()
+            .chain(self.complex_types.keys())
+            .chain(self.enum_types.keys())
+            .chain(self.type_definitions.keys())
+            .copied()
+            .collect();
+        names.sort_unstable();
+        names
+    }
+
+    /// Required excerpts of a type, ordered by their schema keys.
+    #[must_use]
+    pub fn sorted_excerpt_copies(&self, name: QualifiedName<'a>) -> Vec<&ExcerptCopy> {
+        let mut copies: Vec<_> = self
+            .excerpt_copies
+            .get(&name)
+            .into_iter()
+            .flatten()
+            .collect();
+        copies.sort_unstable_by_key(|copy| match copy {
+            ExcerptCopy::AllKeys => None,
+            ExcerptCopy::Key(key) => Some(key.inner()),
+        });
+        copies
+    }
+
     /// Create a compiled structure containing a single compiled
     /// entity type.
     #[must_use]

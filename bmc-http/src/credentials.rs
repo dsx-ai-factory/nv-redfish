@@ -36,6 +36,9 @@ pub enum BmcCredentials {
         /// Token value.
         token: String,
     },
+    /// Send no credentials, for resources a service serves without
+    /// authentication, such as the service root.
+    Anonymous,
 }
 
 impl BmcCredentials {
@@ -56,6 +59,12 @@ impl BmcCredentials {
     pub const fn new(username: String, password: String) -> Self {
         Self::username_password(username, Some(password))
     }
+
+    /// Create credentials that send no authentication.
+    #[must_use]
+    pub const fn anonymous() -> Self {
+        Self::Anonymous
+    }
 }
 
 impl fmt::Debug for BmcCredentials {
@@ -70,6 +79,7 @@ impl fmt::Debug for BmcCredentials {
                 .debug_struct("BmcCredentials::Token")
                 .field("token", &"[REDACTED]")
                 .finish(),
+            Self::Anonymous => f.write_str("BmcCredentials::Anonymous"),
         }
     }
 }
@@ -84,6 +94,7 @@ impl fmt::Display for BmcCredentials {
                 )
             }
             Self::Token { .. } => write!(f, "BmcCredentials::Token(token: [REDACTED])"),
+            Self::Anonymous => f.write_str("BmcCredentials::Anonymous"),
         }
     }
 }

@@ -174,6 +174,12 @@ pub struct QualifiedName {
     pub name: SimpleIdentifier,
 }
 
+impl Display for QualifiedName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{}.{}", self.namespace, self.name)
+    }
+}
+
 impl FromStr for QualifiedName {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {

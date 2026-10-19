@@ -36,8 +36,8 @@ use crate::compiler::PropertyFilter;
 use crate::compiler::PropertyPattern;
 use crate::compiler::SchemaBundle;
 use crate::edmx::Edmx;
-use crate::generator::rust::Config as GeneratorConfig;
-use crate::generator::rust::RustGenerator;
+use crate::generator::client_rust::Config as GeneratorConfig;
+use crate::generator::client_rust::RustGenerator;
 use crate::optimizer::optimize;
 use crate::optimizer::Config as OptimizerConfig;
 use crate::Error;
@@ -225,6 +225,7 @@ fn process_command_inner(
                     ),
                     action_filter: ActionFilter::new_restrictive(action_patterns.clone()),
                     rigid_array_filter: PropertyFilter::new(rigid_array_patterns.clone()),
+                    ..CompilerConfig::default()
                 })
                 .map_err(Error::compile_error)?;
             let compiled = optimize(compiled, &OptimizerConfig::default());

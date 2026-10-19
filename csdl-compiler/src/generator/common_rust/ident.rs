@@ -16,7 +16,7 @@
 use proc_macro2::Ident;
 use proc_macro2::Span;
 
-/// Build an identifier from a schema-derived name, escaping Rust keywords.
+/// Build a shared schema-derived Rust identifier, escaping Rust keywords.
 #[must_use]
 pub fn escaped(name: &str) -> Ident {
     if matches!(name, "crate" | "self" | "super" | "Self") {

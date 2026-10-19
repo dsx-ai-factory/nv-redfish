@@ -1205,6 +1205,7 @@ fn auth_headers(
             request.basic_auth(username, password.as_ref())
         }
         BmcCredentials::Token { token } => request.header("X-Auth-Token", token),
+        BmcCredentials::Anonymous => request,
     }
 }
 

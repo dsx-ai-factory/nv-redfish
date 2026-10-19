@@ -18,7 +18,7 @@ use crate::edmx::attribute_values::SimpleIdentifier;
 use crate::edmx::ActionName as EdmxActionName;
 use crate::edmx::ParameterName;
 use crate::generator::casemungler;
-use crate::generator::rust::ident;
+use crate::generator::common_rust::ident;
 use crate::redfish::ExcerptCopy;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
@@ -129,6 +129,7 @@ impl ToTokens for TypeNameForCreate<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct TypeNameForExcerptCopy<'a>(TypeName<'a>, &'a ExcerptCopy);
 
 impl Display for TypeNameForExcerptCopy<'_> {

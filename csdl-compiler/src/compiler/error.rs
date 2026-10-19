@@ -27,6 +27,8 @@ use std::fmt::Result as FmtResult;
 /// Compilation error kinds.
 #[derive(Debug)]
 pub enum Error<'a> {
+    /// An explicitly selected entity or complex root was not found.
+    RootTypeNotFound(String),
     /// Error while resolving a protocol annotation.
     Annotation(AnnotationError),
     /// Feature not yet implemented.
@@ -80,6 +82,7 @@ pub enum Error<'a> {
 impl Display for Error<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
+            Self::RootTypeNotFound(name) => write!(f, "root type not found: {name}"),
             Self::Annotation(err) => Display::fmt(err, f),
             Self::Unimplemented => write!(f, "unimplemented"),
             Self::EntityTypeNotFound(v) => write!(f, "entity type not found: {v}"),

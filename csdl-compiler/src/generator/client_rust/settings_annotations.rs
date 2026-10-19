@@ -17,7 +17,8 @@
 
 use crate::compiler::annotations::Annotations;
 use crate::compiler::TypeClass;
-use crate::generator::rust::{doc, Config, FullTypeName};
+use crate::generator::client_rust::{Config, FullTypeName};
+use crate::generator::common_rust::doc;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 

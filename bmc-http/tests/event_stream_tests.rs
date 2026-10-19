@@ -210,6 +210,7 @@ mod tests {
         use nv_redfish_bmc_http::reqwest::{Client, ClientParams};
         use nv_redfish_bmc_http::{CacheSettings, HttpBmc};
         use std::time::Duration;
+        use tokio::io::AsyncReadExt as _;
         use tokio::io::AsyncWriteExt as _;
         use tokio::net::TcpListener;
         use url::Url;
@@ -222,6 +223,15 @@ mod tests {
         // keeping the connection open so the client has nothing to time out on.
         tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
+            // Read the whole request first: a response that arrives while the
+            // client is still sending it makes the client cancel the request.
+            let mut request = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = socket.read(&mut buf).await.unwrap();
+                assert!(n > 0, "connection closed before the request ended");
+                request.extend_from_slice(&buf[..n]);
+            }
             socket
                 .write_all(
                     b"HTTP/1.1 200 OK\r\n\

@@ -16,8 +16,8 @@
 use crate::edmx::ParameterName as EdmxParameterName;
 use crate::edmx::PropertyName as EdmxPropertyName;
 use crate::generator::casemungler;
-use crate::generator::rust::ident;
-use proc_macro2::TokenStream;
+use crate::generator::common_rust::ident;
+use proc_macro2::{Literal, TokenStream};
 use quote::ToTokens;
 use quote::TokenStreamExt as _;
 use std::fmt::Debug;
@@ -44,6 +44,15 @@ impl<'a> StructFieldName<'a> {
     #[must_use]
     pub const fn new_parameter(v: &'a EdmxParameterName) -> Self {
         Self::Parameter(v)
+    }
+
+    /// Emit the original CSDL name as a serde string literal.
+    #[must_use]
+    pub fn rename(self) -> Literal {
+        match self {
+            Self::Property(name) => Literal::string(name.inner().inner()),
+            Self::Parameter(name) => Literal::string(name.inner().inner()),
+        }
     }
 }
 

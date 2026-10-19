@@ -15,7 +15,7 @@
 
 use crate::edmx::attribute_values::SimpleIdentifier;
 use crate::generator::casemungler;
-use crate::generator::rust::ident;
+use crate::generator::common_rust::ident;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use quote::TokenStreamExt as _;

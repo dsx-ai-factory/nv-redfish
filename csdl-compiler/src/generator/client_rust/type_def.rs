@@ -14,9 +14,9 @@
 // limitations under the License.
 
 use crate::compiler::TypeDefinition;
-use crate::generator::rust::Config;
-use crate::generator::rust::FullTypeName;
-use crate::generator::rust::TypeName;
+use crate::generator::client_rust::Config;
+use crate::generator::client_rust::FullTypeName;
+use crate::generator::client_rust::TypeName;
 use proc_macro2::TokenStream;
 use quote::quote;
 
