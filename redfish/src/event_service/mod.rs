@@ -17,6 +17,7 @@
 //!
 //! This module provides typed access to Redfish `EventService`.
 
+use crate::schema::event_destination::EventDestination as EventDestinationSchema;
 use crate::schema::event_service::EventService as EventServiceSchema;
 use crate::Error;
 use crate::NvBmc;
@@ -24,13 +25,17 @@ use crate::ServiceRoot;
 use futures_util::TryStreamExt as _;
 use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::BmcError as _;
+use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
+use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataId;
 use nv_redfish_core::StreamEvent;
 use serde::de;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde_json::Value as JsonValue;
+use std::fmt;
 use std::sync::Arc;
 
 #[doc(inline)]
@@ -172,6 +177,26 @@ impl<B: Bmc> EventService<B> {
         B: 'static,
         B::Error: 'static,
     {
+        let subscription = self.open_events_from(last_event_id).await?;
+        Ok(subscription.into_stream())
+    }
+
+    /// Open an SSE stream of Redfish event payloads, tracking the subscription it creates.
+    /// A failure to list `Subscriptions` leaves [`SseSubscription::destination`] `None`.
+    ///
+    /// # Errors
+    ///
+    /// As [`EventService::events`].
+    pub async fn open_events_from(
+        &self,
+        last_event_id: Option<&str>,
+    ) -> Result<SseSubscription<B>, Error<B>>
+    where
+        B: 'static,
+        B::Error: 'static,
+    {
+        let before = self.subscriptions().await.ok();
+
         let stream_uri = self
             .data
             .server_sent_event_uri
@@ -187,7 +212,124 @@ impl<B: Bmc> EventService<B> {
             .await
             .map_err(Error::from)?;
 
-        Ok(Box::pin(stream.map_err(Error::from)))
+        let after = self.subscriptions().await.ok();
+
+        let destination = match (before, after) {
+            (Some(before), Some(after)) => {
+                let mut added: Vec<ODataId> = after
+                    .iter()
+                    .filter(|destination| !before.contains(destination))
+                    .cloned()
+                    .collect();
+
+                // Two or more additions race with another client; none is ours.
+                match added.len() {
+                    1 => added.pop(),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+
+        Ok(SseSubscription {
+            stream: Box::pin(stream.map_err(Error::from)),
+            destination,
+            bmc: self.bmc.clone(),
+        })
+    }
+}
+
+/// An SSE stream plus the `EventDestination` it created.
+///
+/// Dropping it closes the connection; only [`SseSubscription::close`] deletes a
+/// destination the service did not reap.
+pub struct SseSubscription<B: Bmc> {
+    stream: BoxTryStream<StreamEvent<EventStreamPayload>, Error<B>>,
+    destination: Option<ODataId>,
+    bmc: NvBmc<B>,
+}
+
+impl<B: Bmc> SseSubscription<B> {
+    /// The destination this stream created, if the open identified one.
+    #[must_use]
+    pub const fn destination(&self) -> Option<&ODataId> {
+        self.destination.as_ref()
+    }
+
+    /// The events of this stream, without giving up the subscription.
+    pub fn stream(&mut self) -> &mut BoxTryStream<StreamEvent<EventStreamPayload>, Error<B>> {
+        &mut self.stream
+    }
+
+    /// Take the events of this stream, tracking the subscription no further.
+    #[must_use]
+    pub fn into_stream(self) -> BoxTryStream<StreamEvent<EventStreamPayload>, Error<B>> {
+        self.stream
+    }
+
+    /// Drop the stream, then DELETE the destination.
+    pub async fn close(self) -> CloseOutcome<B> {
+        let Self {
+            stream,
+            destination,
+            bmc,
+        } = self;
+
+        drop(stream);
+
+        let Some(destination) = destination else {
+            return CloseOutcome::SocketOnly;
+        };
+
+        match bmc
+            .as_ref()
+            .delete::<NavProperty<EventDestinationSchema>>(&destination)
+            .await
+        {
+            Ok(_) => CloseOutcome::Deleted,
+            Err(error) => {
+                let error: Error<B> = Error::from(error);
+
+                let gone = matches!(
+                    &error,
+                    Error::Bmc(cause)
+                        if cause.error_class()
+                            == BmcErrorClass::HttpResponse { status: 404 }
+                );
+
+                if gone {
+                    CloseOutcome::AlreadyGone
+                } else {
+                    CloseOutcome::DeleteFailed(error)
+                }
+            }
+        }
+    }
+}
+
+/// What closing an [`SseSubscription`] did to the service.
+pub enum CloseOutcome<B: Bmc> {
+    /// The connection closed; no destination to delete.
+    SocketOnly,
+
+    /// The destination was deleted.
+    Deleted,
+
+    /// The destination was already gone.
+    AlreadyGone,
+
+    /// The destination could not be deleted.
+    DeleteFailed(Error<B>),
+}
+
+impl<B: Bmc> fmt::Debug for CloseOutcome<B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SocketOnly => f.write_str("SocketOnly"),
+            Self::Deleted => f.write_str("Deleted"),
+            Self::AlreadyGone => f.write_str("AlreadyGone"),
+            Self::DeleteFailed(error) => f.debug_tuple("DeleteFailed").field(error).finish(),
+        }
     }
 }
 
