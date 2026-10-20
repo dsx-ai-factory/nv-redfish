@@ -25,6 +25,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures_util::StreamExt as _;
+use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::repair::decode;
 use nv_redfish_core::Action;
@@ -45,12 +46,11 @@ use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Map;
 use serde_json::Value;
 
+use crate::rules::is_named;
 use crate::rules::walk;
 use crate::rules::Fix;
-use crate::rules::TypeName;
 
 /// A caller's document rewrite.
 pub type UserFix = Arc<dyn Fn(Value) -> Value + Send + Sync>;
@@ -70,9 +70,9 @@ pub enum Match {
 }
 
 impl Match {
-    fn applies(&self, type_name: Option<TypeName<'_>>, odata_id: Option<&str>) -> bool {
+    fn applies(&self, type_name: Option<&ODataType<'_>>, odata_id: Option<&str>) -> bool {
         match self {
-            Self::Type(named) => type_name.is_some_and(|type_name| type_name.is_named(named)),
+            Self::Type(named) => type_name.is_some_and(|type_name| is_named(type_name, named)),
             Self::Id(pattern) => odata_id.is_some_and(|id| pattern.matches(id)),
         }
     }
@@ -146,7 +146,8 @@ impl fmt::Debug for UserRule {
 
 /// The document's `@odata.id`, unless the object is a bare reference: a
 /// link names a document, it is not one.
-fn document_id_of(object: &Map<String, Value>) -> Option<&str> {
+fn document_id_of(value: &Value) -> Option<&str> {
+    let object = value.as_object()?;
     let id = object.get("@odata.id")?.as_str()?;
     (object.len() > 1).then_some(id)
 }
@@ -162,11 +163,11 @@ impl Repair for Rules {
             return;
         }
         walk(document, &|object| {
-            let type_name = TypeName::of(object);
+            let type_name = ODataType::parse_from(object);
             let odata_id = document_id_of(object);
             self.0
                 .iter()
-                .filter(|rule| rule.matches.applies(type_name, odata_id))
+                .filter(|rule| rule.matches.applies(type_name.as_ref(), odata_id))
                 .map(|rule| -> Fix<'_> { &*rule.fix })
                 .collect()
         });

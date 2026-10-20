@@ -31,8 +31,8 @@
 use std::mem;
 use std::sync::Arc;
 
+use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Repair;
-use serde_json::Map;
 use serde_json::Value;
 
 use crate::fixes;
@@ -40,7 +40,7 @@ use crate::BmcQuirks;
 
 /// One document repair.
 struct Rule {
-    /// The type the rule applies to, named as [`TypeName::is_named`] reads
+    /// The type the rule applies to, named as [`is_named`] reads
     /// it.
     resource_type: &'static str,
     /// The quirk that enables it on the classified platform.
@@ -167,9 +167,9 @@ impl Repair for Enabled {
             return;
         }
         walk(document, &|object| {
-            TypeName::of(object).map_or_else(Vec::new, |type_name| {
+            ODataType::parse_from(object).map_or_else(Vec::new, |type_name| {
                 self.rules()
-                    .filter(|rule| type_name.is_named(rule.resource_type))
+                    .filter(|rule| is_named(&type_name, rule.resource_type))
                     .map(|rule| -> Fix<'static> { &rule.fix })
                     .collect()
             })
@@ -183,40 +183,29 @@ pub fn enabled(quirks: &BmcQuirks) -> Enabled {
     Enabled(RULES.iter().map(|rule| (rule.enabled)(quirks)).collect())
 }
 
-/// A type as an `@odata.type` names it, version aside: in
-/// `#Chassis.v1_22_0.Links`, the type `Links` of the schema `Chassis`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TypeName<'a> {
-    schema: &'a str,
-    name: &'a str,
+/// Whether this is the type `named`, ignoring the version: a qualified
+/// name such as `Chassis.Links`, or `Chassis` for `Chassis.Chassis`.
+pub(super) fn is_named(odata_type: &ODataType<'_>, named: &str) -> bool {
+    let namespace = unversioned_namespace(&odata_type.namespace);
+    let named = named.strip_prefix('#').unwrap_or(named);
+    let Some((schema, name)) = named.rsplit_once('.') else {
+        return namespace == [named] && odata_type.type_name == named;
+    };
+    let schema = schema
+        .rsplit_once('.')
+        .filter(|(_, version)| is_version(version))
+        .map_or(schema, |(schema, _)| schema);
+    !schema.is_empty()
+        && !name.is_empty()
+        && namespace.iter().copied().eq(schema.split('.'))
+        && odata_type.type_name == name
 }
 
-impl<'a> TypeName<'a> {
-    /// The type `odata_type` names, with or without its `#` and version:
-    /// `#Chassis.v1_22_0.Chassis` and `Chassis.Chassis` name one type.
-    pub fn parse(odata_type: &'a str) -> Option<Self> {
-        let qualified = odata_type.strip_prefix('#').unwrap_or(odata_type);
-        let (schema, name) = qualified.rsplit_once('.')?;
-        let schema = schema
-            .rsplit_once('.')
-            .filter(|(_, version)| is_version(version))
-            .map_or(schema, |(schema, _)| schema);
-        (!schema.is_empty() && !name.is_empty()).then_some(Self { schema, name })
-    }
-
-    /// The type an object's `@odata.type` names.
-    pub fn of(object: &'a Map<String, Value>) -> Option<Self> {
-        Self::parse(object.get("@odata.type")?.as_str()?)
-    }
-
-    /// Whether this is the type `named`: a schema and a type in it,
-    /// `Chassis.Links`, or a resource type by its schema alone, `Chassis`
-    /// for `Chassis.Chassis`.
-    pub fn is_named(self, named: &str) -> bool {
-        TypeName::parse(named).map_or_else(
-            || self.schema == named && self.name == named,
-            |named| named == self,
-        )
+/// The schema namespace, without its trailing version segment.
+fn unversioned_namespace<'a>(namespace: &'a [&'a str]) -> &'a [&'a str] {
+    match namespace.split_last() {
+        Some((version, schema)) if !schema.is_empty() && is_version(version) => schema,
+        _ => namespace,
     }
 }
 
@@ -234,12 +223,12 @@ pub type Fix<'f> = &'f (dyn Fn(Value) -> Value + Send + Sync);
 /// object before its children, so a member a device expanded inline is
 /// repaired at any depth. An object nothing is chosen for is left where it
 /// is, untouched.
-pub fn walk<'f>(value: &mut Value, pick: &impl Fn(&Map<String, Value>) -> Vec<Fix<'f>>) {
+pub fn walk<'f>(value: &mut Value, pick: &impl Fn(&Value) -> Vec<Fix<'f>>) {
     match value {
-        Value::Object(object) => {
+        Value::Object(_) => {
             // Chosen while the object is borrowed; an empty list does not
             // allocate, so an object nothing applies to costs no allocation.
-            let fixes = pick(object);
+            let fixes = pick(value);
             if !fixes.is_empty() {
                 let taken = mem::take(value);
                 *value = fixes.into_iter().fold(taken, |value, fix| fix(value));
@@ -278,7 +267,8 @@ mod tests {
     #[test]
     fn a_type_is_its_schema_and_name_in_any_version() {
         let named = |odata_type: &str, named: &str| {
-            TypeName::parse(odata_type).is_some_and(|type_name| type_name.is_named(named))
+            ODataType::parse_from(&json!({ "@odata.type": odata_type }))
+                .is_some_and(|type_name| is_named(&type_name, named))
         };
         let inventory = "#SoftwareInventory.v1_4_0.SoftwareInventory";
         assert!(named(inventory, "SoftwareInventory"));
@@ -291,7 +281,7 @@ mod tests {
             "#SoftwareInventoryCollection.SoftwareInventoryCollection",
             "SoftwareInventoryCollection"
         ));
-        assert!(named("Chassis.v1_2_0.Chassis", "Chassis"));
+        assert!(!named("Chassis.v1_2_0.Chassis", "Chassis"));
         assert!(named("#Chassis.v1_22_0.Links", "Chassis.Links"));
         assert!(named(
             "#NvidiaChassis.v1_4_0.NvidiaCBCChassis",
@@ -303,8 +293,16 @@ mod tests {
         assert!(!named("#Chassis.v1_22_0.Chassis", "Chassis.Links"));
         assert!(!named("#ChassisCollection.ChassisCollection", "Chassis"));
 
-        assert!(TypeName::parse("#").is_none());
-        assert!(TypeName::parse("#Chassis").is_none());
+        assert!(named(
+            "#Contoso.Chassis.v1_2_0.Links",
+            "Contoso.Chassis.Links"
+        ));
+        assert!(!named("#Contoso.Chassis.v1_2_0.Links", "Chassis.Links"));
+        assert!(named("#Contoso.variant.Links", "Contoso.variant.Links"));
+        assert!(!named("#Contoso.variant.Links", "Contoso.Links"));
+
+        assert!(!named("#", "Chassis"));
+        assert!(!named("#Chassis", "Chassis"));
     }
 
     #[test]
