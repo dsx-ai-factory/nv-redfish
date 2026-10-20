@@ -173,6 +173,9 @@ impl<B: Bmc> EventService<B> {
     /// does not surface event ids yields `None` for every id and cannot
     /// resume.
     ///
+    /// The destination the device creates for the connection is left to the
+    /// device to reap, so `Subscriptions` is never read.
+    ///
     /// # Errors
     ///
     /// As [`EventService::events`].
@@ -184,8 +187,20 @@ impl<B: Bmc> EventService<B> {
         B: 'static,
         B::Error: 'static,
     {
-        let subscription = self.open_events_from(last_event_id).await?;
-        Ok(subscription.into_stream())
+        let stream_uri = self
+            .data
+            .server_sent_event_uri
+            .as_ref()
+            .ok_or(Error::EventServiceServerSentEventUriNotAvailable)?;
+
+        let stream = self
+            .bmc
+            .as_ref()
+            .stream_events::<EventStreamPayload>(stream_uri, last_event_id)
+            .await
+            .map_err(Error::from)?;
+
+        Ok(Box::pin(stream.map_err(Error::from)))
     }
 
     /// Open an SSE stream of Redfish event payloads, tracking the subscription it creates.
@@ -202,13 +217,13 @@ impl<B: Bmc> EventService<B> {
         B: 'static,
         B::Error: 'static,
     {
-        let before = self.subscriptions().await.ok();
-
         let stream_uri = self
             .data
             .server_sent_event_uri
             .as_ref()
             .ok_or(Error::EventServiceServerSentEventUriNotAvailable)?;
+
+        let before = self.subscriptions().await.ok();
 
         // The compatibility layer repairs each payload under the SSE id it
         // arrived with before it is decoded.

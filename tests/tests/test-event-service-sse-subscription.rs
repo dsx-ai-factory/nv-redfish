@@ -161,6 +161,31 @@ async fn serve_open(server: &MockServer, before: &Value, after: &Value) {
 }
 
 #[test]
+async fn the_legacy_event_stream_reads_no_subscriptions() -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+
+    serve(&server, SERVICE_ROOT, &service_root()).await;
+    serve(&server, EVENT_SERVICE, &event_service()).await;
+
+    serve_stream(&server).await;
+
+    Mock::given(method("GET"))
+        .and(path(SUBSCRIPTIONS))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let mut events = open_event_service(&server).await?.events_from(None).await?;
+
+    let event = events.try_next().await?.expect("one event");
+
+    assert!(matches!(event.data, EventStreamPayload::Event(_)));
+
+    Ok(())
+}
+
+#[test]
 async fn the_one_destination_a_stream_added_is_its_own() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
 
