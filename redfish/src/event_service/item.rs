@@ -27,22 +27,7 @@ use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 
-/// A handle to a subscription listed by
-/// [`EventService::subscriptions`](super::EventService::subscriptions);
-/// obtaining one creates nothing on the service.
-///
-/// ```no_run
-/// # use nv_redfish::event_service::{EventService, SubscriptionType};
-/// # use nv_redfish::{Bmc, Error};
-/// # async fn cleanup<B: Bmc>(service: &EventService<B>) -> Result<(), Error<B>> {
-/// for destination in service.subscriptions().await? {
-///     if destination.subscription_type() == Some(SubscriptionType::Sse) {
-///         let _response = destination.delete().await?;
-///     }
-/// }
-/// # Ok(())
-/// # }
-/// ```
+/// Represents a Redfish `EventDestination`.
 pub struct EventDestination<B: Bmc> {
     bmc: NvBmc<B>,
     data: Arc<EventDestinationSchema>,
@@ -68,8 +53,7 @@ impl<B: Bmc> EventDestination<B> {
         self.data.clone()
     }
 
-    /// Returns the delivery mechanism reported by the service, or `None` when
-    /// the service reports `null`.
+    /// Get the subscription type, or `None` when the service reports `null`.
     #[must_use]
     pub fn subscription_type(&self) -> Option<SubscriptionType> {
         self.data.subscription_type
