@@ -101,14 +101,6 @@ fn destination(id: &str, subscription_type: Option<&str>) -> Value {
     })
 }
 
-/// An event service that expanded `Subscriptions` inline with `ids`.
-fn event_service_with_expanded_subscriptions(ids: &[&str]) -> Value {
-    let mut service = event_service(Some(SUBSCRIPTIONS));
-    service["Subscriptions"] = destinations(ids);
-
-    service
-}
-
 /// Serves `body` to a `GET` of `at`, as many times as it is requested.
 async fn serve(server: &MockServer, at: &str, body: &Value) {
     Mock::given(method("GET"))
@@ -142,9 +134,9 @@ async fn fail(server: &MockServer, at: &str, status: u16) {
         .await;
 }
 
-/// Serves the root, an event service listing `Subscriptions` as `members`,
-/// and each member typed `SSE`, then opens the event service.
-async fn open_with_sse_destinations(
+/// Serves the root, an event service, and a `Subscriptions` collection
+/// holding `members`, then opens the event service. Callers serve each member.
+async fn open_with_subscriptions(
     server: &MockServer,
     members: &[&str],
 ) -> Result<EventService<Bmc>, Box<dyn StdError>> {
@@ -192,7 +184,7 @@ async fn subscriptions_report_each_destination_type_in_order() -> Result<(), Box
     )
     .await;
 
-    let event_service = open_with_sse_destinations(
+    let event_service = open_with_subscriptions(
         &server,
         &[DESTINATION, OTHER_DESTINATION, THIRD_DESTINATION],
     )
@@ -226,8 +218,7 @@ async fn a_destination_deleted_mid_listing_is_omitted() -> Result<(), Box<dyn St
     )
     .await;
 
-    let event_service =
-        open_with_sse_destinations(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
+    let event_service = open_with_subscriptions(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
 
     assert_eq!(
         listing(&event_service).await?,
@@ -250,8 +241,7 @@ async fn a_destination_that_fails_to_load_fails_the_listing() -> Result<(), Box<
     )
     .await;
 
-    let event_service =
-        open_with_sse_destinations(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
+    let event_service = open_with_subscriptions(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
 
     assert!(event_service.subscriptions().await.is_err());
 
@@ -264,12 +254,9 @@ async fn an_expanded_subscriptions_copy_is_not_the_listing() -> Result<(), Box<d
 
     serve(&server, SERVICE_ROOT, &service_root()).await;
 
-    serve(
-        &server,
-        EVENT_SERVICE,
-        &event_service_with_expanded_subscriptions(&[DESTINATION]),
-    )
-    .await;
+    let mut expanded = event_service(Some(SUBSCRIPTIONS));
+    expanded["Subscriptions"] = destinations(&[DESTINATION]);
+    serve(&server, EVENT_SERVICE, &expanded).await;
 
     // The service holds a destination the expanded copy predates.
     serve(
@@ -314,7 +301,7 @@ async fn a_listed_destination_deletes_itself() -> Result<(), Box<dyn StdError>> 
         .mount(&server)
         .await;
 
-    let event_service = open_with_sse_destinations(&server, &[DESTINATION]).await?;
+    let event_service = open_with_subscriptions(&server, &[DESTINATION]).await?;
     let destinations = event_service.subscriptions().await?;
 
     let [destination] = destinations.as_slice() else {
