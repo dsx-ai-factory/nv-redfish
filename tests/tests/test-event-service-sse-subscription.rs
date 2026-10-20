@@ -17,6 +17,7 @@
 
 use std::error::Error as StdError;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::TryStreamExt as _;
 use nv_redfish::bmc_http::reqwest::Client;
@@ -45,6 +46,7 @@ const SSE_URI: &str = "/redfish/v1/EventService/SSE";
 const DESTINATION_1: &str = "/redfish/v1/EventService/Subscriptions/1";
 const DESTINATION_2: &str = "/redfish/v1/EventService/Subscriptions/2";
 const DESTINATION_3: &str = "/redfish/v1/EventService/Subscriptions/3";
+const TASK: &str = "/redfish/v1/TaskService/Tasks/1";
 
 /// One event record, as the service sends it over the stream.
 const SSE_BODY: &str = concat!(
@@ -334,6 +336,46 @@ async fn closing_deletes_the_destination_the_stream_created() -> Result<(), Box<
     ));
 
     server.verify().await;
+
+    Ok(())
+}
+
+#[test]
+async fn an_asynchronous_delete_returns_its_task() -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+
+    serve_open(
+        &server,
+        &destinations(&[DESTINATION_1]),
+        &destinations(&[DESTINATION_1, DESTINATION_2]),
+    )
+    .await;
+
+    serve(&server, DESTINATION_2, &destination("SSE")).await;
+
+    // The service runs the delete as a task.
+    Mock::given(method("DELETE"))
+        .and(path(DESTINATION_2))
+        .respond_with(
+            ResponseTemplate::new(202)
+                .insert_header("Location", TASK)
+                .insert_header("Retry-After", "15"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let subscription = open_event_service(&server)
+        .await?
+        .open_events_from(None)
+        .await?;
+
+    let CloseOutcome::DeletePending(task) = subscription.close_and_delete().await else {
+        panic!("an asynchronous delete must hand back its task");
+    };
+
+    assert_eq!(task.location.0, id(TASK));
+    assert_eq!(task.retry_after, Some(Duration::from_secs(15)));
 
     Ok(())
 }

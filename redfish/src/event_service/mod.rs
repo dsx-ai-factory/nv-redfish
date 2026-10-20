@@ -26,10 +26,12 @@ use crate::NvBmc;
 use crate::ServiceRoot;
 use futures_util::TryStreamExt as _;
 use nv_redfish_core::odata::ODataType;
+use nv_redfish_core::AsyncTask;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::BmcError as _;
 use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
+use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataId;
 use nv_redfish_core::StreamEvent;
@@ -335,6 +337,7 @@ impl<B: Bmc> SseSubscription<B> {
             .delete::<NavProperty<EventDestinationSchema>>(&destination)
             .await
         {
+            Ok(ModificationResponse::Task(task)) => CloseOutcome::DeletePending(task),
             Ok(_) => CloseOutcome::Deleted,
             Err(error) => {
                 let error: Error<B> = Error::from(error);
@@ -357,12 +360,16 @@ impl<B: Bmc> SseSubscription<B> {
 }
 
 /// What closing an [`SseSubscription`] did to the service.
+#[must_use = "the outcome may carry an asynchronous delete task or a failure"]
 pub enum CloseOutcome<B: Bmc> {
     /// The connection closed; the stream tracked no destination to delete.
     SocketOnly,
 
     /// The destination was deleted.
     Deleted,
+
+    /// The destination delete is completing asynchronously.
+    DeletePending(AsyncTask),
 
     /// The destination was already gone.
     AlreadyGone,
@@ -376,6 +383,7 @@ impl<B: Bmc> fmt::Debug for CloseOutcome<B> {
         match self {
             Self::SocketOnly => f.write_str("SocketOnly"),
             Self::Deleted => f.write_str("Deleted"),
+            Self::DeletePending(task) => f.debug_tuple("DeletePending").field(task).finish(),
             Self::AlreadyGone => f.write_str("AlreadyGone"),
             Self::DeleteFailed(error) => f.debug_tuple("DeleteFailed").field(error).finish(),
         }
