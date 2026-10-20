@@ -118,6 +118,13 @@ pub enum ExpectedRequest {
         task: AsyncTask,
     },
 
+    /// Expected ActionTarget failing with an HTTP status.
+    ActionStatus {
+        target: ActionTarget,
+        request: JsonValue,
+        status: u16,
+    },
+
     /// Expected ActionTarget with no response body.
     ActionEmpty {
         target: ActionTarget,
@@ -355,6 +362,18 @@ impl<E> Expect<E> {
                 target: ActionTarget::new(uri.to_string()),
                 request: from_str(&request.to_string()).expect("invalid json"),
                 task,
+            },
+            response: Ok(JsonValue::Null),
+        }
+    }
+
+    /// Expect an action that fails with an HTTP status.
+    pub fn action_status(uri: impl Display, request: impl Display, status: u16) -> Self {
+        Expect {
+            request: ExpectedRequest::ActionStatus {
+                target: ActionTarget::new(uri.to_string()),
+                request: from_str(&request.to_string()).expect("invalid json"),
+                status,
             },
             response: Ok(JsonValue::Null),
         }

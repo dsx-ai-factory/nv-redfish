@@ -80,6 +80,7 @@ enum Quirk {
     FwInventoryWrongReleaseDate,
     JobLocationInCreateResponse,
     InvalidContainedByFields,
+    AnnotatedChassisCertificatesLink,
     MissingRootNavProperties,
     MissingChassisTypeField,
     MissingChassisNameField,
@@ -98,10 +99,12 @@ enum Quirk {
     WrongManagerMembers,
     ResetToDefaultsTypeParameter,
     PowerSupplyLocationIndicatorObject,
+    StandbyState,
     ExpandIsNotWorkingProperly,
     NullableMembers,
     RejectsOwnEtag,
     AcceptedUpdateWithoutTask,
+    AcceptedActionWithoutTask,
 }
 
 // Devices whose service root `covers` matches have `quirks`.
@@ -139,6 +142,7 @@ const RULES: &[Rule] = &[
         covers: |root| root.vendor_is("AMI") && root.redfish_version_is("1.11.0"),
         quirks: &[
             Quirk::InvalidContainedByFields,
+            Quirk::AnnotatedChassisCertificatesLink,
             Quirk::MissingRootNavProperties,
             Quirk::MissingChassisTypeField,
             Quirk::MissingChassisNameField,
@@ -203,7 +207,10 @@ const RULES: &[Rule] = &[
     },
     Rule {
         covers: |root| root.vendor_is("Supermicro"),
-        quirks: &[Quirk::AcceptedUpdateWithoutTask],
+        quirks: &[
+            Quirk::AcceptedUpdateWithoutTask,
+            Quirk::AcceptedActionWithoutTask,
+        ],
     },
     // Lite-On power shelves that name their vendor.
     Rule {
@@ -215,13 +222,14 @@ const RULES: &[Rule] = &[
             Quirk::MissingRootNavProperties,
             Quirk::ResetToDefaultsTypeParameter,
             Quirk::PowerSupplyLocationIndicatorObject,
+            Quirk::StandbyState,
         ],
     },
     // A service root that names no vendor and reports Redfish 1.9.0, as
-    // Lite-On power shelves often do.
+    // Lite-On power shelves often do; Delta shelves do too.
     Rule {
         covers: |root| root.vendor.is_none() && root.redfish_version_is("1.9.0"),
-        quirks: &[Quirk::MissingRootNavProperties],
+        quirks: &[Quirk::MissingRootNavProperties, Quirk::StandbyState],
     },
 ];
 
@@ -293,6 +301,13 @@ impl BmcQuirks {
         self.has(Quirk::InvalidContainedByFields)
     }
 
+    /// The `Certificates` link on a chassis carries `Members@odata.count`, so
+    /// it reads as an expanded collection that lacks the required
+    /// `@odata.type`.
+    pub(crate) fn bug_annotated_chassis_certificates_link(&self) -> bool {
+        self.has(Quirk::AnnotatedChassisCertificatesLink)
+    }
+
     /// The service root omits navigation properties that a direct GET
     /// still serves: Vikings before a BMC reset, Lite-On power shelves for
     /// `/Systems`.
@@ -309,6 +324,14 @@ impl BmcQuirks {
     /// A chassis omits `Name`, which every resource requires.
     pub(crate) fn bug_missing_chassis_name_field(&self) -> bool {
         self.has(Quirk::MissingChassisNameField)
+    }
+
+    /// Lite-On power shelves report `Status.State` `Standby`, which is not a
+    /// `Resource.State`, on their power supplies, manager and chassis. A
+    /// vendor-less Redfish 1.9.0 root, a Lite-On or a Delta shelf, gets the
+    /// repair too: it rewrites only that one value, which no schema allows.
+    pub(crate) fn bug_standby_state(&self) -> bool {
+        self.has(Quirk::StandbyState)
     }
 
     /// A DPU in NIC mode reports an empty-string `UUID` on chassis and
@@ -457,6 +480,13 @@ impl BmcQuirks {
     pub(crate) fn bug_accepted_update_without_task(&self) -> bool {
         self.has(Quirk::AcceptedUpdateWithoutTask)
     }
+
+    /// Supermicro answers an action that stages a change, such as a BIOS
+    /// password change, with `202 Accepted` and nothing to poll: no
+    /// `Location` and no Task.
+    pub(crate) fn bug_accepted_action_without_task(&self) -> bool {
+        self.has(Quirk::AcceptedActionWithoutTask)
+    }
 }
 
 /// Whether a resource's `Manufacturer` names a Lite-On device.
@@ -504,6 +534,7 @@ mod tests {
                 &[
                     Quirk::RejectsOwnEtag,
                     Quirk::InvalidContainedByFields,
+                    Quirk::AnnotatedChassisCertificatesLink,
                     Quirk::MissingRootNavProperties,
                     Quirk::MissingChassisTypeField,
                     Quirk::MissingChassisNameField,
@@ -565,7 +596,10 @@ mod tests {
             (json!({ "Vendor": "WIWYNN" }), &nvidia),
             (
                 json!({ "Vendor": "Supermicro" }),
-                &[Quirk::AcceptedUpdateWithoutTask],
+                &[
+                    Quirk::AcceptedUpdateWithoutTask,
+                    Quirk::AcceptedActionWithoutTask,
+                ],
             ),
             (
                 json!({ "Vendor": "LITE-ON Technology" }),
@@ -573,11 +607,12 @@ mod tests {
                     Quirk::MissingRootNavProperties,
                     Quirk::ResetToDefaultsTypeParameter,
                     Quirk::PowerSupplyLocationIndicatorObject,
+                    Quirk::StandbyState,
                 ],
             ),
             (
                 json!({ "RedfishVersion": "1.9.0" }),
-                &[Quirk::MissingRootNavProperties],
+                &[Quirk::MissingRootNavProperties, Quirk::StandbyState],
             ),
             (json!({ "Vendor": "Contoso" }), &[]),
             (json!({}), &[]),

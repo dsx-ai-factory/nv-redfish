@@ -21,6 +21,7 @@ use nv_redfish::chassis::Chassis;
 use nv_redfish::chassis::PowerSupply;
 use nv_redfish::control::ControlUpdate;
 use nv_redfish::resource::ResetType;
+use nv_redfish::resource::State;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
@@ -290,6 +291,42 @@ async fn ami_viking_invalid_contained_by_fields_workaround() -> Result<(), Box<d
 }
 
 #[test]
+async fn ami_viking_annotated_certificates_link_workaround() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let root = expect_viking_service_root(
+        bmc.clone(),
+        &ids,
+        json!({
+            "Chassis": { ODATA_ID: &ids.chassis_collection_id }
+        }),
+    )
+    .await?;
+    expect_chassis_collection(bmc.clone(), &ids);
+
+    let collection = root.chassis().await?.unwrap();
+    expect_chassis_get(
+        bmc.clone(),
+        &ids,
+        json!({
+            ODATA_ID: &ids.chassis_id,
+            ODATA_TYPE: CHASSIS_DATA_TYPE,
+            "Id": "1",
+            "Name": "Chassis",
+            "ChassisType": "Component",
+            "Certificates": {
+                ODATA_ID: format!("{}/Certificates", ids.chassis_id),
+                "Members@odata.count": 1
+            }
+        }),
+    );
+    let members = collection.members().await?;
+    assert_eq!(members.len(), 1);
+
+    Ok(())
+}
+
+#[test]
 async fn ami_viking_missing_chassis_type_workaround() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = ids();
@@ -443,7 +480,8 @@ async fn nvidia_gb300_disables_expand_for_chassis_collection() -> Result<(), Box
 #[test]
 async fn anonymous_1_9_0_wrong_chassis_status_state_workaround() -> Result<(), Box<dyn StdError>> {
     // Platform under test: Liteon powershelf class (anonymous Redfish 1.9.0 root).
-    // Quirk under test: invalid Chassis.Status.State="Standby".
+    // Quirk under test: invalid Chassis.Status.State="Standby", read as
+    // StandbySpare.
     let bmc = Arc::new(Bmc::default());
     let ids = ids();
     let root = expect_anonymous_1_9_service_root(
@@ -475,6 +513,14 @@ async fn anonymous_1_9_0_wrong_chassis_status_state_workaround() -> Result<(), B
     );
     let members = collection.members().await?;
     assert_eq!(members.len(), 1);
+    assert_eq!(
+        members[0]
+            .raw()
+            .status
+            .as_ref()
+            .and_then(|status| status.state.flatten()),
+        Some(State::StandbySpare)
+    );
 
     Ok(())
 }
