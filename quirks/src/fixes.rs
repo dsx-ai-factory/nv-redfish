@@ -175,7 +175,7 @@ pub fn normalize_pem_chain_type(mut v: Value) -> Value {
     v
 }
 
-/// Certificate collections a DPU inlines into the AccountService without
+/// Certificate collections a DPU or GB host BMC inlines into the AccountService without
 /// the `Name` every resource requires become references to themselves, to
 /// be read on their own when asked for.
 pub fn normalize_dpu_certificate_collection_stubs(mut v: Value) -> Value {

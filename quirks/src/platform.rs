@@ -179,10 +179,13 @@ const RULES: &[Rule] = &[
             Quirk::CompositeBootOrderEntries,
         ],
     },
-    // The GB300 host BMC on NVIDIA's firmware.
+    // The GB200 and GB300 host BMCs on NVIDIA's firmware.
     Rule {
         covers: |root| root.vendor_is("NVIDIA") && root.product_is("GB BMC"),
-        quirks: &[Quirk::ExpandIsNotWorkingProperly],
+        quirks: &[
+            Quirk::ExpandIsNotWorkingProperly,
+            Quirk::IncompleteAccountServiceCertificateCollection,
+        ],
     },
     // BlueField DPUs: their service roots use an `Nvidia` vendor with these
     // product names; BlueField-4 reports `BlueField-4`.
@@ -282,8 +285,8 @@ impl BmcQuirks {
         self.has(Quirk::NoAccountTypeInAccounts)
     }
 
-    /// A DPU inlines the AccountService's certificate collections as
-    /// stubs that lack the `Name` every resource requires.
+    /// A DPU or GB host BMC inlines the AccountService's certificate
+    /// collections as stubs that lack the `Name` every resource requires.
     pub(crate) fn bug_incomplete_account_service_certificate_collection(&self) -> bool {
         self.has(Quirk::IncompleteAccountServiceCertificateCollection)
     }
@@ -589,6 +592,7 @@ mod tests {
                     Quirk::SseMissingEventType,
                     Quirk::FilteredLogEntriesCount,
                     Quirk::ExpandIsNotWorkingProperly,
+                    Quirk::IncompleteAccountServiceCertificateCollection,
                 ],
             ),
             (
