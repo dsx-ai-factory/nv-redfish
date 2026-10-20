@@ -22,6 +22,8 @@ use nv_redfish::bmc_http::BmcCredentials;
 use nv_redfish::bmc_http::CacheSettings;
 use nv_redfish::bmc_http::HttpBmc;
 use nv_redfish::event_service::EventService;
+use nv_redfish::event_service::Subscription;
+use nv_redfish::event_service::SubscriptionType;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ODataId;
 use serde_json::json;
@@ -39,6 +41,7 @@ const EVENT_SERVICE: &str = "/redfish/v1/EventService";
 const SUBSCRIPTIONS: &str = "/redfish/v1/EventService/Subscriptions";
 const DESTINATION: &str = "/redfish/v1/EventService/Subscriptions/1";
 const OTHER_DESTINATION: &str = "/redfish/v1/EventService/Subscriptions/2";
+const THIRD_DESTINATION: &str = "/redfish/v1/EventService/Subscriptions/3";
 
 type Bmc = HttpBmc<Client>;
 
@@ -85,6 +88,19 @@ fn destinations(ids: &[&str]) -> Value {
     })
 }
 
+/// A destination at `id` reporting `subscription_type`, `null` if `None`.
+fn destination(id: &str, subscription_type: Option<&str>) -> Value {
+    json!({
+        "@odata.id": id,
+        "@odata.type": "#EventDestination.v1_14_0.EventDestination",
+        "Id": id.rsplit('/').next(),
+        "Name": "Event Subscription",
+        "Context": "",
+        "Protocol": "Redfish",
+        "SubscriptionType": subscription_type,
+    })
+}
+
 /// An event service that expanded `Subscriptions` inline with `ids`.
 fn event_service_with_expanded_subscriptions(ids: &[&str]) -> Value {
     let mut service = event_service(Some(SUBSCRIPTIONS));
@@ -117,29 +133,114 @@ async fn open_event_service(server: &MockServer) -> Result<EventService<Bmc>, Bo
         .expect("the service root advertises an EventService"))
 }
 
+/// Serves `status` with no body to a `GET` of `at`.
+async fn fail(server: &MockServer, at: &str, status: u16) {
+    Mock::given(method("GET"))
+        .and(path(at))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(server)
+        .await;
+}
+
+/// Serves the root, an event service listing `Subscriptions` as `members`,
+/// and each member typed `SSE`, then opens the event service.
+async fn open_with_sse_destinations(
+    server: &MockServer,
+    members: &[&str],
+) -> Result<EventService<Bmc>, Box<dyn StdError>> {
+    serve(server, SERVICE_ROOT, &service_root()).await;
+    serve(server, EVENT_SERVICE, &event_service(Some(SUBSCRIPTIONS))).await;
+    serve(server, SUBSCRIPTIONS, &destinations(members)).await;
+
+    open_event_service(server).await
+}
+
+fn listed(id: &str, subscription_type: Option<SubscriptionType>) -> Subscription {
+    Subscription {
+        id: ODataId::from(id.to_owned()),
+        subscription_type,
+    }
+}
+
 #[test]
-async fn subscriptions_list_every_registered_destination() -> Result<(), Box<dyn StdError>> {
+async fn subscriptions_report_each_destination_type_in_order() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
 
-    serve(&server, SERVICE_ROOT, &service_root()).await;
-    serve(&server, EVENT_SERVICE, &event_service(Some(SUBSCRIPTIONS))).await;
+    serve(&server, DESTINATION, &destination(DESTINATION, Some("SSE"))).await;
 
     serve(
         &server,
-        SUBSCRIPTIONS,
-        &destinations(&[DESTINATION, OTHER_DESTINATION]),
+        OTHER_DESTINATION,
+        &destination(OTHER_DESTINATION, Some("RedfishEvent")),
     )
     .await;
 
-    let event_service = open_event_service(&server).await?;
+    serve(
+        &server,
+        THIRD_DESTINATION,
+        &destination(THIRD_DESTINATION, None),
+    )
+    .await;
+
+    let event_service = open_with_sse_destinations(
+        &server,
+        &[DESTINATION, OTHER_DESTINATION, THIRD_DESTINATION],
+    )
+    .await?;
 
     assert_eq!(
         event_service.subscriptions().await?,
         [
-            ODataId::from(DESTINATION.to_owned()),
-            ODataId::from(OTHER_DESTINATION.to_owned())
+            listed(DESTINATION, Some(SubscriptionType::Sse)),
+            listed(OTHER_DESTINATION, Some(SubscriptionType::RedfishEvent)),
+            listed(THIRD_DESTINATION, None),
         ]
     );
+
+    Ok(())
+}
+
+#[test]
+async fn a_destination_deleted_mid_listing_is_omitted() -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+
+    fail(&server, DESTINATION, 404).await;
+
+    serve(
+        &server,
+        OTHER_DESTINATION,
+        &destination(OTHER_DESTINATION, Some("SSE")),
+    )
+    .await;
+
+    let event_service =
+        open_with_sse_destinations(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
+
+    assert_eq!(
+        event_service.subscriptions().await?,
+        [listed(OTHER_DESTINATION, Some(SubscriptionType::Sse))]
+    );
+
+    Ok(())
+}
+
+#[test]
+async fn a_destination_that_fails_to_load_fails_the_listing() -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+
+    fail(&server, DESTINATION, 500).await;
+
+    serve(
+        &server,
+        OTHER_DESTINATION,
+        &destination(OTHER_DESTINATION, Some("SSE")),
+    )
+    .await;
+
+    let event_service =
+        open_with_sse_destinations(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
+
+    assert!(event_service.subscriptions().await.is_err());
 
     Ok(())
 }
@@ -165,13 +266,22 @@ async fn an_expanded_subscriptions_copy_is_not_the_listing() -> Result<(), Box<d
     )
     .await;
 
+    serve(&server, DESTINATION, &destination(DESTINATION, Some("SSE"))).await;
+
+    serve(
+        &server,
+        OTHER_DESTINATION,
+        &destination(OTHER_DESTINATION, Some("SSE")),
+    )
+    .await;
+
     let event_service = open_event_service(&server).await?;
 
     assert_eq!(
         event_service.subscriptions().await?,
         [
-            ODataId::from(DESTINATION.to_owned()),
-            ODataId::from(OTHER_DESTINATION.to_owned())
+            listed(DESTINATION, Some(SubscriptionType::Sse)),
+            listed(OTHER_DESTINATION, Some(SubscriptionType::Sse)),
         ]
     );
 

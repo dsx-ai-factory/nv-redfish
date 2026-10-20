@@ -25,6 +25,8 @@ use crate::ServiceRoot;
 use futures_util::TryStreamExt as _;
 use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Bmc;
+use nv_redfish_core::BmcError as _;
+use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::NavProperty;
 use nv_redfish_core::ODataId;
@@ -40,6 +42,9 @@ pub use crate::schema::metric_report::MetricReport;
 
 #[doc(inline)]
 pub use crate::schema::event::Event;
+
+#[doc(inline)]
+pub use crate::schema::event_destination::SubscriptionType;
 
 /// SSE payload that can contain either an `EventRecord` or a `MetricReport`.
 #[derive(Debug)]
@@ -72,6 +77,16 @@ impl<'de> Deserialize<'de> for EventStreamPayload {
             )))
         }
     }
+}
+
+/// An `EventDestination` in `Subscriptions` and the kind of subscription it is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Subscription {
+    /// The destination's `@odata.id`.
+    pub id: ODataId,
+
+    /// `SubscriptionType` as the service reports it; `None` when `null`.
+    pub subscription_type: Option<SubscriptionType>,
 }
 
 /// Event service.
@@ -107,21 +122,22 @@ impl<B: Bmc> EventService<B> {
         self.data.clone()
     }
 
-    /// List the `EventDestination`s in `Subscriptions`; empty if the service
-    /// doesn't advertise it.
+    /// List the `EventDestination`s in `Subscriptions` with their
+    /// `SubscriptionType`; empty if the service doesn't advertise it.
     ///
-    /// The list is read from the service, so a `Subscriptions` the
-    /// `EventService` response expanded inline cannot hide a destination added
-    /// after that response.
+    /// A destination deleted while the list is read is omitted.
     ///
     /// # Errors
     ///
-    /// Returns an error if the collection cannot be fetched or deserialized.
-    pub async fn subscriptions(&self) -> Result<Vec<ODataId>, Error<B>> {
+    /// Returns an error if the collection or a destination cannot be fetched
+    /// or deserialized.
+    pub async fn subscriptions(&self) -> Result<Vec<Subscription>, Error<B>> {
         let Some(subscriptions) = &self.data.subscriptions else {
             return Ok(Vec::new());
         };
 
+        // Read fresh: a `Subscriptions` the `EventService` response expanded
+        // inline can predate a destination.
         let collection = NavProperty::<EventDestinationCollectionSchema>::new_reference(
             subscriptions.id().clone(),
         )
@@ -129,11 +145,26 @@ impl<B: Bmc> EventService<B> {
         .await
         .map_err(Error::from)?;
 
-        Ok(collection
-            .members
-            .iter()
-            .map(|member| member.id().clone())
-            .collect())
+        let mut listed = Vec::with_capacity(collection.members.len());
+
+        for member in &collection.members {
+            let destination = match member.get(self.bmc.as_ref()).await {
+                Ok(destination) => destination,
+                Err(error)
+                    if error.error_class() == BmcErrorClass::HttpResponse { status: 404 } =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(Error::from(error)),
+            };
+
+            listed.push(Subscription {
+                id: member.id().clone(),
+                subscription_type: destination.subscription_type,
+            });
+        }
+
+        Ok(listed)
     }
 
     /// Open an SSE stream of Redfish event payloads.
