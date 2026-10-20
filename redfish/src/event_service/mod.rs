@@ -17,6 +17,8 @@
 //!
 //! This module provides typed access to Redfish `EventService`.
 
+mod item;
+
 use crate::schema::event_destination_collection::EventDestinationCollection as EventDestinationCollectionSchema;
 use crate::schema::event_service::EventService as EventServiceSchema;
 use crate::Error;
@@ -29,7 +31,6 @@ use nv_redfish_core::BmcError as _;
 use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
 use nv_redfish_core::NavProperty;
-use nv_redfish_core::ODataId;
 use nv_redfish_core::StreamEvent;
 use serde::de;
 use serde::Deserialize;
@@ -42,6 +43,9 @@ pub use crate::schema::metric_report::MetricReport;
 
 #[doc(inline)]
 pub use crate::schema::event::Event;
+
+#[doc(inline)]
+pub use item::EventDestination;
 
 #[doc(inline)]
 pub use crate::schema::event_destination::SubscriptionType;
@@ -79,16 +83,6 @@ impl<'de> Deserialize<'de> for EventStreamPayload {
     }
 }
 
-/// An `EventDestination` in `Subscriptions` and the kind of subscription it is.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Subscription {
-    /// The destination's `@odata.id`.
-    pub id: ODataId,
-
-    /// `SubscriptionType` as the service reports it; `None` when `null`.
-    pub subscription_type: Option<SubscriptionType>,
-}
-
 /// Event service.
 ///
 /// Provides functions to inspect event delivery capabilities and parse
@@ -122,8 +116,8 @@ impl<B: Bmc> EventService<B> {
         self.data.clone()
     }
 
-    /// List the `EventDestination`s in `Subscriptions` with their
-    /// `SubscriptionType`; empty if the service doesn't advertise it.
+    /// List the `EventDestination`s in `Subscriptions`; empty if the service
+    /// doesn't advertise it.
     ///
     /// A destination deleted while the list is read is omitted.
     ///
@@ -131,7 +125,7 @@ impl<B: Bmc> EventService<B> {
     ///
     /// Returns an error if the collection or a destination cannot be fetched
     /// or deserialized.
-    pub async fn subscriptions(&self) -> Result<Vec<Subscription>, Error<B>> {
+    pub async fn subscriptions(&self) -> Result<Vec<EventDestination<B>>, Error<B>> {
         let Some(subscriptions) = &self.data.subscriptions else {
             return Ok(Vec::new());
         };
@@ -148,20 +142,12 @@ impl<B: Bmc> EventService<B> {
         let mut listed = Vec::with_capacity(collection.members.len());
 
         for member in &collection.members {
-            let destination = match member.get(self.bmc.as_ref()).await {
-                Ok(destination) => destination,
-                Err(error)
-                    if error.error_class() == BmcErrorClass::HttpResponse { status: 404 } =>
-                {
-                    continue;
-                }
-                Err(error) => return Err(Error::from(error)),
-            };
-
-            listed.push(Subscription {
-                id: member.id().clone(),
-                subscription_type: destination.subscription_type,
-            });
+            match EventDestination::new(&self.bmc, member).await {
+                Ok(destination) => listed.push(destination),
+                Err(Error::Bmc(cause))
+                    if cause.error_class() == BmcErrorClass::HttpResponse { status: 404 } => {}
+                Err(error) => return Err(error),
+            }
         }
 
         Ok(listed)

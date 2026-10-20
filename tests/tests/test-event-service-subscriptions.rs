@@ -22,10 +22,10 @@ use nv_redfish::bmc_http::BmcCredentials;
 use nv_redfish::bmc_http::CacheSettings;
 use nv_redfish::bmc_http::HttpBmc;
 use nv_redfish::event_service::EventService;
-use nv_redfish::event_service::Subscription;
 use nv_redfish::event_service::SubscriptionType;
 use nv_redfish::ServiceRoot;
-use nv_redfish_core::ODataId;
+use nv_redfish_core::EntityTypeRef as _;
+use nv_redfish_core::ModificationResponse;
 use serde_json::json;
 use serde_json::Value;
 use tokio::test;
@@ -155,11 +155,21 @@ async fn open_with_sse_destinations(
     open_event_service(server).await
 }
 
-fn listed(id: &str, subscription_type: Option<SubscriptionType>) -> Subscription {
-    Subscription {
-        id: ODataId::from(id.to_owned()),
-        subscription_type,
-    }
+/// Each listed destination's `@odata.id` and reported `SubscriptionType`.
+async fn listing(
+    event_service: &EventService<Bmc>,
+) -> Result<Vec<(String, Option<SubscriptionType>)>, Box<dyn StdError>> {
+    Ok(event_service
+        .subscriptions()
+        .await?
+        .iter()
+        .map(|destination| {
+            (
+                destination.raw().odata_id().to_string(),
+                destination.subscription_type(),
+            )
+        })
+        .collect())
 }
 
 #[test]
@@ -189,11 +199,14 @@ async fn subscriptions_report_each_destination_type_in_order() -> Result<(), Box
     .await?;
 
     assert_eq!(
-        event_service.subscriptions().await?,
+        listing(&event_service).await?,
         [
-            listed(DESTINATION, Some(SubscriptionType::Sse)),
-            listed(OTHER_DESTINATION, Some(SubscriptionType::RedfishEvent)),
-            listed(THIRD_DESTINATION, None),
+            (DESTINATION.to_owned(), Some(SubscriptionType::Sse)),
+            (
+                OTHER_DESTINATION.to_owned(),
+                Some(SubscriptionType::RedfishEvent)
+            ),
+            (THIRD_DESTINATION.to_owned(), None),
         ]
     );
 
@@ -217,8 +230,8 @@ async fn a_destination_deleted_mid_listing_is_omitted() -> Result<(), Box<dyn St
         open_with_sse_destinations(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
 
     assert_eq!(
-        event_service.subscriptions().await?,
-        [listed(OTHER_DESTINATION, Some(SubscriptionType::Sse))]
+        listing(&event_service).await?,
+        [(OTHER_DESTINATION.to_owned(), Some(SubscriptionType::Sse))]
     );
 
     Ok(())
@@ -278,12 +291,39 @@ async fn an_expanded_subscriptions_copy_is_not_the_listing() -> Result<(), Box<d
     let event_service = open_event_service(&server).await?;
 
     assert_eq!(
-        event_service.subscriptions().await?,
+        listing(&event_service).await?,
         [
-            listed(DESTINATION, Some(SubscriptionType::Sse)),
-            listed(OTHER_DESTINATION, Some(SubscriptionType::Sse)),
+            (DESTINATION.to_owned(), Some(SubscriptionType::Sse)),
+            (OTHER_DESTINATION.to_owned(), Some(SubscriptionType::Sse)),
         ]
     );
+
+    Ok(())
+}
+
+#[test]
+async fn a_listed_destination_deletes_itself() -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+
+    serve(&server, DESTINATION, &destination(DESTINATION, Some("SSE"))).await;
+
+    Mock::given(method("DELETE"))
+        .and(path(DESTINATION))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let event_service = open_with_sse_destinations(&server, &[DESTINATION]).await?;
+    let destinations = event_service.subscriptions().await?;
+
+    let [destination] = destinations.as_slice() else {
+        panic!("one destination expected, got {}", destinations.len());
+    };
+
+    let result = destination.delete().await;
+
+    assert!(matches!(result, Ok(ModificationResponse::Empty)));
 
     Ok(())
 }
