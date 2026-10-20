@@ -73,7 +73,7 @@ fn event_service(subscriptions: Option<&str>) -> Value {
     service
 }
 
-/// A subscriptions collection holding `destinations`.
+/// A subscriptions collection holding `ids`.
 fn destinations(ids: &[&str]) -> Value {
     let members: Vec<Value> = ids.iter().map(|id| json!({ "@odata.id": id })).collect();
 
@@ -83,6 +83,14 @@ fn destinations(ids: &[&str]) -> Value {
         "Name": "Event Subscriptions Collection",
         "Members": members,
     })
+}
+
+/// An event service that expanded `Subscriptions` inline with `ids`.
+fn event_service_with_expanded_subscriptions(ids: &[&str]) -> Value {
+    let mut service = event_service(Some(SUBSCRIPTIONS));
+    service["Subscriptions"] = destinations(ids);
+
+    service
 }
 
 /// Serves `body` to a `GET` of `at`, as many times as it is requested.
@@ -116,6 +124,40 @@ async fn subscriptions_list_every_registered_destination() -> Result<(), Box<dyn
     serve(&server, SERVICE_ROOT, &service_root()).await;
     serve(&server, EVENT_SERVICE, &event_service(Some(SUBSCRIPTIONS))).await;
 
+    serve(
+        &server,
+        SUBSCRIPTIONS,
+        &destinations(&[DESTINATION, OTHER_DESTINATION]),
+    )
+    .await;
+
+    let event_service = open_event_service(&server).await?;
+
+    assert_eq!(
+        event_service.subscriptions().await?,
+        [
+            ODataId::from(DESTINATION.to_owned()),
+            ODataId::from(OTHER_DESTINATION.to_owned())
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
+async fn an_expanded_subscriptions_copy_is_not_the_listing() -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+
+    serve(&server, SERVICE_ROOT, &service_root()).await;
+
+    serve(
+        &server,
+        EVENT_SERVICE,
+        &event_service_with_expanded_subscriptions(&[DESTINATION]),
+    )
+    .await;
+
+    // The service holds a destination the expanded copy predates.
     serve(
         &server,
         SUBSCRIPTIONS,

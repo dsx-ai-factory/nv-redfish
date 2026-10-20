@@ -18,6 +18,7 @@
 //! This module provides typed access to Redfish `EventService`.
 
 use crate::schema::event_destination::EventDestination as EventDestinationSchema;
+use crate::schema::event_destination_collection::EventDestinationCollection as EventDestinationCollectionSchema;
 use crate::schema::event_service::EventService as EventServiceSchema;
 use crate::Error;
 use crate::NvBmc;
@@ -113,6 +114,10 @@ impl<B: Bmc> EventService<B> {
     /// List the `EventDestination`s in `Subscriptions`; empty if the service
     /// doesn't advertise it.
     ///
+    /// The list is read from the service, so a `Subscriptions` the
+    /// `EventService` response expanded inline cannot hide a destination added
+    /// after that response.
+    ///
     /// # Errors
     ///
     /// Returns an error if the collection cannot be fetched or deserialized.
@@ -121,10 +126,12 @@ impl<B: Bmc> EventService<B> {
             return Ok(Vec::new());
         };
 
-        let collection = subscriptions
-            .get(self.bmc.as_ref())
-            .await
-            .map_err(Error::from)?;
+        let collection = NavProperty::<EventDestinationCollectionSchema>::new_reference(
+            subscriptions.id().clone(),
+        )
+        .get(self.bmc.as_ref())
+        .await
+        .map_err(Error::from)?;
 
         Ok(collection
             .members
