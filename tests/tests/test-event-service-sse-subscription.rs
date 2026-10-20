@@ -12,7 +12,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//! An SSE subscription: the destination its open added, deleted by `close`.
+//! An SSE subscription: the destination its open added, deleted by
+//! `close_and_delete`.
 
 use std::error::Error as StdError;
 use std::sync::Arc;
@@ -95,6 +96,17 @@ fn destinations(ids: &[&str]) -> Value {
         "@odata.type": "#EventDestinationCollection.EventDestinationCollection",
         "Name": "Event Subscriptions Collection",
         "Members": members,
+    })
+}
+
+/// An `EventDestination` whose `SubscriptionType` is `subscription_type`.
+fn destination(subscription_type: &str) -> Value {
+    json!({
+        "@odata.id": DESTINATION_2,
+        "Id": "2",
+        "Name": "Event Destination",
+        "Context": "test-stream",
+        "SubscriptionType": subscription_type,
     })
 }
 
@@ -196,6 +208,9 @@ async fn the_one_destination_a_stream_added_is_its_own() -> Result<(), Box<dyn S
     )
     .await;
 
+    // The destination the open added reports itself as an SSE one.
+    serve(&server, DESTINATION_2, &destination("SSE")).await;
+
     let mut subscription = open_event_service(&server)
         .await?
         .open_events_from(None)
@@ -236,7 +251,7 @@ async fn a_stream_that_added_no_destination_tracks_none() -> Result<(), Box<dyn 
     assert_eq!(subscription.destination(), None);
 
     assert!(matches!(
-        subscription.close().await,
+        subscription.close_and_delete().await,
         CloseOutcome::SocketOnly
     ));
 
@@ -265,6 +280,30 @@ async fn a_concurrent_openers_destination_is_not_claimed() -> Result<(), Box<dyn
 }
 
 #[test]
+async fn a_non_sse_destination_is_not_claimed() -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+
+    serve_open(
+        &server,
+        &destinations(&[DESTINATION_1]),
+        &destinations(&[DESTINATION_1, DESTINATION_2]),
+    )
+    .await;
+
+    // Another client's event subscription, added while this stream opened.
+    serve(&server, DESTINATION_2, &destination("RedfishEvent")).await;
+
+    let subscription = open_event_service(&server)
+        .await?
+        .open_events_from(None)
+        .await?;
+
+    assert_eq!(subscription.destination(), None);
+
+    Ok(())
+}
+
+#[test]
 async fn closing_deletes_the_destination_the_stream_created() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
 
@@ -274,6 +313,8 @@ async fn closing_deletes_the_destination_the_stream_created() -> Result<(), Box<
         &destinations(&[DESTINATION_1, DESTINATION_2]),
     )
     .await;
+
+    serve(&server, DESTINATION_2, &destination("SSE")).await;
 
     Mock::given(method("DELETE"))
         .and(path(DESTINATION_2))
@@ -287,7 +328,10 @@ async fn closing_deletes_the_destination_the_stream_created() -> Result<(), Box<
         .open_events_from(None)
         .await?;
 
-    assert!(matches!(subscription.close().await, CloseOutcome::Deleted));
+    assert!(matches!(
+        subscription.close_and_delete().await,
+        CloseOutcome::Deleted
+    ));
 
     server.verify().await;
 
@@ -305,6 +349,8 @@ async fn deleting_a_reaped_destination_is_not_a_failure() -> Result<(), Box<dyn 
     )
     .await;
 
+    serve(&server, DESTINATION_2, &destination("SSE")).await;
+
     // Already reaped: the delete finds nothing.
     Mock::given(method("DELETE"))
         .and(path(DESTINATION_2))
@@ -319,7 +365,7 @@ async fn deleting_a_reaped_destination_is_not_a_failure() -> Result<(), Box<dyn 
         .await?;
 
     assert!(matches!(
-        subscription.close().await,
+        subscription.close_and_delete().await,
         CloseOutcome::AlreadyGone
     ));
 

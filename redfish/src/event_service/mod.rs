@@ -18,6 +18,7 @@
 //! This module provides typed access to Redfish `EventService`.
 
 use crate::schema::event_destination::EventDestination as EventDestinationSchema;
+use crate::schema::event_destination::SubscriptionType as EventDestinationSubscriptionType;
 use crate::schema::event_destination_collection::EventDestinationCollection as EventDestinationCollectionSchema;
 use crate::schema::event_service::EventService as EventServiceSchema;
 use crate::Error;
@@ -204,7 +205,8 @@ impl<B: Bmc> EventService<B> {
     }
 
     /// Open an SSE stream of Redfish event payloads, tracking the subscription it creates.
-    /// A failure to list `Subscriptions` leaves [`SseSubscription::destination`] `None`.
+    /// An unlistable, ambiguous or non-SSE destination leaves
+    /// [`SseSubscription::destination`] `None`.
     ///
     /// # Errors
     ///
@@ -253,6 +255,24 @@ impl<B: Bmc> EventService<B> {
             _ => None,
         };
 
+        // Redfish records no owner on an `EventDestination`, so the added id is
+        // only a candidate until the destination reports itself as an SSE one.
+        let destination = match destination {
+            Some(destination) => {
+                let sse = self
+                    .bmc
+                    .as_ref()
+                    .get::<EventDestinationSchema>(&destination)
+                    .await
+                    .is_ok_and(|entity| {
+                        entity.subscription_type == Some(EventDestinationSubscriptionType::Sse)
+                    });
+
+                sse.then_some(destination)
+            }
+            None => None,
+        };
+
         Ok(SseSubscription {
             stream: Box::pin(stream.map_err(Error::from)),
             destination,
@@ -263,8 +283,8 @@ impl<B: Bmc> EventService<B> {
 
 /// An SSE stream plus the `EventDestination` it created.
 ///
-/// Dropping it closes the connection; only [`SseSubscription::close`] deletes a
-/// destination the service did not reap.
+/// Dropping it closes the connection and leaves the destination to the
+/// service; only [`SseSubscription::close_and_delete`] deletes it.
 pub struct SseSubscription<B: Bmc> {
     stream: BoxTryStream<StreamEvent<EventStreamPayload>, Error<B>>,
     destination: Option<ODataId>,
@@ -273,6 +293,10 @@ pub struct SseSubscription<B: Bmc> {
 
 impl<B: Bmc> SseSubscription<B> {
     /// The destination this stream created, if the open identified one.
+    ///
+    /// Redfish records no owner on an `EventDestination`, so identification is
+    /// best effort: this is the one id a fresh listing added that reports
+    /// `SubscriptionType` `SSE`.
     #[must_use]
     pub const fn destination(&self) -> Option<&ODataId> {
         self.destination.as_ref()
@@ -289,8 +313,11 @@ impl<B: Bmc> SseSubscription<B> {
         self.stream
     }
 
-    /// Drop the stream, then DELETE the destination.
-    pub async fn close(self) -> CloseOutcome<B> {
+    /// Drop the stream, then DELETE the destination it tracked.
+    ///
+    /// Only this call deletes a destination; dropping the handle closes the
+    /// connection alone.
+    pub async fn close_and_delete(self) -> CloseOutcome<B> {
         let Self {
             stream,
             destination,
@@ -331,7 +358,7 @@ impl<B: Bmc> SseSubscription<B> {
 
 /// What closing an [`SseSubscription`] did to the service.
 pub enum CloseOutcome<B: Bmc> {
-    /// The connection closed; no destination to delete.
+    /// The connection closed; the stream tracked no destination to delete.
     SocketOnly,
 
     /// The destination was deleted.
