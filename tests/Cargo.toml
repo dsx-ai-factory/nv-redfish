@@ -8,9 +8,15 @@ edition.workspace = true
 rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
+autotests = false
 
 [lib]
 path = "src/lib.rs"
+
+# Every `tests/*.rs` is a module of this one binary; `build.rs` lists them.
+[[test]]
+name = "integration"
+path = "tests/main.rs"
 
 [features]
 default = []
