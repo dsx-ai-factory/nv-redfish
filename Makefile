@@ -125,7 +125,8 @@ compile-only-feature-sets = computer-systems,processors,controls \
 check-one-feature = $(indent)cargo check -p nv-redfish --features $1$(new-line)
 
 # Builds of the reqwest client without ring, as package:features. Each must
-# build, and ring must not be in its dependency tree.
+# build, and ring must not be in its dependency tree on any target, so one
+# platform checks them all.
 no-ring-builds = nv-redfish-bmc-http:reqwest-client \
              nv-redfish-bmc-http:reqwest-native-tls \
              nv-redfish-bmc-http:reqwest-rustls-no-provider \
@@ -135,40 +136,62 @@ no-ring-builds = nv-redfish-bmc-http:reqwest-client \
              nv-redfish:bmc-http-rustls-no-provider,http-extras
 
 no-ring-args = -p $(word 1,$(subst :, ,$1)) --no-default-features --features $(word 2,$(subst :, ,$1))
-check-no-ring = $(indent)cargo check $(call no-ring-args,$1)$(new-line)$(indent)tree=$$(cargo tree $(call no-ring-args,$1) -e no-dev --prefix none) && ! printf '%s\n' "$$tree" | grep '^ring '$(new-line)
+check-no-ring = $(indent)cargo check $(call no-ring-args,$1)$(new-line)$(indent)tree=$$(cargo tree $(call no-ring-args,$1) -e no-dev --prefix none --target all) && ! printf '%s\n' "$$tree" | grep '^ring '$(new-line)
 
-define build-and-test
+# CI runs the three groups below as separate jobs. Only `test` runs on every
+# OS; `lint` and `features` are platform independent and run on Linux alone.
+define lint
 	cargo fmt --all -- --check
 	cargo clippy $1
 	cargo clippy -p nv-redfish-dispatcher --all-targets
 	cargo clippy -p nv-redfish-dispatcher --all-targets --all-features
 	cargo clippy -p nv-redfish-quirks --all-targets
 	cargo clippy -p nv-redfish-bmc-http --bench cache
-	$(foreach f,$(compile-only-feature-sets),$(call check-one-feature,$f))
-	cargo check -p nv-redfish
-	cargo check -p nv-redfish-bmc-http --no-default-features --features http-extras
-	$(foreach b,$(no-ring-builds),$(call check-no-ring,$b))
-	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-native-tls --test reqwest_client_tests
-	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-rustls-no-provider --test reqwest_client_tests
-	cargo check -p nv-redfish-tests --tests
-	cargo check -p nv-redfish-bmc-mock
-	cargo build -p update-multipart --features update-service-deprecated
-	cargo build
-	cargo build $1
-	cargo test $1 -- --no-capture
-	cargo test -p nv-redfish-bmc-http --test reqwest_client_tests --features reqwest,update-service-deprecated
-	cargo test -p nv-redfish-tests --test test-update-service --features update-service-deprecated
-	cargo test -p nv-redfish-dispatcher --all-features -- --no-capture
 	cargo doc --no-deps $1
 
 endef
 
+define features
+	$(foreach f,$(compile-only-feature-sets),$(call check-one-feature,$f))
+	cargo check
+	cargo check -p nv-redfish
+	cargo check -p nv-redfish-bmc-mock
+	cargo check -p nv-redfish-bmc-http --no-default-features --features http-extras
+	$(foreach b,$(no-ring-builds),$(call check-no-ring,$b))
+	cargo build -p update-multipart --features update-service-deprecated
+
+endef
+
+# `cargo test $1` builds every target the workspace has, so no separate
+# `cargo build` precedes it. TEST_ARGS reaches the test harness, e.g.
+# `--skip compile_fails` to leave the trybuild tests to one platform.
+define test
+	cargo test $1 -- --no-capture $(TEST_ARGS)
+	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-native-tls --test reqwest_client_tests
+	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-rustls-no-provider --test reqwest_client_tests
+	cargo test -p nv-redfish-bmc-http --test reqwest_client_tests --features reqwest,update-service-deprecated
+	cargo test -p nv-redfish-tests --test test-update-service --features update-service-deprecated
+	cargo test -p nv-redfish-dispatcher --all-features -- --no-capture
+
+endef
+
+ci-features-args = --features $(ci-features-list)
 
 all:
-	$(call build-and-test,--all-features)
+	$(call lint,--all-features)
+	$(call features)
+	$(call test,--all-features)
 
-ci: rust-install
-	$(call build-and-test,--features $(ci-features-list))
+ci: ci-lint ci-features ci-test
+
+ci-lint: rust-install
+	$(call lint,$(ci-features-args))
+
+ci-features:
+	$(call features)
+
+ci-test:
+	$(call test,$(ci-features-args))
 
 rust-install:
 	rustup component add clippy rustfmt

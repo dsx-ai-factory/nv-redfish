@@ -12,7 +12,32 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  build-and-test:
+  # Platform independent: formatting, clippy and docs.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95.0"
+          components: clippy, rustfmt
+      - run: make ci-lint
+
+  # Platform independent: every feature set type checks.
+  features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95.0"
+      - run: make ci-features
+
+  test:
     strategy:
       fail-fast: false
       matrix:
@@ -26,7 +51,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.95.0"
-      - run: make ci
+      # The trybuild tests check generated code, not the platform, and each
+      # one rebuilds nv-redfish from scratch; Linux alone runs them.
+      - run: make ci-test TEST_ARGS="${{ matrix.os != 'ubuntu-latest' && '--skip compile_fails' || '' }}"
 
   bench-regression:
     runs-on: ubuntu-latest
