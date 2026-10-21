@@ -19,8 +19,8 @@
 
 mod item;
 
-use crate::schema::event_destination_collection::EventDestinationCollection as EventDestinationCollectionSchema;
 use crate::schema::event_service::EventService as EventServiceSchema;
+use crate::schema::resource::ResourceCollection;
 use crate::Error;
 use crate::NvBmc;
 use crate::ServiceRoot;
@@ -30,7 +30,9 @@ use nv_redfish_core::Bmc;
 use nv_redfish_core::BmcError as _;
 use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::BoxTryStream;
-use nv_redfish_core::NavProperty;
+use nv_redfish_core::EntityTypeRef;
+use nv_redfish_core::ODataETag;
+use nv_redfish_core::ODataId;
 use nv_redfish_core::StreamEvent;
 use serde::de;
 use serde::Deserialize;
@@ -49,6 +51,27 @@ pub use item::EventDestination;
 
 #[doc(inline)]
 pub use crate::schema::event_destination::SubscriptionType;
+
+// Keep the public Subscriptions field as a ReferenceLeaf, which accepts annotated
+// links. Decode collection members here while retaining ResourceCollection's
+// required metadata and validation.
+#[derive(Deserialize)]
+struct Subscriptions {
+    #[serde(flatten)]
+    base: ResourceCollection,
+    #[serde(rename = "Members")]
+    members: Vec<item::DestinationNav>,
+}
+
+impl EntityTypeRef for Subscriptions {
+    fn odata_id(&self) -> &ODataId {
+        self.base.odata_id()
+    }
+
+    fn etag(&self) -> Option<&ODataETag> {
+        self.base.etag()
+    }
+}
 
 /// SSE payload that can contain either an `EventRecord` or a `MetricReport`.
 #[derive(Debug)]
@@ -87,6 +110,7 @@ impl<'de> Deserialize<'de> for EventStreamPayload {
 ///
 /// Provides functions to inspect event delivery capabilities and parse
 /// event payloads from `ServerSentEventUri`.
+/// Lists subscriptions as destination handles that can be inspected and deleted.
 pub struct EventService<B: Bmc> {
     data: Arc<EventServiceSchema>,
     bmc: NvBmc<B>,
@@ -119,7 +143,9 @@ impl<B: Bmc> EventService<B> {
     /// List the `EventDestination`s in `Subscriptions`; empty if the service
     /// doesn't advertise it.
     ///
-    /// A destination deleted while the list is read is omitted.
+    /// Results retain collection order. An absent `SubscriptionType` defaults to
+    /// `RedfishEvent`; an explicit `null` remains `None`.
+    /// A destination whose fetch returns HTTP 404 or 410 is omitted.
     ///
     /// # Errors
     ///
@@ -130,14 +156,14 @@ impl<B: Bmc> EventService<B> {
             return Ok(Vec::new());
         };
 
-        // Read fresh: a `Subscriptions` the `EventService` response expanded
-        // inline can predate a destination.
-        let collection = NavProperty::<EventDestinationCollectionSchema>::new_reference(
-            subscriptions.id().clone(),
-        )
-        .get(self.bmc.as_ref())
-        .await
-        .map_err(Error::from)?;
+        // Fetch the collection even if EventService included it inline: that
+        // snapshot can predate a destination created after EventService was read.
+        let collection = self
+            .bmc
+            .as_ref()
+            .get::<Subscriptions>(&subscriptions.odata_id)
+            .await
+            .map_err(Error::from)?;
 
         let mut listed = Vec::with_capacity(collection.members.len());
 
@@ -145,7 +171,10 @@ impl<B: Bmc> EventService<B> {
             match EventDestination::new(&self.bmc, member).await {
                 Ok(destination) => listed.push(destination),
                 Err(Error::Bmc(cause))
-                    if cause.error_class() == BmcErrorClass::HttpResponse { status: 404 } => {}
+                    if matches!(
+                        cause.error_class(),
+                        BmcErrorClass::HttpResponse { status: 404 | 410 }
+                    ) => {}
                 Err(error) => return Err(error),
             }
         }
@@ -219,6 +248,30 @@ impl<B: Bmc> EventService<B> {
 #[cfg(test)]
 mod tests {
     use super::EventStreamPayload;
+    use super::Subscriptions;
+
+    #[test]
+    fn subscriptions_require_collection_metadata_and_members() {
+        let collection = serde_json::json!({
+            "@odata.id": "/redfish/v1/EventService/Subscriptions",
+            "@odata.type": "#EventDestinationCollection.EventDestinationCollection",
+            "Name": "Event Subscriptions",
+            "Members": []
+        });
+
+        assert!(serde_json::from_value::<Subscriptions>(collection.clone()).is_ok());
+
+        for field in ["@odata.id", "@odata.type", "Name", "Members"] {
+            let mut invalid = collection.clone();
+            invalid.as_object_mut().expect("collection").remove(field);
+
+            let error = serde_json::from_value::<Subscriptions>(invalid)
+                .err()
+                .expect("missing required collection field");
+
+            assert!(error.to_string().contains(field), "{}", error);
+        }
+    }
 
     #[test]
     fn event_stream_payload_deserializes_event_record() {

@@ -30,6 +30,7 @@ use serde_json::json;
 use serde_json::Value;
 use tokio::test;
 use url::Url;
+use wiremock::matchers::header;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 use wiremock::Mock;
@@ -165,6 +166,165 @@ async fn listing(
 }
 
 #[test]
+async fn missing_subscription_type_defaults_for_referenced_and_expanded_members(
+) -> Result<(), Box<dyn StdError>> {
+    for (expanded, explicit, expected) in [
+        (false, None, None),
+        (true, None, None),
+        (
+            false,
+            Some("FutureType"),
+            Some(SubscriptionType::UnsupportedValue),
+        ),
+        (
+            true,
+            Some("FutureType"),
+            Some(SubscriptionType::UnsupportedValue),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        let version = if expanded { "v1_17_0" } else { "v1_2_0" };
+        let mut legacy = destination(DESTINATION, None);
+        legacy["@odata.type"] = json!(format!("#EventDestination.{version}.EventDestination"));
+        legacy
+            .as_object_mut()
+            .expect("destination")
+            .remove("SubscriptionType");
+
+        let explicit = destination(THIRD_DESTINATION, explicit);
+        let mut collection = destinations(&[DESTINATION, OTHER_DESTINATION, THIRD_DESTINATION]);
+        collection["@odata.etag"] = json!("\"subscriptions\"");
+
+        if expanded {
+            collection["Members"][0] = legacy.clone();
+            collection["Members"][2] = explicit.clone();
+
+            Mock::given(method("GET"))
+                .and(path(DESTINATION))
+                .respond_with(ResponseTemplate::new(500))
+                .expect(0)
+                .mount(&server)
+                .await;
+        } else {
+            serve(&server, DESTINATION, &legacy).await;
+        }
+
+        serve(&server, SERVICE_ROOT, &service_root()).await;
+        serve(&server, EVENT_SERVICE, &event_service(Some(SUBSCRIPTIONS))).await;
+        serve(&server, SUBSCRIPTIONS, &collection).await;
+
+        Mock::given(method("GET"))
+            .and(path(SUBSCRIPTIONS))
+            .and(header("if-none-match", "\"subscriptions\""))
+            .respond_with(ResponseTemplate::new(304))
+            .with_priority(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        serve(
+            &server,
+            OTHER_DESTINATION,
+            &destination(OTHER_DESTINATION, Some("SSE")),
+        )
+        .await;
+
+        serve(&server, THIRD_DESTINATION, &explicit).await;
+
+        let event_service = open_event_service(&server).await?;
+        let listed = listing(&event_service).await?;
+
+        assert_eq!(
+            listed,
+            [
+                (DESTINATION.to_owned(), Some(SubscriptionType::RedfishEvent)),
+                (OTHER_DESTINATION.to_owned(), Some(SubscriptionType::Sse)),
+                (THIRD_DESTINATION.to_owned(), expected),
+            ]
+        );
+
+        // Revalidating the cached collection must preserve repaired members.
+        assert_eq!(listing(&event_service).await?, listed);
+    }
+
+    Ok(())
+}
+
+#[test]
+async fn annotated_subscriptions_link_does_not_prevent_opening_event_service(
+) -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+    let mut service = event_service(Some(SUBSCRIPTIONS));
+    service["Subscriptions"]["Members@odata.count"] = json!(0);
+
+    serve(&server, SERVICE_ROOT, &service_root()).await;
+    serve(&server, EVENT_SERVICE, &service).await;
+    serve(&server, SUBSCRIPTIONS, &destinations(&[])).await;
+
+    let event_service = open_event_service(&server).await?;
+
+    // Keep the public link type and field access supported before listing was added.
+    let raw = event_service.raw();
+
+    let link: &nv_redfish_core::nav_property::ReferenceLeaf =
+        raw.subscriptions.as_ref().expect("subscriptions link");
+
+    assert_eq!(link.odata_id.to_string(), SUBSCRIPTIONS);
+    assert!(event_service.subscriptions().await?.is_empty());
+
+    Ok(())
+}
+
+#[test]
+async fn subscription_defaults_do_not_hide_invalid_fields() -> Result<(), Box<dyn StdError>> {
+    for expanded in [false, true] {
+        for (field, value) in [
+            ("SubscriptionType", Some(json!(42))),
+            ("SubscriptionType", Some(json!(false))),
+            ("SubscriptionType", Some(json!({}))),
+            ("SubscriptionType", Some(json!([]))),
+            ("Context", None),
+        ] {
+            let server = MockServer::start().await;
+            let mut invalid = destination(DESTINATION, Some("SSE"));
+
+            if let Some(value) = value {
+                invalid[field] = value;
+            } else {
+                invalid.as_object_mut().expect("destination").remove(field);
+                invalid
+                    .as_object_mut()
+                    .expect("destination")
+                    .remove("SubscriptionType");
+            }
+
+            let mut collection = destinations(&[DESTINATION]);
+
+            if expanded {
+                collection["Members"][0] = invalid.clone();
+            }
+
+            serve(&server, SERVICE_ROOT, &service_root()).await;
+            serve(&server, EVENT_SERVICE, &event_service(Some(SUBSCRIPTIONS))).await;
+            serve(&server, SUBSCRIPTIONS, &collection).await;
+            serve(&server, DESTINATION, &invalid).await;
+
+            let event_service = open_event_service(&server).await?;
+
+            let error = event_service
+                .subscriptions()
+                .await
+                .err()
+                .expect("invalid destination");
+
+            assert!(matches!(error, nv_redfish::Error::Decode(_)), "{}", error);
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
 async fn subscriptions_report_each_destination_type_in_order() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
 
@@ -207,23 +367,26 @@ async fn subscriptions_report_each_destination_type_in_order() -> Result<(), Box
 
 #[test]
 async fn a_destination_deleted_mid_listing_is_omitted() -> Result<(), Box<dyn StdError>> {
-    let server = MockServer::start().await;
+    for status in [404, 410] {
+        let server = MockServer::start().await;
 
-    fail(&server, DESTINATION, 404).await;
+        fail(&server, DESTINATION, status).await;
 
-    serve(
-        &server,
-        OTHER_DESTINATION,
-        &destination(OTHER_DESTINATION, Some("SSE")),
-    )
-    .await;
+        serve(
+            &server,
+            OTHER_DESTINATION,
+            &destination(OTHER_DESTINATION, Some("SSE")),
+        )
+        .await;
 
-    let event_service = open_with_subscriptions(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
+        let event_service =
+            open_with_subscriptions(&server, &[DESTINATION, OTHER_DESTINATION]).await?;
 
-    assert_eq!(
-        listing(&event_service).await?,
-        [(OTHER_DESTINATION.to_owned(), Some(SubscriptionType::Sse))]
-    );
+        assert_eq!(
+            listing(&event_service).await?,
+            [(OTHER_DESTINATION.to_owned(), Some(SubscriptionType::Sse))]
+        );
+    }
 
     Ok(())
 }
@@ -311,6 +474,142 @@ async fn a_listed_destination_deletes_itself() -> Result<(), Box<dyn StdError>> 
     let result = destination.delete().await;
 
     assert!(matches!(result, Ok(ModificationResponse::Empty)));
+
+    Ok(())
+}
+
+#[test]
+async fn delete_applies_defaults_to_the_returned_destination() -> Result<(), Box<dyn StdError>> {
+    for (reported_type, expected) in [
+        (None, Some(SubscriptionType::RedfishEvent)),
+        (Some(json!(null)), None),
+        (Some(json!("SSE")), Some(SubscriptionType::Sse)),
+        (
+            Some(json!("FutureType")),
+            Some(SubscriptionType::UnsupportedValue),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        let mut body = destination(DESTINATION, None);
+
+        if let Some(value) = reported_type {
+            body["SubscriptionType"] = value;
+        } else {
+            body.as_object_mut()
+                .expect("destination")
+                .remove("SubscriptionType");
+        }
+
+        body["Context"] = json!("test context");
+        body["Oem"] = json!({"Example": {"Data": [1, 2, 3]}});
+
+        // A returned resource must not trigger a second GET after deletion.
+        Mock::given(method("GET"))
+            .and(path(DESTINATION))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("DELETE"))
+            .and(path(DESTINATION))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let service = open_with_subscriptions(&server, &[DESTINATION]).await?;
+        let listed = service.subscriptions().await?;
+        let destination = listed.first().expect("one destination");
+
+        assert_eq!(destination.subscription_type(), expected);
+
+        let ModificationResponse::Entity(deleted) = destination.delete().await? else {
+            panic!("expected the returned destination");
+        };
+
+        assert_eq!(deleted.subscription_type(), expected);
+
+        let raw = deleted.raw();
+
+        assert_eq!(raw.odata_id().to_string(), DESTINATION);
+        assert_eq!(raw.context.as_deref(), Some("test context"));
+
+        assert_eq!(
+            raw.oem.as_ref().expect("OEM data").additional_properties["Example"],
+            json!({"Data": [1, 2, 3]})
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+async fn delete_preserves_success_message_and_task_outcomes() -> Result<(), Box<dyn StdError>> {
+    for status in [200, 202] {
+        let server = MockServer::start().await;
+
+        serve(&server, DESTINATION, &destination(DESTINATION, Some("SSE"))).await;
+
+        let response = if status == 200 {
+            ResponseTemplate::new(status).set_body_json(json!({
+                "error": {"code": "Base.1.0.Success", "message": "Completed"}
+            }))
+        } else {
+            ResponseTemplate::new(status)
+                .insert_header("Location", "/redfish/v1/TaskService/Tasks/1")
+        };
+
+        Mock::given(method("DELETE"))
+            .and(path(DESTINATION))
+            .respond_with(response)
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let service = open_with_subscriptions(&server, &[DESTINATION]).await?;
+        let listed = service.subscriptions().await?;
+        let result = listed.first().expect("one destination").delete().await?;
+
+        if status == 200 {
+            assert!(matches!(result, ModificationResponse::Empty));
+        } else {
+            assert!(matches!(result, ModificationResponse::Task(_)));
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+async fn delete_does_not_hide_malformed_destination_fields() -> Result<(), Box<dyn StdError>> {
+    for missing_context in [false, true] {
+        let server = MockServer::start().await;
+        let mut body = destination(DESTINATION, Some("SSE"));
+
+        serve(&server, DESTINATION, &body).await;
+
+        if missing_context {
+            let object = body.as_object_mut().expect("destination");
+            object.remove("SubscriptionType");
+            object.remove("Context");
+        } else {
+            body["SubscriptionType"] = json!(42);
+        }
+
+        Mock::given(method("DELETE"))
+            .and(path(DESTINATION))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let service = open_with_subscriptions(&server, &[DESTINATION]).await?;
+        let listed = service.subscriptions().await?;
+        let result = listed.first().expect("one destination").delete().await;
+
+        assert!(matches!(result, Err(nv_redfish::Error::Decode(_))));
+    }
 
     Ok(())
 }
