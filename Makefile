@@ -170,7 +170,7 @@ define test
 	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-native-tls --test reqwest_client_tests
 	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-rustls-no-provider --test reqwest_client_tests
 	cargo test -p nv-redfish-bmc-http --test reqwest_client_tests --features reqwest,update-service-deprecated
-	cargo test -p nv-redfish-tests --test integration --features update-service-deprecated -- test_update_service::
+	cargo test -p nv-redfish-tests --test integration --features update-service-deprecated -- update_service::
 	cargo test -p nv-redfish-dispatcher --all-features -- --no-capture
 
 endef
