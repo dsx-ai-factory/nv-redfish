@@ -100,7 +100,7 @@ enum Quirk {
     WrongManagerMembers,
     ResetToDefaultsTypeParameter,
     PowerSupplyLocationIndicatorObject,
-    StandbyState,
+    PowerShelfStates,
     ExpandIsNotWorkingProperly,
     NullableMembers,
     RejectsOwnEtag,
@@ -231,14 +231,14 @@ const RULES: &[Rule] = &[
             Quirk::MissingRootNavProperties,
             Quirk::ResetToDefaultsTypeParameter,
             Quirk::PowerSupplyLocationIndicatorObject,
-            Quirk::StandbyState,
+            Quirk::PowerShelfStates,
         ],
     },
     // A service root that names no vendor and reports Redfish 1.9.0, as
     // Lite-On power shelves often do; Delta shelves do too.
     Rule {
         covers: |root| root.vendor.is_none() && root.redfish_version_is("1.9.0"),
-        quirks: &[Quirk::MissingRootNavProperties, Quirk::StandbyState],
+        quirks: &[Quirk::MissingRootNavProperties, Quirk::PowerShelfStates],
     },
 ];
 
@@ -335,12 +335,13 @@ impl BmcQuirks {
         self.has(Quirk::MissingChassisNameField)
     }
 
-    /// Lite-On power shelves report `Status.State` `Standby`, which is not a
-    /// `Resource.State`, on their power supplies, manager and chassis. A
-    /// vendor-less Redfish 1.9.0 root, a Lite-On or a Delta shelf, gets the
-    /// repair too: it rewrites only that one value, which no schema allows.
-    pub(crate) fn bug_standby_state(&self) -> bool {
-        self.has(Quirk::StandbyState)
+    /// Lite-On power shelves report `Status.State` `Standby`, and `Sleep`
+    /// once forced off, which are not `Resource.State`s, on their power
+    /// supplies, manager and chassis. A vendor-less Redfish 1.9.0 root, a
+    /// Lite-On or a Delta shelf, gets the repair too: it rewrites only those
+    /// two values, which no schema allows.
+    pub(crate) fn bug_power_shelf_states(&self) -> bool {
+        self.has(Quirk::PowerShelfStates)
     }
 
     /// A DPU in NIC mode reports an empty-string `UUID` on computer system
@@ -633,12 +634,12 @@ mod tests {
                     Quirk::MissingRootNavProperties,
                     Quirk::ResetToDefaultsTypeParameter,
                     Quirk::PowerSupplyLocationIndicatorObject,
-                    Quirk::StandbyState,
+                    Quirk::PowerShelfStates,
                 ],
             ),
             (
                 json!({ "RedfishVersion": "1.9.0" }),
-                &[Quirk::MissingRootNavProperties, Quirk::StandbyState],
+                &[Quirk::MissingRootNavProperties, Quirk::PowerShelfStates],
             ),
             (json!({ "Vendor": "Contoso" }), &[]),
             (json!({}), &[]),

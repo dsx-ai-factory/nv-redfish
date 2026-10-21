@@ -289,8 +289,14 @@ async fn liteon_location_indicator_active_is_patched_on_standard_fetch(
 }
 
 #[test]
-async fn liteon_standby_state_reads_as_standby_spare() -> Result<(), Box<dyn StdError>> {
-    for expanded in [false, true] {
+async fn liteon_power_shelf_states_read_as_named_states() -> Result<(), Box<dyn StdError>> {
+    // `Sleep` is what a forced-off shelf's supplies report.
+    for (psu_state, expected, expanded) in [
+        ("Standby", State::StandbySpare, false),
+        ("Standby", State::StandbySpare, true),
+        ("Sleep", State::StandbyOffline, false),
+        ("Sleep", State::StandbyOffline, true),
+    ] {
         for root_fields in [json!({}), json!({ "Vendor": "LITE-ON TECHNOLOGY CORP." })] {
             let bmc = Arc::new(Bmc::default());
             let ids = ids();
@@ -311,7 +317,7 @@ async fn liteon_standby_state_reads_as_standby_spare() -> Result<(), Box<dyn Std
             let psu_id = format!("{}/0", ids.psu_collection_id);
             let payload = json_merge([
                 &psu_payload(&psu_id, "0", true),
-                &json!({ "Status": { "State": "Standby" } }),
+                &json!({ "Status": { "State": psu_state } }),
             ]);
             expect_power_subsystem(bmc.clone(), &ids);
             expect_psu_members(
@@ -334,7 +340,7 @@ async fn liteon_standby_state_reads_as_standby_spare() -> Result<(), Box<dyn Std
                     .status
                     .as_ref()
                     .and_then(|status| status.state.flatten()),
-                Some(State::StandbySpare)
+                Some(expected)
             );
         }
     }

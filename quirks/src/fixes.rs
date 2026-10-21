@@ -210,13 +210,18 @@ pub fn normalize_dpu_certificate_collection_stubs(mut v: Value) -> Value {
     v
 }
 
-/// `Status.State` `Standby`, which is not a `Resource.State`, is read as
-/// `StandbySpare`; every other state stays.
-pub fn normalize_standby_state(mut v: Value) -> Value {
+/// The power shelf `Status.State` values that are not a `Resource.State`
+/// are read as the nearest one: `Standby` as `StandbySpare`, and `Sleep`,
+/// what a forced-off shelf reports, as `StandbyOffline`, which waits for
+/// an action to turn it on. Every other state stays.
+pub fn normalize_power_shelf_states(mut v: Value) -> Value {
     if let Some(state) = v.pointer_mut("/Status/State") {
-        if state == "Standby" {
-            *state = Value::String("StandbySpare".into());
-        }
+        let named = match state.as_str() {
+            Some("Standby") => "StandbySpare",
+            Some("Sleep") => "StandbyOffline",
+            _ => return v,
+        };
+        *state = Value::String(named.into());
     }
     v
 }

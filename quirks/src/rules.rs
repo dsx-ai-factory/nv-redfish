@@ -101,18 +101,18 @@ const RULES: &[Rule] = &[
     },
     Rule {
         resource_type: "Chassis",
-        enabled: BmcQuirks::bug_standby_state,
-        fix: fixes::normalize_standby_state,
+        enabled: BmcQuirks::bug_power_shelf_states,
+        fix: fixes::normalize_power_shelf_states,
     },
     Rule {
         resource_type: "Manager",
-        enabled: BmcQuirks::bug_standby_state,
-        fix: fixes::normalize_standby_state,
+        enabled: BmcQuirks::bug_power_shelf_states,
+        fix: fixes::normalize_power_shelf_states,
     },
     Rule {
         resource_type: "PowerSupply",
-        enabled: BmcQuirks::bug_standby_state,
-        fix: fixes::normalize_standby_state,
+        enabled: BmcQuirks::bug_power_shelf_states,
+        fix: fixes::normalize_power_shelf_states,
     },
     Rule {
         resource_type: "ManagerAccount",
@@ -315,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn a_power_shelfs_standby_state_reads_as_standby_spare() {
+    fn a_power_shelfs_standby_and_sleep_states_read_as_named_states() {
         for root in [
             json!({ "Vendor": "LITE-ON Technology" }),
             json!({ "RedfishVersion": "1.9.0" }),
@@ -336,6 +336,16 @@ mod tests {
                     "{root} {odata_type}"
                 );
 
+                let sleep = json!({
+                    "@odata.type": odata_type,
+                    "Status": { "State": "Sleep", "Health": "OK" },
+                });
+                assert_eq!(
+                    repaired(&shelf, sleep.clone())["Status"],
+                    json!({ "State": "StandbyOffline", "Health": "OK" }),
+                    "{root} {odata_type}"
+                );
+
                 let enabled = json!({
                     "@odata.type": odata_type,
                     "Status": { "State": "Enabled" },
@@ -344,6 +354,7 @@ mod tests {
 
                 let hpe = enabled_for(&json!({ "Vendor": "HPE" }));
                 assert_eq!(repaired(&hpe, standby.clone()), standby);
+                assert_eq!(repaired(&hpe, sleep.clone()), sleep);
             }
         }
     }
