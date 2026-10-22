@@ -150,7 +150,6 @@ pub use repair::RepairError;
 pub use serde_json::Value as AdditionalProperties;
 #[doc(inline)]
 pub use upload::DataStream;
-#[cfg(feature = "update-service-deprecated")]
 #[doc(inline)]
 pub use upload::HttpPushUriUpdateRequest;
 #[doc(inline)]
@@ -163,7 +162,6 @@ pub use upload::OemMultipartPartNameError;
 pub use upload::OemMultipartPartReader;
 #[doc(inline)]
 pub use upload::UploadReader;
-#[cfg(feature = "update-service-deprecated")]
 #[doc(inline)]
 pub use upload::UploadStream;
 #[doc(inline)]

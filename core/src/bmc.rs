@@ -62,7 +62,6 @@ use crate::DecodeError;
 use crate::EntityTypeRef;
 use crate::Expandable;
 use crate::FilterQuery;
-#[cfg(feature = "update-service-deprecated")]
 use crate::HttpPushUriUpdateRequest;
 use crate::ModificationResponse;
 use crate::ODataETag;
@@ -293,11 +292,6 @@ pub trait Bmc: Send + Sync {
     ///
     /// Implementations may reject URI references that violate their outbound
     /// request policy before transport.
-    ///
-    /// An implementation outside this crate defines it inside
-    /// [`if_update_service_deprecated!`](crate::if_update_service_deprecated),
-    /// so it has the method exactly when the trait requires it.
-    #[cfg(feature = "update-service-deprecated")]
     fn http_push_uri_update<U, R>(
         &self,
         uri: &str,
@@ -346,29 +340,6 @@ pub trait Bmc: Send + Sync {
         let _ = last_event_id;
         async move { self.stream::<T>(uri).await.map(without_event_ids) }
     }
-}
-
-/// Expands to the items it wraps when this crate's
-/// `update-service-deprecated` feature is on, and to nothing when it is off.
-///
-/// The feature adds a required method to [`Bmc`], and Cargo turns it on for
-/// the whole build when any crate asks for it. A [`Bmc`] implemented outside
-/// this crate defines `http_push_uri_update` inside this macro rather than
-/// behind a feature of its own, so the method is there exactly when the
-/// trait requires it, whichever crate turned the feature on.
-#[cfg(feature = "update-service-deprecated")]
-#[macro_export]
-macro_rules! if_update_service_deprecated {
-    ($($item:tt)*) => {
-        $($item)*
-    };
-}
-
-#[cfg(not(feature = "update-service-deprecated"))]
-#[macro_export]
-#[doc(hidden)]
-macro_rules! if_update_service_deprecated {
-    ($($item:tt)*) => {};
 }
 
 /// One event a server-sent event stream delivered.

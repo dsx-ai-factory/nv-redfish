@@ -12,13 +12,6 @@ categories.workspace = true
 [lib]
 path = "src/lib.rs"
 
-[features]
-default = []
-update-service-deprecated = [
-    "nv-redfish/update-service-deprecated",
-    "nv-redfish-bmc-mock/update-service-deprecated",
-]
-
 [dependencies]
 nv-redfish-core = { workspace = true }
 nv-redfish-bmc-mock = { workspace = true }

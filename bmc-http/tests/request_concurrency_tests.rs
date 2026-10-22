@@ -13,7 +13,6 @@ mod tests {
     use crate::common::test_utils::{create_test_credentials, TestResource};
 
     use nv_redfish_bmc_http::reqwest::BmcError;
-    #[cfg(feature = "update-service-deprecated")]
     use nv_redfish_bmc_http::HttpPushUriUpdateRequest;
     use nv_redfish_bmc_http::{
         BmcCredentials, CacheSettings, ConcurrencyLimitedBmc, HttpBmc, HttpClient,
@@ -23,7 +22,6 @@ mod tests {
     use nv_redfish_core::NoRepair;
     use nv_redfish_core::Repair;
     use nv_redfish_core::RepairError;
-    #[cfg(feature = "update-service-deprecated")]
     use nv_redfish_core::UploadStream;
     use nv_redfish_core::{
         Action, Bmc, BoxTryStream, DataStream, FilterQuery, ModificationResponse, ODataETag,
@@ -201,7 +199,6 @@ mod tests {
             self.modification_response(url.path().to_owned())
         }
 
-        #[cfg(feature = "update-service-deprecated")]
         fn post_http_push_uri_update<U, T>(
             &self,
             url: Url,
@@ -352,7 +349,6 @@ mod tests {
         Delete,
         Action,
         MultipartUpdate,
-        #[cfg(feature = "update-service-deprecated")]
         HttpPushUriUpdate,
     }
 
@@ -371,7 +367,6 @@ mod tests {
                 Self::Delete => "/delete",
                 Self::Action => "/action",
                 Self::MultipartUpdate => "/multipart-update",
-                #[cfg(feature = "update-service-deprecated")]
                 Self::HttpPushUriUpdate => "/http-push-uri-update",
             }
         }
@@ -459,7 +454,6 @@ mod tests {
                     .multipart_update::<_, _, JsonValue>(path, request)
                     .await?;
             }
-            #[cfg(feature = "update-service-deprecated")]
             Operation::HttpPushUriUpdate => {
                 let request = HttpPushUriUpdateRequest {
                     update_stream: UploadStream::new(Cursor::new(Vec::<u8>::new())),
@@ -655,12 +649,10 @@ mod tests {
             Operation::Delete,
             Operation::Action,
             Operation::MultipartUpdate,
+            Operation::HttpPushUriUpdate,
         ] {
             assert_operation_waits_for_permit(operation);
         }
-
-        #[cfg(feature = "update-service-deprecated")]
-        assert_operation_waits_for_permit(Operation::HttpPushUriUpdate);
     }
 
     #[test]

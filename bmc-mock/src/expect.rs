@@ -140,7 +140,6 @@ pub enum ExpectedRequest {
     },
 
     /// Expected raw HttpPushUri update.
-    #[cfg(feature = "update-service-deprecated")]
     HttpPushUriUpdate { uri: String },
 
     /// Expected Delete.
@@ -429,7 +428,6 @@ impl<E> Expect<E> {
         }
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     pub fn http_push_uri_update(uri: impl Display, response: impl Display) -> Self {
         Expect {
             request: ExpectedRequest::HttpPushUriUpdate {

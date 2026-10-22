@@ -20,13 +20,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::io::Cursor;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish::schema::update_service::HttpPushUriOptionsUpdate;
 use nv_redfish::update_service::MultipartUpdateParameters;
 use nv_redfish::update_service::MultipartUpdateParametersWithApplyTime;
 use nv_redfish::update_service::OperationApplyTime;
 use nv_redfish::update_service::UpdateService;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish::update_service::UpdateServiceUpdate;
 use nv_redfish::Error;
 use nv_redfish::ServiceRoot;
@@ -36,7 +34,6 @@ use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::ODataId;
 use nv_redfish_core::OemMultipartPart;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::UploadStream;
 use nv_redfish_tests::ami_viking_service_root;
 use nv_redfish_tests::Bmc;
@@ -51,11 +48,9 @@ const SW_INVENTORIES_DATA_TYPE: &str = "#SoftwareInventoryCollection.SoftwareInv
 const SW_INVENTORY_DATA_TYPE: &str = "#SoftwareInventory.v1_4_0.SoftwareInventory";
 
 const UPDATE_SERVICE_URI: &str = "/redfish/v1/UpdateService";
-#[cfg(feature = "update-service-deprecated")]
 const HTTP_PUSH_URI: &str = "/redfish/v1/UpdateService/update";
 const MULTIPART_URI: &str = "/redfish/v1/UpdateService/update-multipart";
 
-#[cfg(feature = "update-service-deprecated")]
 #[derive(serde::Deserialize)]
 struct UploadResponse {
     #[serde(rename = "Result")]
@@ -327,7 +322,6 @@ async fn multipart_update_parameters_carry_operation_apply_time() -> Result<(), 
     Ok(())
 }
 
-#[cfg(feature = "update-service-deprecated")]
 #[tokio::test]
 async fn uses_http_push_uri_without_update_parameters() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
@@ -367,7 +361,6 @@ async fn uses_http_push_uri_without_update_parameters() -> Result<(), Box<dyn St
     Ok(())
 }
 
-#[cfg(feature = "update-service-deprecated")]
 #[tokio::test]
 async fn patches_http_push_uri_options_and_targets() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
@@ -518,7 +511,6 @@ async fn requires_multipart_http_push_uri() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-#[cfg(feature = "update-service-deprecated")]
 #[tokio::test]
 async fn requires_http_push_uri() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());

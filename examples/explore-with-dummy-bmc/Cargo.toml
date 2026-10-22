@@ -9,10 +9,6 @@ rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
-[features]
-default = []
-update-service-deprecated = ["nv-redfish-core/update-service-deprecated"]
-
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true, features = ["derive"] }

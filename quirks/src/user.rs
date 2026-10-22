@@ -34,6 +34,7 @@ use nv_redfish_core::DecodeError;
 use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::Expandable;
 use nv_redfish_core::FilterQuery;
+use nv_redfish_core::HttpPushUriUpdateRequest;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::ODataETag;
@@ -378,18 +379,16 @@ where
         self.inner.multipart_update(uri, request).await
     }
 
-    nv_redfish_core::if_update_service_deprecated! {
-        async fn http_push_uri_update<U, R>(
-            &self,
-            uri: &str,
-            request: nv_redfish_core::HttpPushUriUpdateRequest<U>,
-        ) -> Result<ModificationResponse<R>, Self::Error>
-        where
-            U: UploadReader,
-            R: Send + Sync + for<'de> Deserialize<'de>,
-        {
-            self.inner.http_push_uri_update(uri, request).await
-        }
+    async fn http_push_uri_update<U, R>(
+        &self,
+        uri: &str,
+        request: HttpPushUriUpdateRequest<U>,
+    ) -> Result<ModificationResponse<R>, Self::Error>
+    where
+        U: UploadReader,
+        R: Send + Sync + for<'de> Deserialize<'de>,
+    {
+        self.inner.http_push_uri_update(uri, request).await
     }
 
     async fn stream<T: Sized + for<'de> Deserialize<'de> + Send + 'static>(

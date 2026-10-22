@@ -59,7 +59,6 @@ impl<R> DataStream<R> {
 }
 
 /// Streamed body accepted by deprecated raw upload methods.
-#[cfg(feature = "update-service-deprecated")]
 pub struct UploadStream<R> {
     /// Streamed upload data.
     pub reader: R,
@@ -68,7 +67,6 @@ pub struct UploadStream<R> {
     pub content_length: Option<u64>,
 }
 
-#[cfg(feature = "update-service-deprecated")]
 impl<R> UploadStream<R> {
     /// Create a streamed upload body without a known content length.
     #[must_use]
@@ -187,7 +185,6 @@ pub struct MultipartUpdateRequest<'a, U, V> {
 }
 
 /// `UpdateService` raw `HttpPushUri` upload request data.
-#[cfg(feature = "update-service-deprecated")]
 pub struct HttpPushUriUpdateRequest<U> {
     /// Streamed update image data.
     pub update_stream: UploadStream<U>,

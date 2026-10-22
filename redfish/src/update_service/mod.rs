@@ -36,12 +36,10 @@ use crate::ServiceRoot;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::DataStream;
 use nv_redfish_core::EntityTypeRef as _;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::MultipartUpdateRequest;
 use nv_redfish_core::UploadReader;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::UploadStream;
 use software_inventory::SoftwareInventoryCollection;
 
@@ -306,7 +304,6 @@ impl<B: Bmc> UpdateService<B> {
     /// # Errors
     ///
     /// Returns an error if `HttpPushUri` is absent or the upload fails.
-    #[cfg(feature = "update-service-deprecated")]
     pub async fn http_push_uri_update_from_reader<U, R>(
         &self,
         update_stream: UploadStream<U>,
@@ -328,7 +325,6 @@ impl<B: Bmc> UpdateService<B> {
     /// # Errors
     ///
     /// Returns an error if `HttpPushUri` is absent or the upload fails.
-    #[cfg(feature = "update-service-deprecated")]
     pub async fn http_push_uri_update<U, R>(
         &self,
         request: HttpPushUriUpdateRequest<U>,

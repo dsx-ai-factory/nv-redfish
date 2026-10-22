@@ -60,8 +60,7 @@ std-not-standalone-features = assembly \
              secure-boot \
              sensors \
              serial-interfaces \
-             storages \
-             update-service-deprecated
+             storages
 
 std-standalone-features = $(filter-out $(std-not-standalone-features),$(all-std-features))
 
@@ -80,9 +79,8 @@ compile-only-feature-sets = computer-systems,processors,controls \
              chassis,controls \
              chassis,network-adapters \
              chassis,network-adapters,network-device-functions \
-             update-service-deprecated \
-             bmc-http,update-service-deprecated \
-             bmc-http,nv-redfish-bmc-http/update-service-deprecated \
+             bmc-http \
+             bmc-http,update-service \
              http-extras \
              computer-systems,bios,boot-options,storages,memory,processors \
              oem-hpe,accounts \
@@ -158,7 +156,7 @@ define features
 	cargo check -p nv-redfish-bmc-mock
 	cargo check -p nv-redfish-bmc-http --no-default-features --features http-extras
 	$(foreach b,$(no-ring-builds),$(call check-no-ring,$b))
-	cargo build -p update-multipart --features update-service-deprecated
+	cargo build -p update-multipart
 
 endef
 
@@ -169,8 +167,6 @@ define test
 	cargo test $1 -- --no-capture $(TEST_ARGS)
 	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-native-tls --test reqwest_client_tests
 	cargo test -p nv-redfish-bmc-http --no-default-features --features reqwest-rustls-no-provider --test reqwest_client_tests
-	cargo test -p nv-redfish-bmc-http --test reqwest_client_tests --features reqwest,update-service-deprecated
-	cargo test -p nv-redfish-tests --test integration --features update-service-deprecated -- update_service::
 	cargo test -p nv-redfish-dispatcher --all-features -- --no-capture
 
 endef

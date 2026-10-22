@@ -7,7 +7,6 @@ use std::sync::Arc;
 use crate::{BmcCredentials, CacheableError, HttpBmc, HttpClient};
 
 use nv_redfish_core::query::ExpandQuery;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
 use nv_redfish_core::Repair;
 use nv_redfish_core::RepairError;
@@ -249,7 +248,6 @@ impl<B: Bmc> Bmc for ConcurrencyLimitedBmc<B> {
         self.inner.multipart_update(uri, request).await
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     async fn http_push_uri_update<U, R>(
         &self,
         uri: &str,
