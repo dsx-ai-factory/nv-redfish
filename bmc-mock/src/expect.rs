@@ -60,7 +60,7 @@ pub enum ExpectedRequest {
     /// Expected Update.
     Update { id: ODataId, request: JsonValue },
 
-    /// Expected Update sent with a specific `If-Match` ETag (`None` for `*`).
+    /// Expected Update sent with a specific `If-Match` `ETag` (`None` for `*`).
     UpdateWithEtag {
         id: ODataId,
         etag: Option<ODataETag>,
@@ -105,27 +105,27 @@ pub enum ExpectedRequest {
         location: ODataId,
     },
 
-    /// Expected ActionTarget
+    /// Expected `ActionTarget`.
     Action {
         target: ActionTarget,
         request: JsonValue,
     },
 
-    /// Expected asynchronous ActionTarget.
+    /// Expected asynchronous `ActionTarget`.
     ActionTask {
         target: ActionTarget,
         request: JsonValue,
         task: AsyncTask,
     },
 
-    /// Expected ActionTarget failing with an HTTP status.
+    /// Expected `ActionTarget` failing with an HTTP status.
     ActionStatus {
         target: ActionTarget,
         request: JsonValue,
         status: u16,
     },
 
-    /// Expected ActionTarget with no response body.
+    /// Expected `ActionTarget` with no response body.
     ActionEmpty {
         target: ActionTarget,
         request: JsonValue,
@@ -139,7 +139,7 @@ pub enum ExpectedRequest {
         oem_parts: Vec<String>,
     },
 
-    /// Expected raw HttpPushUri update.
+    /// Expected raw `HttpPushUri` update.
     HttpPushUriUpdate { uri: String },
 
     /// Expected Delete.

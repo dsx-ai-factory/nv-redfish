@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![doc = include_str!("../README.md")]
 #![deny(
     clippy::all,
     clippy::pedantic,
@@ -35,8 +36,6 @@
 )]
 #![allow(clippy::doc_markdown)]
 #![deny(missing_docs)]
-
-//! HTTP implementation of [`nv_redfish_core::Bmc`] trait.
 
 pub mod cache;
 pub mod credentials;
