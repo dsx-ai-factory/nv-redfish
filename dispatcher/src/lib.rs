@@ -13,48 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Generic cooperative task dispatcher with composable scheduling.
-//!
-//! Every node in the scheduling tree implements one trait, [`Scheduler`].
-//! Leaves produce work; branches compose children with a policy (DRR,
-//! round-robin, priority, token bucket, …). The runtime drives only the
-//! *root*; branches recurse, and completions flow back via a per-work
-//! [`RoutingPath`] breadcrumb.
-//!
-//! [`Scheduler<T>`] is parameterized only by an opaque payload `T`. The
-//! scheduler tree never inspects it; the runtime does. This crate's
-//! [`Runtime`] uses `T = FutureWork<Ev, Err>` (boxed futures returning
-//! `Result<Vec<Ev>, Err>`); other runtimes can pick another shape and
-//! reuse the same scheduler types.
-//!
-//! ## Layered metadata
-//!
-//! [`WorkMeta`] is a marker bound (`Send + 'static`) — any matching type
-//! is meta, and `()` is the canonical no-policy meta. Policy data is
-//! added by *wrappers* ([`WithCost`], [`WithPriority`]) that implement
-//! *projection traits* ([`HasCost`], [`HasPriority`]); schedulers ask
-//! for the projections they need and leave the rest alone.
-//! [`RoutingPath`] is a structural sibling of meta on [`ScheduledWork`]
-//! and [`Completion`], not a meta concern.
-//!
-//! ## Public surface
-//!
-//! - [`Scheduler`], [`ScheduledWork`], [`Completion`],
-//! - [`WorkMeta`], wrappers [`WithCost`] / [`WithPriority`], projections
-//!   [`HasCost`] / [`HasPriority`],
-//! - [`Readiness`], [`CostUnits`], [`CompletionOutcome`], [`RoutingPath`],
-//! - [`Runtime`] + [`RuntimeConfig`], [`RuntimeHandle`] (with
-//!   [`RuntimeHandle::with_root`] / [`with_root_mut`][`RuntimeHandle::with_root_mut`]),
-//!   [`RuntimeOutput`], the [`FutureWork`] payload alias,
-//! - the [`schedulers`] module with the built-in policy primitives
-//!   ([`RoundRobin`], [`StrictPriority`], [`BoundedConcurrency`],
-//!   [`CircuitBreaker`], [`TokenBucket`], [`FixedCost`], [`PeriodicLeaf`]),
-//! - optional out-of-band [`RuntimeEventType`].
-//!
-//! The runtime does *not* enumerate the scheduler tree, and exposes no
-//! per-leaf identity or telemetry. Schedulers that need such observability
-//! expose it through their own API, reached via [`RuntimeHandle::with_root`].
-
+#![doc = include_str!("../README.md")]
 #![deny(
     clippy::all,
     clippy::pedantic,

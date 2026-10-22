@@ -19,7 +19,7 @@ description = "Generic cooperative task dispatcher"
 version.workspace = true
 license.workspace = true
 repository.workspace = true
-readme.workspace = true
+readme = "README.md"
 # These repository-only tests and benchmarks depend on the unpublished
 # simulation helper crate.
 exclude = [
