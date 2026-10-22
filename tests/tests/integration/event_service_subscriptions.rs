@@ -572,7 +572,14 @@ async fn delete_preserves_success_message_and_task_outcomes() -> Result<(), Box<
         let result = listed.first().expect("one destination").delete().await?;
 
         if status == 200 {
-            assert!(matches!(result, ModificationResponse::Empty));
+            let ModificationResponse::Message(body) = result else {
+                panic!("expected a success message response");
+            };
+
+            assert_eq!(
+                body,
+                json!({"error": {"code": "Base.1.0.Success", "message": "Completed"}})
+            );
         } else {
             assert!(matches!(result, ModificationResponse::Task(_)));
         }
