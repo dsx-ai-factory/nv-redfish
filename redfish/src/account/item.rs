@@ -136,6 +136,8 @@ impl<B: Bmc> Account<B> {
     ///
     /// - `ModificationResponse::Entity` contains the updated account.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///
@@ -170,6 +172,8 @@ impl<B: Bmc> Account<B> {
     ///
     /// - `ModificationResponse::Entity` contains the updated account.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///
@@ -195,6 +199,8 @@ impl<B: Bmc> Account<B> {
     ///
     /// - `ModificationResponse::Entity` contains the updated account.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///
@@ -222,6 +228,8 @@ impl<B: Bmc> Account<B> {
     ///   server. When deletion is configured to disable the account, this is the
     ///   updated account.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///

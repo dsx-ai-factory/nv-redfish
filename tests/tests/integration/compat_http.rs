@@ -257,7 +257,18 @@ async fn a_write_keeps_the_transports_reading_of_a_success_reply() -> Result<(),
     let reply = layer
         .update::<_, SoftwareInventory>(&id(FIRMWARE), None, &json!({ "Version": "1" }))
         .await?;
-    assert!(matches!(reply, ModificationResponse::Empty));
+    let ModificationResponse::Message(body) = reply else {
+        return Err(format!("expected Message, got {:?}", reply).into());
+    };
+    assert_eq!(
+        body,
+        json!({
+            "Success": {
+                "code": "Base.1.10.Success",
+                "message": "Successfully Completed Request."
+            }
+        })
+    );
     Ok(())
 }
 
@@ -410,9 +421,132 @@ async fn an_hpe_account_update_answered_with_a_success_message_is_empty(
 
     // The reply is not an account, so the transport reads the success
     // message as it would for any account update.
-    assert!(matches!(
-        account.update(&update).await?,
-        ModificationResponse::Empty
-    ));
+    let reply = account.update(&update).await?;
+    let ModificationResponse::Message(body) = reply else {
+        return Err("expected ModificationResponse::Message".into());
+    };
+    assert_eq!(
+        body,
+        json!({
+            "error": {
+                "code": "Base.1.8.Success",
+                "message": "Successfully Completed Request."
+            }
+        })
+    );
+    Ok(())
+}
+
+#[test]
+async fn computer_system_reset_preserves_success_message_for_strict_inspection(
+) -> Result<(), Box<dyn StdError>> {
+    use nv_redfish::bmc_http::strict_success_code;
+    use nv_redfish::bmc_http::success_code;
+    use nv_redfish::bmc_http::SuccessCode;
+    use nv_redfish::resource::ResetType;
+
+    const ROOT: &str = "/redfish/v1";
+    const SYSTEMS: &str = "/redfish/v1/Systems";
+    const SYSTEM: &str = "/redfish/v1/Systems/1";
+    const RESET: &str = "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset";
+
+    let cases = [
+        (
+            json!({
+                "error": {
+                    "code": "Base.1.15.Success",
+                    "message": "Successfully Completed Request",
+                    "@Message.ExtendedInfo": [{ "MessageId": "Base.1.15.Success", "Severity": "OK" }]
+                }
+            }),
+            Some(SuccessCode::Success),
+            Some(SuccessCode::Success),
+        ),
+        (
+            json!({
+                "error": {
+                    "code": "Base.1.15.Success",
+                    "message": "Successfully Completed Request",
+                    "@Message.ExtendedInfo": [
+                        { "MessageId": "Base.1.15.Success", "Severity": "OK" },
+                        { "MessageId": "Base.1.15.NoOperation", "Severity": "Warning" }
+                    ]
+                }
+            }),
+            Some(SuccessCode::Success),
+            None,
+        ),
+    ];
+
+    for (reset_reply, expected_success, expected_strict) in cases {
+        let server = MockServer::start().await;
+        for (at, body) in [
+            (
+                ROOT,
+                json!({
+                    ODATA_ID: ROOT,
+                    ODATA_TYPE: "#ServiceRoot.v1_13_0.ServiceRoot",
+                    "Id": "RootService",
+                    "Name": "Root Service",
+                    "Systems": { ODATA_ID: SYSTEMS },
+                    "Links": { "Sessions": { ODATA_ID: format!("{ROOT}/SessionService/Sessions") } },
+                }),
+            ),
+            (
+                SYSTEMS,
+                json!({
+                    ODATA_ID: SYSTEMS,
+                    ODATA_TYPE: "#ComputerSystemCollection.ComputerSystemCollection",
+                    "Name": "Computer System Collection",
+                    "Members": [{ ODATA_ID: SYSTEM }],
+                }),
+            ),
+            (
+                SYSTEM,
+                json!({
+                    ODATA_ID: SYSTEM,
+                    ODATA_TYPE: "#ComputerSystem.v1_20_0.ComputerSystem",
+                    "Id": "1",
+                    "Name": "System",
+                    "Actions": {
+                        "#ComputerSystem.Reset": {
+                            "target": RESET,
+                        }
+                    }
+                }),
+            ),
+        ] {
+            Mock::given(method("GET"))
+                .and(path(at))
+                .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                .mount(&server)
+                .await;
+        }
+        Mock::given(method("POST"))
+            .and(path(RESET))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&reset_reply))
+            .mount(&server)
+            .await;
+
+        let root = ServiceRoot::new(transport(&server)?).await?;
+        let systems = root.systems().await?.ok_or("systems")?;
+        let system = systems
+            .members()
+            .await?
+            .into_iter()
+            .next()
+            .ok_or("system")?;
+
+        let response = system.reset(Some(ResetType::ForceRestart)).await?;
+        let ModificationResponse::Message(body) = response else {
+            return Err(
+                format!("expected ModificationResponse::Message, got {:?}", response).into(),
+            );
+        };
+        assert_eq!(body, reset_reply);
+        assert_eq!(success_code(&body), expected_success);
+        assert_eq!(strict_success_code(&body), expected_strict);
+    }
+
     Ok(())
 }

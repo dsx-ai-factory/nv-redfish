@@ -66,6 +66,8 @@ impl<B: Bmc> EventDestination<B> {
     /// - `ModificationResponse::Entity` contains the event destination
     ///   returned by the server.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///

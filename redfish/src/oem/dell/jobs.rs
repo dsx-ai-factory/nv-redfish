@@ -75,6 +75,7 @@ impl<B: Bmc> DellJobs<B> {
                     })
                 }
                 ModificationResponse::Task(task) => ModificationResponse::Task(task),
+                ModificationResponse::Message(message) => ModificationResponse::Message(message),
                 ModificationResponse::Empty => ModificationResponse::Empty,
             })
             .map_err(Error::from)

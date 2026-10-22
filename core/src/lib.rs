@@ -245,12 +245,15 @@ pub enum ModificationResponse<T> {
     /// Request is completing asynchronously with the provided task location.
     Task(AsyncTask),
 
+    /// Request completed synchronously with a success message body.
+    Message(serde_json::Value),
+
     /// Request completed successfully with no response body.
     Empty,
 }
 
 impl<T> ModificationResponse<T> {
-    /// Maps an entity outcome while preserving task and empty outcomes.
+    /// Maps an entity outcome while preserving task, message, and empty outcomes.
     pub fn map_entity<U, F>(self, f: F) -> ModificationResponse<U>
     where
         F: FnOnce(T) -> U,
@@ -258,12 +261,13 @@ impl<T> ModificationResponse<T> {
         match self {
             Self::Entity(entity) => ModificationResponse::Entity(f(entity)),
             Self::Task(task) => ModificationResponse::Task(task),
+            Self::Message(message) => ModificationResponse::Message(message),
             Self::Empty => ModificationResponse::Empty,
         }
     }
 
-    /// Maps an entity outcome with a fallible function while preserving task
-    /// and empty outcomes.
+    /// Maps an entity outcome with a fallible function while preserving task,
+    /// message, and empty outcomes.
     ///
     /// # Errors
     ///
@@ -275,12 +279,13 @@ impl<T> ModificationResponse<T> {
         match self {
             Self::Entity(entity) => f(entity).map(ModificationResponse::Entity),
             Self::Task(task) => Ok(ModificationResponse::Task(task)),
+            Self::Message(message) => Ok(ModificationResponse::Message(message)),
             Self::Empty => Ok(ModificationResponse::Empty),
         }
     }
 
     /// Asynchronously maps an entity outcome with a fallible function while
-    /// preserving task and empty outcomes.
+    /// preserving task, message, and empty outcomes.
     ///
     /// # Errors
     ///
@@ -296,6 +301,7 @@ impl<T> ModificationResponse<T> {
         match self {
             Self::Entity(entity) => f(entity).await.map(ModificationResponse::Entity),
             Self::Task(task) => Ok(ModificationResponse::Task(task)),
+            Self::Message(message) => Ok(ModificationResponse::Message(message)),
             Self::Empty => Ok(ModificationResponse::Empty),
         }
     }
@@ -412,6 +418,16 @@ mod tests {
         Ok(())
     }
 
+    fn assert_message<T>(response: ModificationResponse<T>) -> Result<(), &'static str> {
+        let ModificationResponse::Message(message) = response else {
+            return Err("expected a message response");
+        };
+
+        assert_eq!(message, serde_json::json!({"code": "Base.1.18.Success"}));
+
+        Ok(())
+    }
+
     fn assert_empty<T>(response: ModificationResponse<T>) -> Result<(), &'static str> {
         if !matches!(response, ModificationResponse::Empty) {
             return Err("expected an empty response");
@@ -428,14 +444,19 @@ mod tests {
         })
     }
 
+    fn message_response() -> ModificationResponse<()> {
+        ModificationResponse::Message(serde_json::json!({"code": "Base.1.18.Success"}))
+    }
+
     #[test]
-    fn map_entity_maps_entity_and_preserves_task_and_empty() -> Result<(), &'static str> {
+    fn map_entity_maps_entity_and_preserves_task_message_and_empty() -> Result<(), &'static str> {
         assert_entity(
             ModificationResponse::Entity(21_u32).map_entity(|value| value * 2),
             42,
         )?;
 
         assert_task(task_response().map_entity(|()| 42_u32))?;
+        assert_message(message_response().map_entity(|()| 42_u32))?;
         assert_empty(ModificationResponse::<()>::Empty.map_entity(|()| 42_u32))?;
 
         Ok(())
@@ -457,8 +478,9 @@ mod tests {
     }
 
     #[test]
-    fn try_map_entity_preserves_task_and_empty() -> Result<(), &'static str> {
+    fn try_map_entity_preserves_task_message_and_empty() -> Result<(), &'static str> {
         assert_task(task_response().try_map_entity(|()| Ok::<u32, &'static str>(42))?)?;
+        assert_message(message_response().try_map_entity(|()| Ok::<u32, &'static str>(42))?)?;
 
         assert_empty(
             ModificationResponse::<()>::Empty.try_map_entity(|()| Ok::<u32, &'static str>(42))?,
@@ -468,7 +490,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn try_map_entity_async_maps_entity_and_preserves_task_and_empty(
+    async fn try_map_entity_async_maps_entity_and_preserves_task_message_and_empty(
     ) -> Result<(), &'static str> {
         assert_entity(
             ModificationResponse::Entity(21_u32)
@@ -479,6 +501,12 @@ mod tests {
 
         assert_task(
             task_response()
+                .try_map_entity_async(|()| async { Ok::<u32, &'static str>(42) })
+                .await?,
+        )?;
+
+        assert_message(
+            message_response()
                 .try_map_entity_async(|()| async { Ok::<u32, &'static str>(42) })
                 .await?,
         )?;

@@ -163,7 +163,7 @@ impl<R: DeserializeOwned + Send + Sync> AsyncActionResult<R> {
                 result_without_body()
                     .map_or_else(|| State::Pending(pending_at(location)), State::Ready)
             }
-            ModificationResponse::Empty => State::Finished,
+            ModificationResponse::Message(_) | ModificationResponse::Empty => State::Finished,
         };
         Ok(Self { state })
     }
@@ -244,7 +244,7 @@ impl<R: DeserializeOwned + Send + Sync> AsyncActionResult<R> {
                     return Ok(Some(result));
                 }
                 ModificationResponse::Entity(OperationBody::Location(location)) => Some(location),
-                ModificationResponse::Empty => None,
+                ModificationResponse::Message(_) | ModificationResponse::Empty => None,
                 ModificationResponse::Entity(OperationBody::Task(task)) => match task.task_state {
                     Some(TaskState::Completed) => recorded_location(&task),
                     Some(

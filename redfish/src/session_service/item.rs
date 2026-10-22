@@ -88,6 +88,8 @@ impl<B: Bmc> Session<B> {
     /// - `ModificationResponse::Entity` contains the session returned by the
     ///   server.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///

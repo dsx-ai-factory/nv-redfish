@@ -145,7 +145,9 @@ async fn main() -> Result<(), Box<dyn StdError>> {
              BlueField applies the key on the next boot.",
             task.location.0, task.retry_after
         ),
-        ModificationResponse::Empty => println!("Upload accepted"),
+        ModificationResponse::Message(_) | ModificationResponse::Empty => {
+            println!("Upload accepted");
+        }
     }
     Ok(())
 }

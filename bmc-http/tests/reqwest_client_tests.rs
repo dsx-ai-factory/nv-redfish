@@ -1396,7 +1396,7 @@ mod reqwest_client_tests {
     }
 
     #[tokio::test]
-    async fn test_action_success_message_with_location_and_unit_output_returns_empty(
+    async fn test_action_success_message_with_location_and_unit_output_returns_message(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;
         let action_path = "/redfish/v1/systems/1/Actions/ComputerSystem.Reset";
@@ -1432,7 +1432,9 @@ mod reqwest_client_tests {
 
         let response = bmc.action(&action, &action_request).await?;
 
-        assert!(matches!(response, ModificationResponse::Empty));
+        assert!(
+            matches!(response, ModificationResponse::Message(ref message) if message == &success_body)
+        );
 
         Ok(())
     }
@@ -1440,7 +1442,7 @@ mod reqwest_client_tests {
     /// Supermicro (AST2600, firmware 01.03.34) answers writes with its status
     /// under `Success` rather than `error`.
     #[tokio::test]
-    async fn test_supermicro_success_status_reads_as_an_empty_response(
+    async fn test_supermicro_success_status_reads_as_a_message_response(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let action_path = "/redfish/v1/Managers/1/Actions/Manager.Reset";
         let resource_path = "/redfish/v1/AccountService";
@@ -1499,12 +1501,18 @@ mod reqwest_client_tests {
 
             if accepted {
                 assert!(
-                    matches!(action_response, Ok(ModificationResponse::Empty)),
+                    matches!(
+                        action_response,
+                        Ok(ModificationResponse::Message(ref message)) if message == &body
+                    ),
                     "action: {:?}",
                     action_response
                 );
                 assert!(
-                    matches!(update_response, Ok(ModificationResponse::Empty)),
+                    matches!(
+                        update_response,
+                        Ok(ModificationResponse::Message(ref message)) if message == &body
+                    ),
                     "update: {:?}",
                     update_response.map(|_| ())
                 );
@@ -1628,7 +1636,10 @@ mod reqwest_client_tests {
 
             if accepted {
                 assert!(
-                    matches!(response, Ok(ModificationResponse::Empty)),
+                    matches!(
+                        response,
+                        Ok(ModificationResponse::Message(ref message)) if message == &body
+                    ),
                     "{}: {:?}",
                     scenario,
                     response

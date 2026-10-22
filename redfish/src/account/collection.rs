@@ -155,6 +155,8 @@ impl<B: Bmc> AccountCollection<B> {
     ///
     /// - `ModificationResponse::Entity` contains the newly created account.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///

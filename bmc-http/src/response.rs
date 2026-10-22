@@ -192,10 +192,10 @@ fn key(id: &str) -> &str {
 /// `MessageId`, makes the body not a success, as does
 /// `@Message.ExtendedInfo` that is not an array.
 ///
-/// A success can come with warnings and other messages. An
-/// [`HttpClient`](crate::HttpClient) or decoder caller that has the response
-/// body and must not count those, such as for a host reset, uses
-/// [`strict_success_code`].
+/// A success can come with warnings and other messages. A caller that
+/// must not count those, such as for a host reset, inspects the
+/// [`ModificationResponse::Message`] body (or [`ModificationResponse::Entity`]
+/// when decoding into [`Value`]) with [`strict_success_code`].
 #[must_use]
 pub fn success_code(body: &Value) -> Option<SuccessCode> {
     report(body).map(|report| report.code)
@@ -212,10 +212,11 @@ pub fn success_code(body: &Value) -> Option<SuccessCode> {
 ///
 /// So a warning, a message from another registry such as Dell's
 /// `IDRAC.2.9.SYS413`, or an empty `@Message.ExtendedInfo` makes this
-/// `None` although [`success_code`] reads a success. An
-/// [`HttpClient`](crate::HttpClient) or decoder caller that has the response
-/// body and must know that an action did what it asked, such as a host
-/// reset, accepts only `Some(SuccessCode::Success)`.
+/// `None` although [`success_code`] reads a success. A caller that must
+/// know that an action did what it asked, such as a host reset, inspects
+/// the [`ModificationResponse::Message`] body (or
+/// [`ModificationResponse::Entity`] when decoding into [`Value`]) and accepts
+/// only `Some(SuccessCode::Success)`.
 #[must_use]
 pub fn strict_success_code(body: &Value) -> Option<SuccessCode> {
     report(body)
@@ -361,14 +362,18 @@ fn is_message_envelope(body: &Value) -> bool {
 /// - `200 OK` or `201 Created` is the body as `T`, with the `ETag` header as
 ///   the `@odata.etag` of a body that names its `@odata.id`. A body that is
 ///   not `T` but a success message (see [`success_code`]) is
-///   [`ModificationResponse::Empty`], or the resource its `Location` names
+///   [`ModificationResponse::Message`], or the resource its `Location` names
 ///   when that is a `T`. An empty body is that resource, or
 ///   [`ModificationResponse::Empty`] without a `Location`.
 ///
-/// A success message is [`ModificationResponse::Empty`] whatever it reports,
-/// `NoOperation` and warnings included. An [`HttpClient`](crate::HttpClient)
-/// or decoder caller that has the response body and must tell those apart
-/// inspects it with [`success_code`] or [`strict_success_code`].
+/// A success message that does not deserialize as `T` is
+/// [`ModificationResponse::Message`] whatever it reports, `NoOperation` and
+/// warnings included. Because deserializing `T` takes precedence, a caller
+/// that decodes into [`Value`] (or another type that accepts message objects)
+/// receives [`ModificationResponse::Entity`] instead. A caller that must tell
+/// outcomes apart inspects the [`ModificationResponse::Message`] body—or
+/// [`ModificationResponse::Entity`] when `T` is [`Value`]—with
+/// [`success_code`] or [`strict_success_code`].
 ///
 /// # Errors
 ///
@@ -449,14 +454,14 @@ where
                             // A success message is not the requested
                             // representation. Preserve an accompanying
                             // resource Location in the same way as an
-                            // empty 200/201 response.
+                            // empty 200/201 response, or return the
+                            // message body so callers can inspect it.
                             if let Some(location) = location? {
-                                return Ok(entity_reference(&location)
-                                    .map_or(ModificationResponse::Empty, |entity| {
-                                        ModificationResponse::Entity(entity)
-                                    }));
+                                if let Ok(entity) = entity_reference(&location) {
+                                    return Ok(ModificationResponse::Entity(entity));
+                                }
                             }
-                            Ok(ModificationResponse::Empty)
+                            Ok(ModificationResponse::Message(value))
                         } else if is_message_envelope(&value) {
                             // A message envelope that is not a success, such
                             // as a 200 with a Critical message or an error
@@ -1237,9 +1242,9 @@ mod tests {
         }
     }
 
-    /// Verifies that a `200 OK` success message decodes as [`ModificationResponse::Empty`].
+    /// Verifies that a `200 OK` success message decodes as [`ModificationResponse::Message`].
     #[test]
-    fn a_success_message_is_an_empty_response() -> Result<(), Box<dyn StdError>> {
+    fn a_success_message_is_a_message_response() -> Result<(), Box<dyn StdError>> {
         for body in [
             json!({"error": {"code": "Base.1.8.Success", "message": "Done."}}),
             json!({"Success": {"code": "Base.1.10.Success", "message": "Done."}}),
@@ -1255,7 +1260,7 @@ mod tests {
             }}),
             json!({"@Message.ExtendedInfo": [{"MessageId": "Base.1.13.0.Success"}]}),
             // NoOperation and warnings are successes too; strict_success_code
-            // tells them apart.
+            // tells them apart on the preserved ModificationResponse::Message body.
             json!({"Success": {"code": "Base.1.10.NoOperation", "message": "Nothing."}}),
             json!({"@Message.ExtendedInfo": [
                 {"MessageId": "Base.1.8.Success"},
@@ -1263,7 +1268,12 @@ mod tests {
             ]}),
         ] {
             let response = decode::<()>(StatusCode::OK, &HeaderMap::new(), &body)?;
-            assert!(matches!(response, ModificationResponse::Empty), "{}", body);
+            assert!(
+                matches!(response, ModificationResponse::Message(ref message) if message == &body),
+                "{}: {:?}",
+                body,
+                response
+            );
         }
         Ok(())
     }
@@ -1339,9 +1349,9 @@ mod tests {
         };
         assert_eq!(reference.odata_id, "/redfish/v1/TaskService/Tasks/42");
 
-        // A result type that is not a reference ignores the Location.
+        // A result type that is not a reference ignores the Location and keeps the message body.
         let response = decode::<()>(StatusCode::OK, &location, &body)?;
-        assert!(matches!(response, ModificationResponse::Empty));
+        assert!(matches!(response, ModificationResponse::Message(ref message) if message == &body));
         Ok(())
     }
 
@@ -1629,7 +1639,7 @@ mod tests {
             &HeaderMap::new(),
             br#"{"Success":{"code":"Base.1.10.Success","message":"Done."}}"#,
         )?;
-        assert!(matches!(response, ModificationResponse::Empty));
+        assert!(matches!(response, ModificationResponse::Message(_)));
 
         let response = decode_poll::<()>(
             &polled,
@@ -1637,7 +1647,7 @@ mod tests {
             &HeaderMap::new(),
             br#"{"Success":{"code":"Base.1.10.Success"},"@Message.ExtendedInfo":[{"MessageId":"Base.1.10.Success"}]}"#,
         )?;
-        assert!(matches!(response, ModificationResponse::Empty));
+        assert!(matches!(response, ModificationResponse::Message(_)));
         Ok(())
     }
 

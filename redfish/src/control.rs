@@ -34,7 +34,7 @@
 //!     ModificationResponse::Task(task) => {
 //!         let _task = task;
 //!     }
-//!     ModificationResponse::Empty => {}
+//!     ModificationResponse::Message(_) | ModificationResponse::Empty => {}
 //! }
 //! ```
 
@@ -163,7 +163,7 @@ impl<B: Bmc> Control<B> {
     ///     ModificationResponse::Task(task) => {
     ///         let _update_task = task;
     ///     }
-    ///     ModificationResponse::Empty => {}
+    ///     ModificationResponse::Message(_) | ModificationResponse::Empty => {}
     /// }
     /// ```
     ///

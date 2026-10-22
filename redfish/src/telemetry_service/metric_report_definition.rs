@@ -62,6 +62,8 @@ impl<B: Bmc> MetricReportDefinition<B> {
     /// - `ModificationResponse::Entity` contains the updated metric report
     ///   definition.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///
@@ -90,6 +92,8 @@ impl<B: Bmc> MetricReportDefinition<B> {
     /// - `ModificationResponse::Entity` contains the metric report definition
     ///   returned by the server.
     /// - `ModificationResponse::Task` identifies an asynchronous operation.
+    /// - `ModificationResponse::Message` reports synchronous success with a
+    ///   message body.
     /// - `ModificationResponse::Empty` reports synchronous success without a
     ///   response body.
     ///
