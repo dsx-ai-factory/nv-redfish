@@ -13,24 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! CSDL/Redfish schema compiler and code generator
-//!
-//! This crate parses EDMX/CSDL documents and compiles them into a
-//! stable intermediate representation, then generates ergonomic Rust
-//! code for Redfish-based APIs.
-//!
-//! At a glance
-//! - Parse: read one or more EDMX documents (`edmx`)
-//! - Compile: resolve types, properties, actions, and annotations into
-//!   `Compiled` (`compiler`); optionally optimize the set (`optimizer`)
-//! - Generate: produce Rust modules and types (`generator`)
-//!
-//! Key features
-//! - Understands `OData` annotations (permissions, insert/update/delete)
-//! - Handles Redfish specifics (required flags, settings, actions)
-//! - Supports selective compilation via patterns and root singletons
-//! - Deterministic output designed for straightforward codegen
-
+#![doc = include_str!("../README.md")]
 #![deny(
     clippy::all,
     clippy::pedantic,
