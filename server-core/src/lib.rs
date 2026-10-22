@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shared serialization primitives for generated Redfish server models.
+#![doc = include_str!("../README.md")]
 
 use std::collections::BTreeMap;
 
