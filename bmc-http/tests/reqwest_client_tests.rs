@@ -29,9 +29,7 @@ mod reqwest_client_tests {
     use nv_redfish_bmc_http::CacheSettings;
     use nv_redfish_bmc_http::HttpBmc;
     use nv_redfish_bmc_http::HttpClient;
-    #[cfg(feature = "update-service-deprecated")]
     use nv_redfish_core::HttpPushUriUpdateRequest;
-    #[cfg(feature = "update-service-deprecated")]
     use nv_redfish_core::UploadStream;
     use nv_redfish_core::{
         query::{ExpandQuery, FilterQuery},
@@ -39,7 +37,6 @@ mod reqwest_client_tests {
     };
     use serde::{Deserialize, Serialize};
     use url::Url;
-    #[cfg(feature = "update-service-deprecated")]
     use wiremock::Request;
     use wiremock::{
         matchers::{body_json, header, method, path, query_param},
@@ -546,7 +543,6 @@ mod reqwest_client_tests {
         Ok(())
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     #[tokio::test]
     async fn http_push_uri_relative_task() -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;
@@ -593,7 +589,6 @@ mod reqwest_client_tests {
         Ok(())
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     #[tokio::test]
     async fn http_push_uri_absolute_token_empty() -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;
@@ -629,7 +624,6 @@ mod reqwest_client_tests {
         Ok(())
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     #[tokio::test]
     async fn http_push_uri_rejects_cross_origin_uri() -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;
@@ -652,7 +646,6 @@ mod reqwest_client_tests {
         Ok(())
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     #[tokio::test]
     async fn http_push_uri_error_response() -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;
@@ -685,7 +678,6 @@ mod reqwest_client_tests {
     }
 
     /// Verifies that `HttpPushUri` upload timeout applies only to the upload request.
-    #[cfg(feature = "update-service-deprecated")]
     #[tokio::test]
     async fn http_push_uri_timeout_scoped() -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;

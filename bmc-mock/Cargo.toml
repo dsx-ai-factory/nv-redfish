@@ -11,10 +11,6 @@ keywords.workspace = true
 categories.workspace = true
 documentation = "https://docs.rs/nv-redfish-bmc-mock"
 
-[features]
-default = []
-update-service-deprecated = ["nv-redfish-core/update-service-deprecated"]
-
 [dependencies]
 nv-redfish-core = { workspace = true }
 futures-core = { workspace = true }

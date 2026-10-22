@@ -28,7 +28,6 @@ reqwest-rustls-no-provider = ["reqwest-client", "reqwest?/rustls-tls-webpki-root
 # TLS.
 reqwest-client = ["dep:reqwest", "dep:futures-util", "dep:sse-stream", "dep:tokio-util", "dep:tokio", "tokio/time", "dep:bytes"]
 http-extras = ["dep:tokio", "tokio/sync"]
-update-service-deprecated = ["nv-redfish-core/update-service-deprecated"]
 
 [dependencies]
 bytes = { workspace = true, optional = true }

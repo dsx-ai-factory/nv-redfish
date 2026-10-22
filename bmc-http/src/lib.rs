@@ -89,10 +89,8 @@ pub use response::success_code;
 pub use response::ModificationDecodeError;
 pub use response::SuccessCode;
 
-#[cfg(feature = "update-service-deprecated")]
 #[doc(inline)]
 pub use nv_redfish_core::HttpPushUriUpdateRequest;
-#[cfg(feature = "update-service-deprecated")]
 #[doc(inline)]
 pub use nv_redfish_core::UploadStream;
 
@@ -179,7 +177,6 @@ pub trait HttpClient: Send + Sync {
     /// This supports the deprecated `HttpPushUri` update path that exists in
     /// the Redfish spec. Prefer multipart update for BMCs that support
     /// `MultipartHttpPushUri`.
-    #[cfg(feature = "update-service-deprecated")]
     fn post_http_push_uri_update<U, T>(
         &self,
         url: Url,
@@ -864,7 +861,6 @@ where
             .await
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     async fn http_push_uri_update<U, R>(
         &self,
         uri: &str,

@@ -26,7 +26,6 @@ use nv_redfish::bmc_http::BmcCredentials;
 use nv_redfish::bmc_http::CacheSettings;
 use nv_redfish::bmc_http::HttpBmc;
 use nv_redfish::core::DataStream;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish::core::UploadStream;
 use nv_redfish::update_service::MultipartUpdateParameters;
 use nv_redfish::ServiceRoot;
@@ -53,7 +52,6 @@ struct Args {
     #[arg(long, default_value_t = false)]
     force_update: bool,
 
-    #[cfg(feature = "update-service-deprecated")]
     #[arg(long, default_value_t = false)]
     http_push_uri: bool,
 
@@ -81,7 +79,6 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     let firmware = std::fs::File::open(&args.file)?;
     let content_length = firmware.metadata()?.len();
 
-    #[cfg(feature = "update-service-deprecated")]
     if args.http_push_uri {
         let update_stream =
             UploadStream::new(AllowStdIo::new(firmware)).with_content_length(content_length);

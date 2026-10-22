@@ -20,7 +20,6 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use nv_redfish_core::query::ExpandQuery;
 use nv_redfish_core::repair::decode_raw;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
 use nv_redfish_core::{
     Action, ActionError, Bmc, EntityTypeRef, Expandable, ModificationResponse,
@@ -647,7 +646,6 @@ impl Bmc for MockBmc {
         Err(Error::NotSupported)
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     async fn http_push_uri_update<U, R>(
         &self,
         _uri: &str,

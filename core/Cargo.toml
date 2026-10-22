@@ -11,10 +11,6 @@ keywords.workspace = true
 categories.workspace = true
 documentation = "https://docs.rs/nv-redfish-core"
 
-[features]
-default = []
-update-service-deprecated = []
-
 [dependencies]
 futures-core = { workspace = true }
 futures-io = { workspace = true }

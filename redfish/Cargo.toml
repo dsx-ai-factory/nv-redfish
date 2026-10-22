@@ -123,11 +123,6 @@ storages = []
 task-service = ["impl-entity-link"]
 thermal = []  # Support of legacy ThermalSubsystem
 update-service = ["patch-collection"]
-update-service-deprecated = [
-    "update-service",
-    "nv-redfish-core/update-service-deprecated",
-    "nv-redfish-bmc-http?/update-service-deprecated",
-]
 
 # OEM features support
 oem = []

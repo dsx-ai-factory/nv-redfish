@@ -43,7 +43,7 @@ pub enum Error<B: Bmc> {
     #[cfg(feature = "update-service")]
     UpdateServiceMultipartHttpPushUriNotAvailable,
     /// Update service does not provide `HttpPushUri`
-    #[cfg(feature = "update-service-deprecated")]
+    #[cfg(feature = "update-service")]
     UpdateServiceHttpPushUriNotAvailable,
     /// Task service does not provide a Tasks collection.
     #[cfg(feature = "task-service")]
@@ -115,7 +115,7 @@ impl<B: Bmc> Display for Error<B> {
             Self::UpdateServiceMultipartHttpPushUriNotAvailable => {
                 write!(f, "Update service does not provide MultipartHttpPushUri")
             }
-            #[cfg(feature = "update-service-deprecated")]
+            #[cfg(feature = "update-service")]
             Self::UpdateServiceHttpPushUriNotAvailable => {
                 write!(f, "Update service does not provide HttpPushUri")
             }

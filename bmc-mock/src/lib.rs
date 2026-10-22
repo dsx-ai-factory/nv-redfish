@@ -41,7 +41,6 @@ use nv_redfish_core::BmcErrorClass;
 use nv_redfish_core::DecodeError;
 use nv_redfish_core::EntityTypeRef;
 use nv_redfish_core::Expandable;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::HttpPushUriUpdateRequest;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::MultipartUpdateRequest;
@@ -73,7 +72,6 @@ pub enum Error {
     UnexpectedDelete(ODataId, ExpectedRequest),
     UnexpectedAction(ActionTarget, String, ExpectedRequest),
     UnexpectedMultipartUpdate(String, String, String, ExpectedRequest),
-    #[cfg(feature = "update-service-deprecated")]
     UnexpectedHttpPushUriUpdate(String, ExpectedRequest),
     UnexpectedStream(String, ExpectedRequest),
 }
@@ -131,7 +129,6 @@ impl Display for Error {
                     "unexpected multipart update: {uri}; json: {json}; file: {file}; expected: {expected:?}"
                 )
             }
-            #[cfg(feature = "update-service-deprecated")]
             Self::UnexpectedHttpPushUriUpdate(uri, expected) => {
                 write!(
                     f,
@@ -538,7 +535,6 @@ where
         }
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     async fn http_push_uri_update<U, R>(
         &self,
         in_uri: &str,

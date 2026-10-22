@@ -49,7 +49,6 @@ use crate::response::location_from_headers;
 use crate::BmcCredentials;
 use crate::CacheableError;
 use crate::HttpClient;
-#[cfg(feature = "update-service-deprecated")]
 use crate::HttpPushUriUpdateRequest;
 use crate::ModificationDecodeError;
 use crate::MultipartUpdateRequest;
@@ -75,7 +74,6 @@ use nv_redfish_core::Repair;
 use nv_redfish_core::SessionCreateResponse;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
-#[cfg(feature = "update-service-deprecated")]
 use nv_redfish_core::UploadStream;
 use reqwest::multipart::Form;
 use reqwest::multipart::Part;
@@ -1232,7 +1230,6 @@ impl HttpClient for Client {
         self.handle_modification_response(response).await
     }
 
-    #[cfg(feature = "update-service-deprecated")]
     async fn post_http_push_uri_update<U, T>(
         &self,
         url: Url,
