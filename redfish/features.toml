@@ -304,12 +304,19 @@ csdl_files = [
 patterns = [
     "EventService.*",
     "EventDestination.*",
-    "EventDestinationCollection.*",
     "MetricReport.*",
     "PhysicalContext.*",
     "Schedule.*",
 ]
-root_patterns = [ "Event.v1_0_0.Event", "Event.v1_0_0.EventRecord", "MetricReport.v1_0_0.MetricReport" ]
+root_patterns = [
+    "Event.v1_0_0.Event",
+    "Event.v1_0_0.EventRecord",
+    "MetricReport.v1_0_0.MetricReport",
+    # Keep destination fields and collection metadata without generating
+    # EventDestinationCollection, so EventService.Subscriptions stays a ReferenceLeaf.
+    "EventDestination.*.EventDestination",
+    "Resource.v1_0_0.ResourceCollection",
+]
 
 
 [[features]]
