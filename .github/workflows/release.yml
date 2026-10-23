@@ -43,16 +43,10 @@ jobs:
         # Update workspace version in Cargo.toml
         sed -i -E '/^\[workspace\.package\]/,/^\[/{s/^version = .*/version = "'"$VERSION"'"/}' Cargo.toml
 
-        # Update workspace local crate dependency versions in Cargo.toml
-        sed -i -E 's/^(nv-redfish-core = \{ version = ")[^"]+(", path = "\.\/core" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish-bmc-http = \{ version = ")[^"]+(", path = "\.\/bmc-http" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish-quirks = \{ version = ")[^"]+(", path = "\.\/quirks" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish-bmc-mock = \{ version = ")[^"]+(", path = "\.\/bmc-mock" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish = \{ version = ")[^"]+(", path = "\.\/redfish" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish-csdl-compiler = \{ version = ")[^"]+(", path = "\.\/csdl-compiler" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish-schema = \{ version = ")[^"]+(", path = "\.\/schema" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish-dispatcher = \{ version = ")[^"]+(", path = "\.\/dispatcher" \})/\1'"$VERSION"'\2/' Cargo.toml
-        sed -i -E 's/^(nv-redfish-server-core = \{ version = ")[^"]+(", path = "\.\/server-core" \})/\1'"$VERSION"'\2/' Cargo.toml
+        # Point every workspace crate dependency at the release version. The
+        # pattern stops after the path, so options that follow it on the line
+        # (default-features, features) cannot keep a line from matching.
+        sed -i -E 's/^(nv-redfish[a-z-]* = \{ version = ")[^"]+(", path = )/\1'"$VERSION"'\2/' Cargo.toml
 
         echo "Publishing dispatcher..."
         cargo publish -p nv-redfish-dispatcher --all-features --allow-dirty
