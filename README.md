@@ -1,11 +1,51 @@
 # nv-redfish
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 `nv-redfish` is a modular Rust client stack for Redfish BMC management.
+
+It is for Rust developers building infrastructure management tools that need
+typed access to BMC resources. Handwritten JSON models and device-specific
+response handling are difficult to keep consistent across firmware versions.
+This project generates types from Redfish schemas and keeps compatibility
+repairs separate from application logic.
 
 The project combines generated Redfish schema types with a small transport
 abstraction and optional ergonomic wrappers for common Redfish services. The
 main crate is intentionally feature-gated: enable the service and OEM support
 your client needs, or use `std-redfish` for a broad standard Redfish build.
+
+The schema layer integrates DMTF Redfish, SNIA Swordfish, and selected OEM
+extensions; the optional HTTP transport uses reqwest and Tokio. The project
+provides client APIs and server response serialization primitives. Applications
+supply BMC access, credentials, and management workflows; the response models
+do not provide an HTTP server.
+
+## Quick Start
+
+Install Git, a C toolchain for native dependencies, and Rust through rustup.
+The checked-in [toolchain file](rust-toolchain.toml) selects Rust 1.95.0.
+Clone the schema submodules along with the source, then check the minimal client
+and run a local response example:
+
+```sh
+git clone --recurse-submodules https://github.com/dsx-ai-factory/nv-redfish.git
+cd nv-redfish
+cargo check -p readme-minimal
+cargo run -p server-response
+```
+
+`cargo check` verifies the client example without contacting a BMC. The response
+example prints generated Redfish resource JSON and does not need hardware or
+credentials. To check a broader standard client with NVIDIA OEM extensions:
+
+```sh
+cargo check -p nv-redfish --features std-redfish,oem-nvidia
+```
+
+Choose individual features for a smaller generated API. The
+[Makefile](Makefile) defines the CI feature combinations; `make ci-features`
+checks those combinations, and `make ci` also runs lint and test groups.
 
 ## Crates
 
@@ -197,16 +237,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-See `examples/readme-minimal` for this example as a workspace target.
+See [`examples/readme-minimal`](examples/readme-minimal) for this example as a
+workspace target. Its URL and credentials are placeholders: running it requires
+a reachable BMC and valid credentials, so the quick start checks it without
+running it.
 See [`examples/server-response`](examples/server-response) for CSDL-generated
 server response structs. Run `cargo run -p server-response` to print example
 Chassis and ChassisCollection JSON responses.
-See `examples/session-token` for Redfish SessionService authentication using
+See [`examples/session-token`](examples/session-token) for Redfish SessionService authentication using
 `X-Auth-Token`.
-See `examples/task-service` for polling a Redfish Task through TaskService.
+See [`examples/task-service`](examples/task-service) for polling a Redfish Task through TaskService.
 Pass a Redfish task location returned by an async operation, such as
 `/redfish/v1/TaskService/Tasks/42`, with `--location`.
-See `examples/metrics-oem-nvidia` for walking the metric resources of a live
+See [`examples/metrics-oem-nvidia`](examples/metrics-oem-nvidia) for walking the metric resources of a live
 BMC and reporting its NVIDIA OEM extensions. It separates "no such link" from
 "no extension" from "firmware sent something the schema cannot read", and exits
 non-zero on the last of those. Add `--dump` to print the raw `Oem.Nvidia`
@@ -231,13 +274,30 @@ objects.
 - Keep vendor compatibility fixes in one place, `nv-redfish-quirks`, as facts
   about the documents a device sends rather than changes to the schema.
 
+## Documentation and Support
+
+- [Core types and transport traits](core/README.md)
+- [HTTP transport and TLS configuration](bmc-http/README.md)
+- [CSDL compiler and code generation](csdl-compiler/README.md)
+- [Server serialization primitives](server-core/README.md) and
+  [generated response example](examples/server-response/README.md)
+- [Dispatcher and scheduling](dispatcher/README.md)
+- [GitHub Issues](https://github.com/dsx-ai-factory/nv-redfish/issues) for usage
+  questions, bug reports, and feature requests. Include the enabled features,
+  firmware version, and a sanitized response when reporting compatibility issues.
+- [Contributing guide](CONTRIBUTING.md) and
+  [proposed Code of Conduct](CODE_OF_CONDUCT.md). The conduct proposal awaits
+  owner confirmation of its terms, enforcement responsibilities, and reporting
+  channel before adoption.
+
 ## Security
 - Vulnerability disclosure: [SECURITY.md](SECURITY.md)
 - Do not file public issues for security reports.
 
 ## License
 
-See workspace `Cargo.toml`.
+The project uses [Apache-2.0](LICENSE), as declared in the
+[workspace manifest](Cargo.toml).
 
 This project includes Redfish schema files from DMTF's
 [Redfish-Publications repository](https://github.com/DMTF/Redfish-Publications/tree/main),
