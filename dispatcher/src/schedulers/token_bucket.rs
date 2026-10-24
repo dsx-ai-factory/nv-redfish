@@ -327,6 +327,7 @@ mod tests {
     {
         while let Some(work) = tb.take_next() {
             tb.on_complete(Completion {
+                completed_at: tb.last_now,
                 outcome: CompletionOutcome::Succeeded,
                 latency: Duration::ZERO,
                 meta: work.meta,
@@ -394,6 +395,7 @@ mod tests {
         assert!(tb.update_ready(t0).ready);
         let work = tb.take_next().expect("admitted on the estimate");
         tb.on_complete(Completion {
+            completed_at: tb.last_now,
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,
@@ -423,6 +425,7 @@ mod tests {
         assert!(tb.update_ready(t0).ready, "one token suffices to admit");
         let work = tb.take_next().expect("admitted without a hint");
         tb.on_complete(Completion {
+            completed_at: tb.last_now,
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,
@@ -444,6 +447,7 @@ mod tests {
         assert!(tb.update_ready(t0).ready, "full bucket admits");
         let work = tb.take_next().expect("dispatched at full burst");
         tb.on_complete(Completion {
+            completed_at: tb.last_now,
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,
@@ -474,6 +478,7 @@ mod tests {
         tb.update_ready(t0);
         let work = tb.take_next().expect("admitted on the 1-token gate");
         tb.on_complete(Completion {
+            completed_at: tb.last_now,
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,
@@ -555,6 +560,7 @@ mod tests {
             assert!(tb.update_ready(t0).ready);
             let work = tb.take_next().expect("always admitted");
             tb.on_complete(Completion {
+                completed_at: tb.last_now,
                 outcome: CompletionOutcome::Succeeded,
                 latency: Duration::ZERO,
                 meta: work.meta,

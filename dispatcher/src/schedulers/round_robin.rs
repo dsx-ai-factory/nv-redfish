@@ -503,6 +503,7 @@ mod tests {
         assert_ne!(id0, id1);
 
         rr.on_complete(Completion {
+            completed_at: Instant::now(),
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,

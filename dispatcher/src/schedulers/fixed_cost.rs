@@ -84,6 +84,7 @@ where
 
     fn on_complete(&mut self, completion: Completion<Self::Meta>) {
         self.inner.on_complete(Completion {
+            completed_at: completion.completed_at,
             outcome: completion.outcome,
             latency: completion.latency,
             meta: completion.meta.inner,
@@ -123,6 +124,7 @@ mod tests {
 
         // Completion unwraps back to the child's meta.
         fc.on_complete(Completion {
+            completed_at: Instant::now(),
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,

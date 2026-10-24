@@ -108,6 +108,7 @@ mod unix {
         black_box(root.update_ready(now));
         if let Some(work) = root.take_next() {
             root.on_complete(Completion {
+                completed_at: now,
                 outcome: CompletionOutcome::Succeeded,
                 latency: Duration::ZERO,
                 meta: work.meta,

@@ -226,11 +226,14 @@ pub enum CompletionOutcome {
 /// Completion delivered to [`crate::Scheduler::on_complete`], exactly once
 /// per dispatched item.
 ///
-/// Branches mutate it in place: pop their tag from `routing`, read their
-/// layer off `meta`, then forward a `&mut Completion<C::Meta>` built from
-/// the unwrapped meta to the chosen child.
+/// Scheduler wrappers remove their own routing tags or metadata before passing
+/// the completion to the child that dispatched the work.
 #[derive(Debug, Clone)]
 pub struct Completion<M: WorkMeta> {
+    /// Time when the driver received the job's result, using the same clock as
+    /// [`crate::Scheduler::update_ready`]. Wrappers must preserve this timestamp.
+    pub completed_at: Instant,
+
     /// Success or failure.
     pub outcome: CompletionOutcome,
     /// Wall-clock latency between dispatch and completion.

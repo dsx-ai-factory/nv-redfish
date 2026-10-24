@@ -192,6 +192,7 @@ mod tests {
         let work = sched.take_next()?;
         let routing_for_inspection = work.routing.clone();
         let completion = Completion {
+            completed_at: Instant::now(),
             outcome,
             latency,
             meta: work.meta,
