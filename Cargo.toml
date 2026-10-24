@@ -41,7 +41,7 @@ categories = ["hardware-support"]
 [workspace.dependencies]
 clap = { version = "4.5" }
 clap_derive = { version = "4.5" }
-sse-stream = { version = "0.2.4" }
+sse-stream = { version = "0.3.0" }
 bytes = { version = "1" }
 futures-util = { version = "0.3" }
 futures-core = { version = "0.3" }

@@ -204,6 +204,8 @@ mod tests {
             "expected SseEventTooLarge, got: {:?}",
             result
         );
+
+        assert!(stream.next().await.is_none());
     }
 
     /// Verifies that the SSE stream aborts when no frame arrives within `sse_idle_timeout`.
@@ -277,6 +279,8 @@ mod tests {
             "expected SseIdleTimeout, got: {:?}",
             result
         );
+
+        assert!(stream.next().await.is_none());
     }
 
     #[tokio::test]
@@ -295,6 +299,189 @@ mod tests {
         ResponseTemplate::new(200)
             .insert_header("content-type", "text/event-stream")
             .set_body_string(body)
+    }
+
+    #[tokio::test]
+    async fn valid_sse_fields_preserve_data_and_update_the_resume_cursor() {
+        for (fields, expected_id) in [
+            ("extension: ignored\n", Some("previous")),
+            ("id: first\nid: second\n", Some("second")),
+            ("id\n", None),
+            ("id: valid\nid: ignored\0value\n", Some("valid")),
+        ] {
+            for line_ending in ["\n", "\r\n", "\r"] {
+                let mock_server = MockServer::start().await;
+                let body = format!("{fields}data: 1\n\ndata: 2\n\n").replace('\n', line_ending);
+
+                Mock::given(method("GET"))
+                    .and(path(SSE_URI))
+                    .respond_with(sse_response(&body))
+                    .expect(1)
+                    .mount(&mock_server)
+                    .await;
+
+                let bmc = create_test_bmc(&mock_server);
+
+                let mut stream = bmc
+                    .stream_events::<u64>(SSE_URI, Some("previous"))
+                    .await
+                    .expect("stream must open");
+
+                for expected_data in [1, 2] {
+                    let event = stream
+                        .next()
+                        .await
+                        .expect("event must arrive")
+                        .expect("valid SSE fields must decode");
+
+                    assert_eq!(event.data, expected_data, "fields: {fields:?}");
+                    assert_eq!(event.last_event_id.as_deref(), expected_id);
+                }
+
+                assert!(stream.next().await.is_none());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_empty_data_field_returns_a_json_error_without_ending_the_stream() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .respond_with(sse_response("id: first\ndata\n\ndata: 2\n\n"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+
+        let mut stream = bmc
+            .stream_events::<u64>(SSE_URI, None)
+            .await
+            .expect("stream must open");
+
+        let first = stream.next().await.expect("JSON error must arrive");
+
+        assert!(matches!(first, Err(BmcError::JsonError(_))));
+
+        let second = stream
+            .next()
+            .await
+            .expect("subsequent event must arrive")
+            .expect("subsequent event must decode");
+
+        assert_eq!(second.data, 2);
+        assert_eq!(second.last_event_id.as_deref(), Some("first"));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn invalid_utf8_ends_the_stream_after_one_decoder_error() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path(SSE_URI))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_bytes(b"data: \xff\n\ndata: 2\n\n".to_vec()),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+        let mut stream = bmc.stream::<u64>(SSE_URI).await.expect("stream must open");
+        let first = stream.next().await.expect("decoder error must arrive");
+
+        assert!(matches!(first, Err(BmcError::SseStreamError(_))));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn fragmented_multiline_sse_survives_until_a_transport_error() {
+        use nv_redfish_bmc_http::reqwest::ClientParams;
+        use nv_redfish_bmc_http::{CacheSettings, HttpBmc};
+
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        use tokio::net::TcpListener;
+        use url::Url;
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback server");
+
+        let address = listener.local_addr().expect("loopback address");
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("client connection");
+
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let count = socket.read(&mut buffer).await.expect("request headers");
+
+                assert!(count > 0, "request must finish before the client closes");
+
+                request.extend_from_slice(&buffer[..count]);
+            }
+
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
+                      Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("response headers");
+
+            // Split fields and CRLF pairs across HTTP chunks. Closing without
+            // a final zero-length chunk then produces a transport body error.
+            for chunk in [
+                "id: fir",
+                "st\r",
+                "\ndata: {\"n\":\r\nda",
+                "ta: 1}\r",
+                "\n\r",
+                "\ndata: {",
+            ] {
+                let framed = format!("{:x}\r\n{chunk}\r\n", chunk.len());
+
+                socket
+                    .write_all(framed.as_bytes())
+                    .await
+                    .expect("HTTP chunk");
+            }
+        });
+
+        let bmc = HttpBmc::new(
+            test_client(ClientParams::new()),
+            Url::parse(&format!("http://{address}")).expect("loopback URL"),
+            create_test_credentials(),
+            CacheSettings::default(),
+        );
+
+        let mut stream = bmc
+            .stream_events::<JsonValue>(SSE_URI, None)
+            .await
+            .expect("stream must open");
+
+        let first = stream
+            .next()
+            .await
+            .expect("complete event must arrive")
+            .expect("fragmented multiline JSON must decode");
+
+        assert_eq!(first.data, serde_json::json!({"n": 1}));
+        assert_eq!(first.last_event_id.as_deref(), Some("first"));
+
+        let error = stream.next().await.expect("transport error must arrive");
+
+        assert!(matches!(error, Err(BmcError::ReqwestError(_))));
+        assert!(stream.next().await.is_none());
+
+        server.await.expect("loopback server must finish");
     }
 
     #[tokio::test]
