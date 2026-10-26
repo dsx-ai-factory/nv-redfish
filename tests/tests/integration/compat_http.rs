@@ -333,6 +333,47 @@ async fn ami_firmware_is_sent_a_wildcard_if_match() -> Result<(), Box<dyn StdErr
 }
 
 #[test]
+async fn hpe_firmware_is_sent_the_resource_etag_instead_of_a_wildcard(
+) -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+    let mut firmware = undated_firmware();
+    firmware["@odata.etag"] = json!(ETAG);
+    Mock::given(method("GET"))
+        .and(path(FIRMWARE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(firmware))
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path(FIRMWARE))
+        .and(header("if-match", ETAG))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path(FIRMWARE))
+        .and(header("if-match", "*"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let http = transport(&server)?;
+    let update = json!({ "Version": "1" });
+
+    let hpe: Layer = CompatBmc::new(http.clone(), platform("HPE"));
+    let reply = hpe
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), None, &update)
+        .await?;
+    assert!(matches!(reply, ModificationResponse::Empty));
+    let dell: Layer = CompatBmc::new(http, platform("Dell"));
+    let reply = dell
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), None, &update)
+        .await?;
+    assert!(matches!(reply, ModificationResponse::Empty));
+    Ok(())
+}
+
+#[test]
 async fn an_hpe_account_update_answered_with_a_success_message_is_empty(
 ) -> Result<(), Box<dyn StdError>> {
     const ROOT: &str = "/redfish/v1";

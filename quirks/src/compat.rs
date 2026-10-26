@@ -275,10 +275,18 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         etag: Option<&ODataETag>,
         update: &V,
     ) -> Result<ModificationResponse<R>, Self::Error> {
-        // Without an ETag the transport sends `If-Match: *`, the only one
-        // such firmware accepts.
+        // Without an ETag the transport sends `If-Match: *`: the only one
+        // AMI firmware accepts, and one iLO refuses.
+        let read;
         let etag = if self.quirks.bug_rejects_own_etag() {
             None
+        } else if etag.is_none() && self.quirks.bug_rejects_wildcard_etag() {
+            read = self
+                .inner
+                .get::<Raw>(id)
+                .await
+                .map_err(CompatError::from_transport)?;
+            read.etag()
         } else {
             etag
         };

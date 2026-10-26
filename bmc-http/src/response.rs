@@ -163,6 +163,26 @@ fn key(id: &str) -> &str {
     id.rsplit_once('.').map_or(id, |(_, key)| key)
 }
 
+/// Whether the `@Message.ExtendedInfo` of `status` lists messages, all from
+/// the registry of its `code`, as iLO's `iLO.2.15.SystemResetRequired` under
+/// `iLO.0.10.ExtendedInfo`.
+fn only_own_messages(status: &Value, code: &str) -> bool {
+    let registry = code.split('.').next();
+    status
+        .get("@Message.ExtendedInfo")
+        .and_then(Value::as_array)
+        .filter(|messages| !messages.is_empty())
+        .is_some_and(|messages| {
+            messages.iter().all(|message| {
+                message
+                    .get("MessageId")
+                    .and_then(Value::as_str)
+                    .and_then(|id| id.split('.').next())
+                    == registry
+            })
+        })
+}
+
 /// The success that a response body reports when it is a success message
 /// instead of a resource or an action's result.
 ///
@@ -177,9 +197,11 @@ fn key(id: &str) -> &str {
 ///   the `code` of that object, with or without its `message`, as in
 ///   `{"error": {"code": "Base.1.8.Success", "message": "..."}}`. A code
 ///   whose key is `ExtendedInfo`, as HPE iLO's `iLO.0.10.ExtendedInfo`,
-///   reports what the object's own `@Message.ExtendedInfo` names. Any other
-///   code, or an object without one, is not a success, whatever messages
-///   are beside it.
+///   reports what the object's own `@Message.ExtendedInfo` names; when those
+///   are all from the code's registry and name no outcome, as iLO's
+///   `iLO.2.15.SystemResetRequired`, it is [`SuccessCode::Success`], which
+///   its HTTP status reports. Any other code, or an object without one, is
+///   not a success, whatever messages are beside it.
 /// - Otherwise, a body with `@Message.ExtendedInfo` reports what its
 ///   messages name: [`SuccessCode::Created`] when one is `Created`, else
 ///   [`SuccessCode::Success`] when one is `Success`, else
@@ -316,7 +338,14 @@ fn report(body: &Value) -> Option<Report> {
             Some(code) => code,
             // HPE iLO answers with `iLO.0.10.ExtendedInfo`, "See
             // @Message.ExtendedInfo for more information."
-            None if key(code) == "ExtendedInfo" => status_messages.code?,
+            None if key(code) == "ExtendedInfo" => match status_messages.code {
+                Some(code) => code,
+                None if only_own_messages(status, code) => {
+                    named.other = true;
+                    SuccessCode::Success
+                }
+                None => return None,
+            },
             None => return None,
         };
         status_codes.name(code);
@@ -983,7 +1012,15 @@ mod tests {
                 "error": "Failed.",
                 "@Message.ExtendedInfo": [{"MessageId": "Base.1.8.Success"}]
             }),
-            // A code that refers to its messages needs one that is a success.
+            // A code that refers to its messages needs one that is a success,
+            // or only iLO's own.
+            json!({"error": {
+                "code": "iLO.0.10.ExtendedInfo",
+                "@Message.ExtendedInfo": [
+                    {"MessageId": "iLO.2.15.SystemResetRequired"},
+                    {"MessageId": "Base.1.4.ActionParameterNotSupported"}
+                ]
+            }}),
             json!({"error": {
                 "code": "iLO.0.10.ExtendedInfo",
                 "message": "See @Message.ExtendedInfo for more information."
@@ -1057,6 +1094,17 @@ mod tests {
                     "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
                 }}),
                 Some(SuccessCode::Success),
+            ),
+            // A change that takes effect when the system is reset, as iLO 5
+            // answers a BIOS reset or settings write.
+            (
+                "HPE iLO, reset required",
+                json!({"error": {
+                    "code": "iLO.0.10.ExtendedInfo",
+                    "message": "See @Message.ExtendedInfo for more information.",
+                    "@Message.ExtendedInfo": [{"MessageId": "iLO.2.15.SystemResetRequired"}]
+                }}),
+                None,
             ),
             // A success with a note from another registry.
             (

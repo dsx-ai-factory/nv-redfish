@@ -104,6 +104,7 @@ enum Quirk {
     ExpandIsNotWorkingProperly,
     NullableMembers,
     RejectsOwnEtag,
+    RejectsWildcardEtag,
     AcceptedUpdateWithoutTask,
     AcceptedActionWithoutTask,
 }
@@ -121,7 +122,7 @@ struct Rule {
 const RULES: &[Rule] = &[
     Rule {
         covers: |root| root.vendor_is("HPE"),
-        quirks: &[Quirk::NoAccountTypeInAccounts],
+        quirks: &[Quirk::NoAccountTypeInAccounts, Quirk::RejectsWildcardEtag],
     },
     Rule {
         covers: |root| root.vendor_is("Dell"),
@@ -493,6 +494,13 @@ impl BmcQuirks {
         self.has(Quirk::RejectsOwnEtag)
     }
 
+    /// HPE iLO answers `If-Match: *` with `412` and leaves `@odata.etag` out
+    /// of members it expands inline, so a write without an ETag reads the
+    /// resource on its own for one first. Seen on iLO 5 and iLO 6.
+    pub(crate) fn bug_rejects_wildcard_etag(&self) -> bool {
+        self.has(Quirk::RejectsWildcardEtag)
+    }
+
     /// Supermicro answers a staged settings change with `202 Accepted` and
     /// nothing to poll: no `Location` and no Task.
     pub(crate) fn bug_accepted_update_without_task(&self) -> bool {
@@ -546,7 +554,7 @@ mod tests {
             ),
             (
                 json!({ "Vendor": "HPE" }),
-                &[Quirk::NoAccountTypeInAccounts],
+                &[Quirk::NoAccountTypeInAccounts, Quirk::RejectsWildcardEtag],
             ),
             (
                 json!({ "Vendor": "AMI", "RedfishVersion": "1.11.0" }),
