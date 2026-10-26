@@ -163,24 +163,43 @@ fn key(id: &str) -> &str {
     id.rsplit_once('.').map_or(id, |(_, key)| key)
 }
 
-/// Whether the `@Message.ExtendedInfo` of `status` lists messages, all from
-/// the registry of its `code`, as iLO's `iLO.2.15.SystemResetRequired` under
-/// `iLO.0.10.ExtendedInfo`.
-fn only_own_messages(status: &Value, code: &str) -> bool {
+/// The keys of the iLO messages that report a success, with the outcome each
+/// names: a change iLO accepted but has not yet put in effect, or a value it
+/// already held. iLO gives failures such as `InvalidOperationForSystemState`
+/// the same `Warning` or `OK` severity, so only these count.
+const ILO_SUCCESS_MESSAGES: [(&str, SuccessCode); 5] = [
+    ("SystemResetRequired", SuccessCode::Success),
+    ("ResetRequired", SuccessCode::Success),
+    ("DeviceResetRequired", SuccessCode::Success),
+    ("Accepted", SuccessCode::Success),
+    ("PropertyValueAlreadySet", SuccessCode::NoOperation),
+];
+
+/// What the `@Message.ExtendedInfo` of `status` names when it lists messages,
+/// all from the registry of its `code` and in [`ILO_SUCCESS_MESSAGES`], as
+/// `iLO.2.15.SystemResetRequired` under `iLO.0.10.ExtendedInfo`.
+fn ilo_success_messages(status: &Value, code: &str) -> Option<Names> {
     let registry = code.split('.').next();
-    status
-        .get("@Message.ExtendedInfo")
-        .and_then(Value::as_array)
-        .filter(|messages| !messages.is_empty())
-        .is_some_and(|messages| {
-            messages.iter().all(|message| {
-                message
-                    .get("MessageId")
-                    .and_then(Value::as_str)
-                    .and_then(|id| id.split('.').next())
-                    == registry
-            })
-        })
+    let messages = status
+        .get("@Message.ExtendedInfo")?
+        .as_array()
+        .filter(|messages| !messages.is_empty())?;
+    let mut names = Names {
+        listed: true,
+        other: true,
+        ..Names::default()
+    };
+    for message in messages {
+        let id = message.get("MessageId")?.as_str()?;
+        if id.split('.').next() != registry {
+            return None;
+        }
+        let (_, outcome) = ILO_SUCCESS_MESSAGES
+            .iter()
+            .find(|(name, _)| *name == key(id))?;
+        names.name(*outcome);
+    }
+    Some(names)
 }
 
 /// The success that a response body reports when it is a success message
@@ -198,9 +217,10 @@ fn only_own_messages(status: &Value, code: &str) -> bool {
 ///   `{"error": {"code": "Base.1.8.Success", "message": "..."}}`. A code
 ///   whose key is `ExtendedInfo`, as HPE iLO's `iLO.0.10.ExtendedInfo`,
 ///   reports what the object's own `@Message.ExtendedInfo` names; when those
-///   are all from the code's registry and name no outcome, as iLO's
-///   `iLO.2.15.SystemResetRequired`, it is [`SuccessCode::Success`], which
-///   its HTTP status reports. Any other code, or an object without one, is
+///   are all iLO's own successes, it is [`SuccessCode::Success`] for an
+///   accepted change that is not in effect yet, as
+///   `iLO.2.15.SystemResetRequired`, and [`SuccessCode::NoOperation`] for a
+///   value already held, as `iLO.2.15.PropertyValueAlreadySet`. Any other code, or an object without one, is
 ///   not a success, whatever messages are beside it.
 /// - Otherwise, a body with `@Message.ExtendedInfo` reports what its
 ///   messages name: [`SuccessCode::Created`] when one is `Created`, else
@@ -338,14 +358,15 @@ fn report(body: &Value) -> Option<Report> {
             Some(code) => code,
             // HPE iLO answers with `iLO.0.10.ExtendedInfo`, "See
             // @Message.ExtendedInfo for more information."
-            None if key(code) == "ExtendedInfo" => match status_messages.code {
-                Some(code) => code,
-                None if only_own_messages(status, code) => {
-                    named.other = true;
-                    SuccessCode::Success
+            None if key(code) == "ExtendedInfo" => {
+                if let Some(code) = status_messages.code {
+                    code
+                } else {
+                    let ilo = ilo_success_messages(status, code)?;
+                    named.add(ilo);
+                    ilo.code?
                 }
-                None => return None,
-            },
+            }
             None => return None,
         };
         status_codes.name(code);
@@ -1013,7 +1034,15 @@ mod tests {
                 "@Message.ExtendedInfo": [{"MessageId": "Base.1.8.Success"}]
             }),
             // A code that refers to its messages needs one that is a success,
-            // or only iLO's own.
+            // or only iLO's own successes; iLO gives a failure as mild a
+            // severity.
+            json!({"error": {
+                "code": "iLO.0.10.ExtendedInfo",
+                "@Message.ExtendedInfo": [{
+                    "MessageId": "iLO.2.15.InvalidOperationForSystemState",
+                    "MessageSeverity": "Warning"
+                }]
+            }}),
             json!({"error": {
                 "code": "iLO.0.10.ExtendedInfo",
                 "@Message.ExtendedInfo": [
@@ -1283,6 +1312,24 @@ mod tests {
                     "@Message.ExtendedInfo": [{"MessageId": "Base.1.8.Success"}]
                 }),
                 SuccessCode::NoOperation,
+            ),
+            // iLO's own successes, a value it already held among them.
+            (
+                json!({"error": {
+                    "code": "iLO.0.10.ExtendedInfo",
+                    "@Message.ExtendedInfo": [{"MessageId": "iLO.2.15.PropertyValueAlreadySet"}]
+                }}),
+                SuccessCode::NoOperation,
+            ),
+            (
+                json!({"error": {
+                    "code": "iLO.0.10.ExtendedInfo",
+                    "@Message.ExtendedInfo": [
+                        {"MessageId": "iLO.2.15.PropertyValueAlreadySet"},
+                        {"MessageId": "iLO.2.15.ResetRequired"}
+                    ]
+                }}),
+                SuccessCode::Success,
             ),
         ] {
             assert_eq!(success_code(&body), Some(code), "{body}");
