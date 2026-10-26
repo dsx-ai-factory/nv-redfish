@@ -90,6 +90,7 @@ enum Quirk {
     MissingUpdateServiceNameField,
     CertificateTypeWrongPemChainCase,
     ComputerSystemsWrongLastResetTime,
+    EmptyNetworkAdapterControllers,
     SseNoMemberId,
     SseEmptyLogEntry,
     SseWrongTimestampOffset,
@@ -129,6 +130,7 @@ const RULES: &[Rule] = &[
             Quirk::FwInventoryWrongReleaseDate,
             Quirk::JobLocationInCreateResponse,
             Quirk::ComputerSystemsWrongLastResetTime,
+            Quirk::EmptyNetworkAdapterControllers,
             Quirk::SseWrongTimestampOffset,
         ],
     },
@@ -383,6 +385,13 @@ impl BmcQuirks {
         self.has(Quirk::ComputerSystemsWrongLastResetTime)
     }
 
+    /// iDRAC reports `Controllers` on an empty network adapter slot as
+    /// `{}`. The schema types it as a collection, so the empty value is
+    /// `[]`.
+    pub(crate) fn bug_empty_network_adapter_controllers(&self) -> bool {
+        self.has(Quirk::EmptyNetworkAdapterControllers)
+    }
+
     /// Event records in the SSE payload omit `MemberId`.
     pub(crate) fn event_service_sse_no_member_id(&self) -> bool {
         self.has(Quirk::SseNoMemberId)
@@ -541,6 +550,7 @@ mod tests {
                     Quirk::FwInventoryWrongReleaseDate,
                     Quirk::JobLocationInCreateResponse,
                     Quirk::ComputerSystemsWrongLastResetTime,
+                    Quirk::EmptyNetworkAdapterControllers,
                     Quirk::SseWrongTimestampOffset,
                 ][..],
             ),
