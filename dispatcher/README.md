@@ -154,6 +154,24 @@ together. `WorkMeta` accepts any `Send + 'static` type; `()` is suitable when
 no policy metadata is needed. `WithCost` and `WithPriority` add annotations,
 exposed through `HasCost` and `HasPriority`, while preserving wrapped metadata.
 
+### Completion timing
+
+`Completion::completed_at` records when the driver receives a job's result.
+The runtime reads its configured clock after the job's future returns the
+result. Reading the completion time does not advance the virtual clock.
+
+When `CircuitBreaker` opens, it sets the recovery deadline to
+`completed_at + cool_down`. A failed recovery probe starts another cooldown.
+Time spent running the job does not count toward that pause. The probe also
+waits for earlier jobs to finish and for the child scheduler to have work ready.
+
+If you drive a scheduler without `Runtime`, use the same clock for
+`completed_at` and `Scheduler::update_ready`. Wrappers must pass the timestamp
+unchanged to their child scheduler, even when removing their own metadata.
+
+Code constructing a `Completion` must set `completed_at`. Patterns that list
+every field must include `completed_at` or use `..` to ignore unlisted fields.
+
 ## Submit queued work
 
 Build a bounded queue, attach its scheduler leaf to the tree, and retain the

@@ -119,6 +119,7 @@ where
         };
         let priority = u8::try_from(prio_tag).unwrap_or(0);
         let inner_completion = Completion {
+            completed_at: completion.completed_at,
             outcome: completion.outcome,
             latency: completion.latency,
             meta: completion.meta.inner,

@@ -121,6 +121,7 @@ mod tests {
         assert_eq!(bc.in_flight(), 1);
 
         let completion = Completion {
+            completed_at: Instant::now(),
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,
@@ -151,6 +152,7 @@ mod tests {
 
         // Free a slot.
         bc.on_complete(Completion {
+            completed_at: Instant::now(),
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: w0.meta,
@@ -163,12 +165,14 @@ mod tests {
         assert_eq!(bc.in_flight(), 2);
 
         bc.on_complete(Completion {
+            completed_at: Instant::now(),
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: w1.meta,
             routing: w1.routing,
         });
         bc.on_complete(Completion {
+            completed_at: Instant::now(),
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: w2.meta,

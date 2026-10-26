@@ -44,7 +44,8 @@ pub struct CircuitBreakerConfig {
     pub sample_window: u32,
     /// Minimum samples required before the threshold is evaluated.
     pub min_samples: u32,
-    /// How long the breaker stays open before going `HalfOpen`.
+    /// Cooldown from [`Completion::completed_at`] for the result that opens
+    /// the breaker. A failed recovery probe starts a fresh cooldown.
     pub cool_down: Duration,
 }
 
@@ -67,8 +68,8 @@ pub enum BreakerState {
     Closed,
     /// Open until the given instant.
     Open {
-        /// Wall-clock time after which the breaker may move to
-        /// `HalfOpen`.
+        /// Time when the breaker may move to `HalfOpen`, using the clock
+        /// supplied to [`Scheduler::update_ready`].
         until: Instant,
     },
     /// `HalfOpen`: one probe decides recovery.
@@ -84,7 +85,6 @@ pub struct CircuitBreaker<T, C: Scheduler<T>> {
     state: BreakerState,
     cfg: CircuitBreakerConfig,
     samples: VecDeque<CompletionOutcome>,
-    last_now: Instant,
     /// Items dispatched through this breaker and not yet completed.
     in_flight: u32,
     _t: PhantomData<fn() -> T>,
@@ -99,7 +99,6 @@ impl<T, C: Scheduler<T>> CircuitBreaker<T, C> {
             state: BreakerState::Closed,
             cfg,
             samples: VecDeque::new(),
-            last_now: Instant::now(),
             in_flight: 0,
             _t: PhantomData,
         }
@@ -141,17 +140,20 @@ impl<T, C: Scheduler<T>> CircuitBreaker<T, C> {
         Some(rate)
     }
 
-    fn open(&mut self) {
+    fn open(&mut self, completed_at: Instant) {
+        // Concurrency limits can prevent readiness checks while a job runs.
+        // Start the cooldown when the driver receives the result, not when
+        // the scheduler last checked for work.
         self.state = BreakerState::Open {
-            until: self.last_now + self.cfg.cool_down,
+            until: completed_at + self.cfg.cool_down,
         };
         self.samples.clear();
     }
 
-    fn maybe_trip(&mut self) {
+    fn maybe_trip(&mut self, completed_at: Instant) {
         if let Some(rate) = self.failure_rate() {
             if rate >= self.cfg.failure_threshold {
-                self.open();
+                self.open(completed_at);
             }
         }
     }
@@ -165,7 +167,6 @@ where
     type Meta = C::Meta;
 
     fn update_ready(&mut self, now: Instant) -> Readiness {
-        self.last_now = now;
         if let BreakerState::Open { until } = self.state {
             if now >= until {
                 self.state = BreakerState::HalfOpen { probing: false };
@@ -211,7 +212,7 @@ where
         match self.state {
             BreakerState::Closed => {
                 self.record_outcome(outcome);
-                self.maybe_trip();
+                self.maybe_trip(completion.completed_at);
             }
             // While probing the probe is the only item in flight, so this
             // is its verdict.
@@ -220,10 +221,10 @@ where
                     self.samples.clear();
                     self.state = BreakerState::Closed;
                 }
-                CompletionOutcome::Failed => self.open(),
+                CompletionOutcome::Failed => self.open(completion.completed_at),
             },
-            // Open, or half-open with pre-open work still draining: the
-            // completion predates the trip and decides nothing.
+            // Ignore results from jobs dispatched before the breaker opened.
+            // The recovery probe cannot start until those jobs have finished.
             BreakerState::Open { .. } | BreakerState::HalfOpen { probing: false } => {}
         }
         self.inner.on_complete(completion);
@@ -268,6 +269,7 @@ mod tests {
             return;
         };
         cb.on_complete(Completion {
+            completed_at: now,
             outcome,
             latency: Duration::ZERO,
             meta: work.meta,
@@ -304,6 +306,7 @@ mod tests {
 
         // A late failure must not re-open the breaker ...
         cb.on_complete(Completion {
+            completed_at: t1,
             outcome: CompletionOutcome::Failed,
             latency: Duration::ZERO,
             meta: early_a.meta,
@@ -318,6 +321,7 @@ mod tests {
         // ... and a late success must not close it; it only finishes the
         // drain.
         cb.on_complete(Completion {
+            completed_at: t1,
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: early_b.meta,
@@ -337,6 +341,7 @@ mod tests {
         ));
         assert!(cb.take_next().is_none());
         cb.on_complete(Completion {
+            completed_at: t1,
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: probe.meta,
@@ -442,6 +447,7 @@ mod tests {
 
         // Drain the probe successfully so we don't leak meta.
         cb.on_complete(Completion {
+            completed_at: t1,
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: probe.meta,

@@ -196,6 +196,10 @@ where
     ) -> bool {
         let mut progress = false;
         while let Poll::Ready(Some(completed)) = Pin::new(&mut *in_flight).poll_next(cx) {
+            // Take the timestamp after the job returns, rather than reusing
+            // the time from the scheduler's earlier readiness check.
+            let completed_at = self.clock.observe();
+
             let CompletedWork {
                 start,
                 meta,
@@ -205,6 +209,7 @@ where
             let latency = now.duration_since(start);
             progress = true;
             self.completion.push(Completion {
+                completed_at,
                 latency,
                 meta,
                 routing,
@@ -740,6 +745,15 @@ impl RuntimeClock {
             Self::Manual(clock) => clock.now(),
         }
     }
+
+    /// Read the current time without advancing the virtual clock.
+    fn observe(&self) -> Instant {
+        match self {
+            Self::Wallclock => Instant::now(),
+            Self::Virtual { now, .. } => *now,
+            Self::Manual(clock) => clock.now(),
+        }
+    }
 }
 
 /// Runtime-wide counters shared lock-free between the driver and
@@ -1011,6 +1025,138 @@ mod tests {
             }
         }
         assert!(handle.stats().dispatched >= 5);
+    }
+
+    #[test]
+    fn observing_completion_time_does_not_advance_virtual_ticks() {
+        let start = Instant::now();
+        let increment = Duration::from_secs(1);
+
+        let mut clock = super::RuntimeClock::Virtual {
+            now: start,
+            increment,
+        };
+
+        let tick = clock.now();
+        let first = clock.observe();
+        let second = clock.observe();
+
+        assert_eq!(tick, start + increment);
+        assert_eq!(first, tick);
+        assert_eq!(second, tick);
+        assert_eq!(clock.now(), tick + increment);
+    }
+
+    #[tokio::test]
+    async fn slow_failures_and_probes_receive_a_full_cooldown_through_wrappers() {
+        use std::num::NonZeroU32;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::task::Poll;
+
+        use crate::{
+            BoundedConcurrency, CircuitBreaker, CircuitBreakerConfig, CostUnits, FixedCost,
+            StrictPriority,
+        };
+
+        use futures_util::future::poll_fn;
+        use futures_util::task::AtomicWaker;
+
+        // With a limit of one, the runtime is full. With two, only the inner
+        // concurrency wrapper is full. Neither path checks the breaker again
+        // while the job is running.
+        for global_limit in [1, 2] {
+            let clock = ManualClock::new();
+            let work_clock = clock.clone();
+            let ready = Arc::new(AtomicBool::new(false));
+            let work_ready = Arc::clone(&ready);
+            let wake = Arc::new(AtomicWaker::new());
+            let work_wake = Arc::clone(&wake);
+            let cool_down = Duration::from_secs(10);
+
+            let leaf = PeriodicLeaf::new(clock.now(), Duration::from_secs(1), move || {
+                let clock = work_clock.clone();
+                let ready = Arc::clone(&work_ready);
+                let wake = Arc::clone(&work_wake);
+
+                Box::pin(poll_fn(move |cx| {
+                    wake.register(cx.waker());
+
+                    if !ready.swap(false, Ordering::SeqCst) {
+                        return Poll::Pending;
+                    }
+
+                    // Advance time inside the poll to catch timestamps taken
+                    // before the job returns its result.
+                    clock.advance(Duration::from_secs(2));
+
+                    Poll::Ready(Err("failed".to_string()))
+                })) as TestWork
+            });
+
+            let breaker = CircuitBreaker::new(
+                CircuitBreakerConfig {
+                    failure_threshold: 0.5,
+                    sample_window: 1,
+                    min_samples: 1,
+                    cool_down,
+                },
+                leaf,
+            );
+
+            let bounded = BoundedConcurrency::new(NonZeroU32::MIN, breaker);
+            let cost = FixedCost::new(CostUnits::new(1), bounded);
+
+            let mut root = StrictPriority::new();
+
+            root.add_child(cost, 1);
+
+            let mut runtime = Runtime::new(
+                RuntimeConfig {
+                    global_max_in_flight: NonZeroUsize::new(global_limit).expect("non-zero"),
+                    clock: ClockConfig::Manual(clock.clone()),
+                },
+                root,
+            );
+
+            // Fail a regular job, then fail its recovery probe. Each failure
+            // must start a full cooldown.
+            for dispatched in 1..=2 {
+                let output = poll_immediate(runtime.next()).await;
+
+                assert!(output.is_none());
+                assert_eq!(runtime.handle().stats().dispatched, dispatched);
+                assert!(poll_immediate(runtime.next()).await.is_none());
+                assert_eq!(runtime.handle().stats().dispatched, dispatched);
+
+                clock.advance(Duration::from_secs(30));
+                ready.store(true, Ordering::SeqCst);
+                wake.wake();
+
+                let output = runtime.next().await;
+
+                assert!(matches!(output, RuntimeOutput::Work { result: Err(_), .. }));
+
+                let deadline = clock.now() + cool_down;
+                let output = poll_immediate(runtime.next()).await;
+
+                assert!(matches!(
+                    output,
+                    Some(RuntimeOutput::SleepUntil(observed)) if observed == deadline
+                ));
+
+                let before_deadline = deadline
+                    .checked_sub(Duration::from_nanos(1))
+                    .expect("deadline has a preceding instant");
+
+                clock.advance_to(before_deadline);
+
+                assert!(poll_immediate(runtime.next()).await.is_none());
+                assert_eq!(runtime.handle().stats().dispatched, dispatched);
+
+                clock.advance_to(deadline);
+            }
+        }
     }
 
     #[tokio::test]

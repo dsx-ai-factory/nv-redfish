@@ -704,6 +704,7 @@ mod tests {
     #[cfg(feature = "runtime-events")]
     use std::sync::Arc;
     use std::thread;
+    use std::time::Instant;
     use tokio::task::yield_now;
     use tokio::time::timeout;
 
@@ -998,6 +999,7 @@ mod tests {
         assert_eq!(producer.stats().depth, 0);
         assert_eq!(producer.stats().in_flight, 1);
         queue.on_complete(Completion {
+            completed_at: Instant::now(),
             outcome: CompletionOutcome::Succeeded,
             latency: Duration::ZERO,
             meta: work.meta,
