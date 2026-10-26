@@ -145,6 +145,31 @@ pub fn remove_wrong_last_reset_time(v: Value) -> Value {
     }
 }
 
+// `PasswordExpiration` is an `Edm.DateTimeOffset`, which needs seconds, but
+// Lenovo XCC 3 leaves them out, as in `2026-10-26T16:49+00:00`; `:00` is
+// added.
+pub fn add_password_expiration_seconds(v: Value) -> Value {
+    if let Value::Object(mut obj) = v {
+        if let Some(Value::String(date)) = obj.get_mut("PasswordExpiration") {
+            if let Some(fixed) = with_seconds(date) {
+                *date = fixed;
+            }
+        }
+        Value::Object(obj)
+    } else {
+        v
+    }
+}
+
+/// `date` with `:00` seconds when it is `YYYY-MM-DDTHH:MM` and an offset.
+fn with_seconds(date: &str) -> Option<String> {
+    let (minutes, offset) = date.split_at_checked(16)?;
+    let digits = minutes.as_bytes();
+    let shaped = digits[10] == b'T' && digits[13] == b':';
+    let offset_follows = offset == "Z" || offset.starts_with(['+', '-']);
+    (shaped && offset_follows).then(|| format!("{minutes}:00{offset}"))
+}
+
 /// Vera Rubin firmware reports composite `BootOrder` entries such as
 /// `"Boot0019: Ubuntu"` while boot option resources use the bare reference.
 pub fn normalize_vera_rubin_composite_boot_order(mut v: Value) -> Value {
@@ -295,6 +320,24 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn password_expiration_gets_only_missing_seconds() {
+        let expiring = |date: &str| json!({ "PasswordExpiration": date });
+        for (date, repaired) in [
+            ("2026-10-26T16:49+00:00", "2026-10-26T16:49:00+00:00"),
+            ("2026-10-26T16:49Z", "2026-10-26T16:49:00Z"),
+            ("2026-10-26T16:49:30+00:00", "2026-10-26T16:49:30+00:00"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                add_password_expiration_seconds(expiring(date)),
+                expiring(repaired),
+                "{date}"
+            );
+        }
+        assert_eq!(add_password_expiration_seconds(json!({})), json!({}));
     }
 
     #[test]

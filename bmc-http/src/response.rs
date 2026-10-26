@@ -183,9 +183,10 @@ fn key(id: &str) -> &str {
 ///
 /// - A body with `error`, or with `Success` as Supermicro BMCs use, reports
 ///   the `code` of that object, with or without its `message`, as in
-///   `{"error": {"code": "Base.1.8.Success", "message": "..."}}`. Any other
-///   code, or an object without one, is not a success, whatever messages
-///   are beside it.
+///   `{"error": {"code": "Base.1.8.Success", "message": "..."}}`. The Base
+///   registry's `ResetRequired` is [`SuccessCode::Success`], for a change
+///   that takes effect on a reset. Any other code, or an object without
+///   one, is not a success, whatever messages are beside it.
 /// - Otherwise, a body with `@Message.ExtendedInfo` reports what its
 ///   messages name: [`SuccessCode::Created`] when one is `Created`, else
 ///   [`SuccessCode::Success`] when one is `Success`, else
@@ -318,7 +319,16 @@ fn report(body: &Value) -> Option<Report> {
     {
         let status_messages = messages(status)?;
         let code = status.get("code")?.as_str()?;
-        let code = SuccessCode::of(code)?;
+        let code = match SuccessCode::of(code) {
+            Some(code) => code,
+            // The Base registry's `ResetRequired` reports a change made that
+            // takes effect on a reset, as Lenovo XCC answers a BIOS reset.
+            None if key(code) == "ResetRequired" && code.split('.').next() == Some("Base") => {
+                named.other = true;
+                SuccessCode::Success
+            }
+            None => return None,
+        };
         status_codes.name(code);
         named.add(status_messages);
     }
@@ -1016,6 +1026,20 @@ mod tests {
                     "@Message.ExtendedInfo": [{"MessageId": "Base.1.8.Success", "Severity": "OK"}]
                 }}),
                 Some(SuccessCode::Success),
+            ),
+            // Lenovo XCC 3 answers a BIOS reset with the Base registry's.
+            (
+                "Lenovo XCC, reset required",
+                json!({"error": {
+                    "code": "Base.1.16.0.ResetRequired",
+                    "message": "In order to apply changes, recover from errors, or complete \
+                                the operation, a component reset is required.",
+                    "@Message.ExtendedInfo": [{
+                        "MessageId": "Base.1.16.0.ResetRequired",
+                        "MessageSeverity": "Warning"
+                    }]
+                }}),
+                None,
             ),
             // A success with a note from another registry.
             (
