@@ -16,7 +16,7 @@
 //! The rewrites the repair table composes. Each takes one document and
 //! returns it repaired; a document without the fault comes back unchanged.
 
-use nv_redfish_core::EdmGuid;
+use nv_redfish_core::{EdmDateTimeOffset, EdmGuid};
 use serde_json::Value;
 
 pub fn add_default_update_service_name(v: Value) -> Value {
@@ -161,13 +161,12 @@ pub fn add_password_expiration_seconds(v: Value) -> Value {
     }
 }
 
-/// `date` with `:00` seconds when it is `YYYY-MM-DDTHH:MM` and an offset.
+/// `date` with `:00` seconds when it is `YYYY-MM-DDTHH:MM` and an offset,
+/// which is when the result is a valid `Edm.DateTimeOffset`.
 fn with_seconds(date: &str) -> Option<String> {
     let (minutes, offset) = date.split_at_checked(16)?;
-    let digits = minutes.as_bytes();
-    let shaped = digits[10] == b'T' && digits[13] == b':';
-    let offset_follows = offset == "Z" || offset.starts_with(['+', '-']);
-    (shaped && offset_follows).then(|| format!("{minutes}:00{offset}"))
+    let fixed = format!("{minutes}:00{offset}");
+    fixed.parse::<EdmDateTimeOffset>().is_ok().then_some(fixed)
 }
 
 /// Vera Rubin firmware reports composite `BootOrder` entries such as
@@ -329,6 +328,7 @@ mod tests {
             ("2026-10-26T16:49+00:00", "2026-10-26T16:49:00+00:00"),
             ("2026-10-26T16:49Z", "2026-10-26T16:49:00Z"),
             ("2026-10-26T16:49:30+00:00", "2026-10-26T16:49:30+00:00"),
+            ("XXXXXXXXXXTXX:XX+bad", "XXXXXXXXXXTXX:XX+bad"),
             ("", ""),
         ] {
             assert_eq!(
