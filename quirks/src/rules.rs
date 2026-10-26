@@ -90,6 +90,11 @@ const RULES: &[Rule] = &[
         fix: fixes::remove_wrong_last_reset_time,
     },
     Rule {
+        resource_type: "NetworkAdapter",
+        enabled: BmcQuirks::bug_empty_network_adapter_controllers,
+        fix: fixes::normalize_empty_network_adapter_controllers,
+    },
+    Rule {
         resource_type: "ComputerSystem",
         enabled: BmcQuirks::bug_empty_uuid_field,
         fix: fixes::normalize_empty_uuid_field,
@@ -408,6 +413,39 @@ mod tests {
         let patched = repaired(&viking, chassis);
         assert_eq!(patched["ChassisType"], "Other");
         assert_eq!(patched["Links"], links);
+    }
+
+    #[test]
+    fn an_empty_network_adapter_controllers_object_reads_as_an_empty_list() {
+        let dell = enabled_for(&json!({ "Vendor": "Dell" }));
+        let empty = json!({
+            "@odata.type": "#NetworkAdapter.v1_11_0.NetworkAdapter",
+            "Id": "NIC.Slot.36",
+            "Controllers": {},
+        });
+        assert_eq!(repaired(&dell, empty.clone())["Controllers"], json!([]));
+
+        let listed = json!({
+            "@odata.type": "#NetworkAdapter.v1_11_0.NetworkAdapter",
+            "Id": "NIC.Embedded.1",
+            "Controllers": [{
+                "ControllerCapabilities": { "NetworkPortCount": 1 },
+            }],
+        });
+        assert_eq!(repaired(&dell, listed.clone()), listed);
+
+        // An object that is not empty is a different fault and stays.
+        let reference = json!({
+            "@odata.type": "#NetworkAdapter.v1_11_0.NetworkAdapter",
+            "Id": "NIC.Slot.1",
+            "Controllers": {
+                "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/NIC.Slot.1",
+            },
+        });
+        assert_eq!(repaired(&dell, reference.clone()), reference);
+
+        let hpe = enabled_for(&json!({ "Vendor": "HPE" }));
+        assert_eq!(repaired(&hpe, empty.clone()), empty);
     }
 
     #[test]

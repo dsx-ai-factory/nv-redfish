@@ -114,6 +114,21 @@ pub fn normalize_invalid_uuid_field(mut v: Value) -> Value {
     v
 }
 
+// `Controllers` is a collection, but iDRAC reports `{}` on an empty
+// network adapter slot. A controller list, and an object that is not
+// empty, are left as they came.
+pub fn normalize_empty_network_adapter_controllers(mut v: Value) -> Value {
+    if let Value::Object(ref mut obj) = v {
+        let is_empty_object = obj
+            .get("Controllers")
+            .is_some_and(|controllers| matches!(controllers, Value::Object(map) if map.is_empty()));
+        if is_empty_object {
+            obj.insert("Controllers".into(), Value::Array(Vec::new()));
+        }
+    }
+    v
+}
+
 // `LastResetTime` is an `Edm.DateTimeOffset`, but some systems put
 // `0000-00-00T00:00:00+00:00` there, which does not conform to its ABNF;
 // the field is removed.
