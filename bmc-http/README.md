@@ -125,6 +125,11 @@ parameters and optional OEM parts. `Bmc::stream` decodes SSE payloads;
 reopening a stream. Configure event size and idle limits through
 `ClientParams::sse_max_event_bytes` and `sse_idle_timeout`.
 
+The reqwest client ignores unknown SSE fields, uses the last valid value
+when IDs repeat, and clears the resume cursor for an `id` without a colon.
+Do not enable `sse-stream/strict-fields`: Cargo feature unification can make
+the client reject unknown fields.
+
 Service-provided action, monitor, upload, and event-stream URIs are resolved
 against the configured BMC. Cross-origin URI references and redirects are
 rejected by the built-in client.
