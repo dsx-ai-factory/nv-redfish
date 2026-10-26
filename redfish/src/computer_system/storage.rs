@@ -19,7 +19,9 @@ use crate::computer_system::Drive;
 use crate::patch_support::CollectionWithPatch;
 use crate::schema::resource::ResourceCollection;
 use crate::schema::storage::Storage as StorageSchema;
+use crate::schema::storage::StorageController as EmbeddedStorageControllerSchema;
 use crate::schema::storage_collection::StorageCollection as StorageCollectionSchema;
+use crate::schema::storage_controller::StorageController as StorageControllerSchema;
 use crate::schema::volume::Volume as VolumeSchema;
 use crate::schema::volume::VolumeCreate;
 use crate::schema::volume_collection::VolumeCollection as VolumeCollectionSchema;
@@ -91,6 +93,60 @@ impl<B: Bmc> Storage<B> {
         }
     }
 
+    /// Get the storage controllers listed in this resource's
+    /// `StorageControllers` property.
+    ///
+    /// Redfish deprecated this property in favor of `Controllers`, but many
+    /// BMCs still embed it.  Entries are returned without a request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::StorageControllerNotExpanded`] if an entry is a
+    /// reference instead of an embedded object.
+    pub async fn storage_controllers(
+        &self,
+    ) -> Result<Option<Vec<Arc<EmbeddedStorageControllerSchema>>>, Error<B>> {
+        if let Some(controllers_ref) = &self.data.storage_controllers {
+            let mut controllers = Vec::with_capacity(controllers_ref.len());
+            for c in controllers_ref {
+                // Entries point into this resource (`...#/StorageControllers/0`),
+                // so a reference cannot be fetched on its own.
+                if matches!(c, NavProperty::Reference(_)) {
+                    return Err(Error::StorageControllerNotExpanded(c.id().clone()));
+                }
+                controllers.push(c.get(self.bmc.as_ref()).await.map_err(Error::from)?);
+            }
+            Ok(Some(controllers))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get storage controllers from the `Controllers` collection.
+    ///
+    /// Fetches the collection and returns a list of [`StorageController`]
+    /// handles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching the collection or a member fails.
+    pub async fn controllers(&self) -> Result<Option<Vec<StorageController<B>>>, Error<B>> {
+        if let Some(collection_ref) = &self.data.controllers {
+            let collection = collection_ref
+                .get(self.bmc.as_ref())
+                .await
+                .map_err(Error::from)?;
+            let mut controllers = Vec::with_capacity(collection.members.len());
+            for m in &collection.members {
+                let data = m.get(self.bmc.as_ref()).await.map_err(Error::from)?;
+                controllers.push(StorageController::from_data(data));
+            }
+            Ok(Some(controllers))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Get the advertised volume collection.
     #[must_use]
     pub fn volumes(&self) -> Option<VolumeCollection<B>> {
@@ -115,6 +171,28 @@ impl<B: Bmc> Storage<B> {
             .and_then(|actions| actions.oem.as_ref())
             .map(|actions| DellStorageActions::new(&self.bmc, actions))
             .transpose()
+    }
+}
+
+/// A standard Redfish `StorageController` resource.
+pub struct StorageController<B: Bmc> {
+    data: Arc<StorageControllerSchema>,
+    _marker: PhantomData<B>,
+}
+
+impl<B: Bmc> StorageController<B> {
+    /// Wrap generated `StorageController` data.
+    pub(crate) const fn from_data(data: Arc<StorageControllerSchema>) -> Self {
+        Self {
+            data,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Get the raw `StorageController` schema.
+    #[must_use]
+    pub fn raw(&self) -> Arc<StorageControllerSchema> {
+        self.data.clone()
     }
 }
 

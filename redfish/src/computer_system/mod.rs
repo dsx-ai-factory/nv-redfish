@@ -98,7 +98,7 @@ pub use secure_boot_database::{
 };
 #[doc(inline)]
 #[cfg(feature = "storages")]
-pub use storage::{Storage, Volume, VolumeCollection};
+pub use storage::{Storage, StorageController, Volume, VolumeCollection};
 
 /// Computer system collection.
 ///
