@@ -322,7 +322,7 @@ fn report(body: &Value) -> Option<Report> {
         let code = match SuccessCode::of(code) {
             Some(code) => code,
             // The Base registry's `ResetRequired` reports a change made that
-            // takes effect on a reset, as Lenovo XCC answers a BIOS reset.
+            // takes effect on a reset.
             None if key(code) == "ResetRequired" && code.split('.').next() == Some("Base") => {
                 named.other = true;
                 SuccessCode::Success
