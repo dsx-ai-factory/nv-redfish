@@ -72,6 +72,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::events::EventRepairs;
+use crate::replies::SuccessReplies;
 use crate::rules;
 use crate::rules::Enabled;
 use crate::BmcQuirks;
@@ -152,6 +153,23 @@ impl<B: Bmc> CompatBmc<B> {
     #[must_use]
     pub const fn quirks(&self) -> &Arc<BmcQuirks> {
         &self.quirks
+    }
+
+    /// A write's failure as the transport reported it, or the success
+    /// message it is on a platform that answers successes as `200` errors.
+    ///
+    /// That message is the platform's own reply, such as HPE iLO's
+    /// `iLO.2.15.SystemResetRequired`, as [`ModificationResponse::Message`];
+    /// `success_code` reads only the standard registry, so it names no
+    /// outcome for it.
+    fn failed_write<R>(
+        &self,
+        error: B::Error,
+    ) -> Result<ModificationResponse<R>, CompatError<B::Error>> {
+        let Some(reply) = SuccessReplies::new(&self.quirks).read(&error) else {
+            return Err(CompatError::from_transport(error));
+        };
+        Ok(ModificationResponse::Message(reply))
     }
 
     /// The repairs for the payloads of one event stream.
@@ -297,7 +315,8 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
             {
                 Ok(ModificationResponse::Empty)
             }
-            result => result.map_err(CompatError::from_transport),
+            Err(error) => self.failed_write(error),
+            Ok(response) => Ok(response),
         }
     }
 
@@ -326,7 +345,8 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
             {
                 Ok(ModificationResponse::Empty)
             }
-            result => result.map_err(CompatError::from_transport),
+            Err(error) => self.failed_write(error),
+            Ok(response) => Ok(response),
         }
     }
 

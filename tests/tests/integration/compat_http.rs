@@ -299,6 +299,38 @@ async fn a_staged_change_without_a_task_is_empty_only_on_supermicro(
 }
 
 #[test]
+async fn an_ilo_reset_required_reply_is_a_success_message_only_on_hpe(
+) -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+    let reply = json!({"error": {
+        "code": "iLO.0.10.ExtendedInfo",
+        "message": "See @Message.ExtendedInfo for more information.",
+        "@Message.ExtendedInfo": [{"MessageId": "iLO.2.15.SystemResetRequired"}]
+    }});
+    Mock::given(method("PATCH"))
+        .and(path(FIRMWARE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&reply))
+        .mount(&server)
+        .await;
+    let http = transport(&server)?;
+    let update = json!({ "Version": "1" });
+    let etag = ODataETag::from(ETAG.to_owned());
+
+    let hpe: Layer = CompatBmc::new(http.clone(), platform("HPE"));
+    let response = hpe
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), Some(&etag), &update)
+        .await?;
+    assert!(matches!(response, ModificationResponse::Message(body) if body == reply));
+
+    let dell: Layer = CompatBmc::new(http, platform("Dell"));
+    let response = dell
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), Some(&etag), &update)
+        .await;
+    assert!(matches!(response, Err(CompatError::Transport(_))));
+    Ok(())
+}
+
+#[test]
 async fn ami_firmware_is_sent_a_wildcard_if_match() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))

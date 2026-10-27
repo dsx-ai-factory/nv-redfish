@@ -243,6 +243,13 @@ impl nv_redfish_core::BmcError for BmcError {
         }
     }
 
+    fn response_body(&self) -> Option<&str> {
+        match self {
+            Self::InvalidResponse { text, .. } => Some(text),
+            _ => None,
+        }
+    }
+
     fn into_decode_error(self) -> Result<DecodeError, Self> {
         match self {
             Self::JsonError(error) => Ok(error),

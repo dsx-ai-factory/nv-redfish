@@ -1546,15 +1546,6 @@ mod reqwest_client_tests {
                 true,
             ),
             (
-                "HPE iLO",
-                serde_json::json!({"error": {
-                    "code": "iLO.0.10.ExtendedInfo",
-                    "message": "See @Message.ExtendedInfo for more information.",
-                    "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
-                }}),
-                true,
-            ),
-            (
                 "a message argument that is not a string",
                 serde_json::json!({"@Message.ExtendedInfo": [{
                     "MessageId": "Base.1.8.Success",
@@ -1587,11 +1578,11 @@ mod reqwest_client_tests {
                 false,
             ),
             (
-                "an HPE iLO error",
+                "a vendor's code with a success message, which the compatibility layer reads",
                 serde_json::json!({"error": {
                     "code": "iLO.0.10.ExtendedInfo",
                     "message": "See @Message.ExtendedInfo for more information.",
-                    "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.ActionParameterNotSupported"}]
+                    "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
                 }}),
                 false,
             ),

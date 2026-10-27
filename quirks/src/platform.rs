@@ -105,6 +105,7 @@ enum Quirk {
     NullableMembers,
     RejectsOwnEtag,
     RejectsWildcardEtag,
+    SuccessAsExtendedInfoError,
     AcceptedUpdateWithoutTask,
     AcceptedActionWithoutTask,
 }
@@ -122,7 +123,11 @@ struct Rule {
 const RULES: &[Rule] = &[
     Rule {
         covers: |root| root.vendor_is("HPE"),
-        quirks: &[Quirk::NoAccountTypeInAccounts, Quirk::RejectsWildcardEtag],
+        quirks: &[
+            Quirk::NoAccountTypeInAccounts,
+            Quirk::RejectsWildcardEtag,
+            Quirk::SuccessAsExtendedInfoError,
+        ],
     },
     Rule {
         covers: |root| root.vendor_is("Dell"),
@@ -501,6 +506,14 @@ impl BmcQuirks {
         self.has(Quirk::RejectsWildcardEtag)
     }
 
+    /// HPE iLO answers a property change it accepted but has not yet put in
+    /// effect, or one that changed nothing, with a `200` whose body is an
+    /// `error` coded `iLO.0.10.ExtendedInfo`, so the transport reports it as
+    /// failed. An update or action is that reply as a message instead.
+    pub(crate) fn bug_success_as_extended_info_error(&self) -> bool {
+        self.has(Quirk::SuccessAsExtendedInfoError)
+    }
+
     /// Supermicro answers a staged settings change with `202 Accepted` and
     /// nothing to poll: no `Location` and no Task.
     pub(crate) fn bug_accepted_update_without_task(&self) -> bool {
@@ -554,7 +567,11 @@ mod tests {
             ),
             (
                 json!({ "Vendor": "HPE" }),
-                &[Quirk::NoAccountTypeInAccounts, Quirk::RejectsWildcardEtag],
+                &[
+                    Quirk::NoAccountTypeInAccounts,
+                    Quirk::RejectsWildcardEtag,
+                    Quirk::SuccessAsExtendedInfoError,
+                ],
             ),
             (
                 json!({ "Vendor": "AMI", "RedfishVersion": "1.11.0" }),
