@@ -509,7 +509,7 @@ impl BmcQuirks {
     /// HPE iLO answers a property change it accepted but has not yet put in
     /// effect, or one that changed nothing, with a `200` whose body is an
     /// `error` coded `iLO.0.10.ExtendedInfo`, so the transport reports it as
-    /// failed. An update or action is that reply as a message instead.
+    /// failed. A write is that reply as a message instead.
     pub(crate) fn bug_success_as_extended_info_error(&self) -> bool {
         self.has(Quirk::SuccessAsExtendedInfoError)
     }

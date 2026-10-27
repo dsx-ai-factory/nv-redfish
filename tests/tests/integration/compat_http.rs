@@ -331,6 +331,32 @@ async fn an_ilo_reset_required_reply_is_a_success_message_only_on_hpe(
 }
 
 #[test]
+async fn an_ilo_success_reply_to_a_delete_is_a_success_message_only_on_hpe(
+) -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+    let reply = json!({"error": {
+        "code": "iLO.0.10.ExtendedInfo",
+        "message": "See @Message.ExtendedInfo for more information.",
+        "@Message.ExtendedInfo": [{"MessageId": "Base.1.18.Success"}]
+    }});
+    Mock::given(method("DELETE"))
+        .and(path(FIRMWARE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&reply))
+        .mount(&server)
+        .await;
+    let http = transport(&server)?;
+
+    let hpe: Layer = CompatBmc::new(http.clone(), platform("HPE"));
+    let response = hpe.delete::<SoftwareInventory>(&id(FIRMWARE)).await?;
+    assert!(matches!(response, ModificationResponse::Message(body) if body == reply));
+
+    let dell: Layer = CompatBmc::new(http, platform("Dell"));
+    let response = dell.delete::<SoftwareInventory>(&id(FIRMWARE)).await;
+    assert!(matches!(response, Err(CompatError::Transport(_))));
+    Ok(())
+}
+
+#[test]
 async fn ami_firmware_is_sent_a_wildcard_if_match() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))

@@ -267,7 +267,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .create(id, query)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn create_session<
@@ -327,7 +327,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .delete(id)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn action<
@@ -357,7 +357,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .poll(uri)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn multipart_update<U, V, R>(
@@ -373,7 +373,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .multipart_update(uri, request)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn http_push_uri_update<U, R>(
@@ -388,7 +388,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .http_push_uri_update(uri, request)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn stream<T: Sized + for<'de> Deserialize<'de> + Send + 'static>(
