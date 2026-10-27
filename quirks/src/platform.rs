@@ -132,6 +132,7 @@ const RULES: &[Rule] = &[
             Quirk::ComputerSystemsWrongLastResetTime,
             Quirk::EmptyNetworkAdapterControllers,
             Quirk::SseWrongTimestampOffset,
+            Quirk::InvalidChassisUuidField,
         ],
     },
     // AMI MegaRAC firmware, including Lenovo trays (HS350x class) that keep
@@ -552,6 +553,7 @@ mod tests {
                     Quirk::ComputerSystemsWrongLastResetTime,
                     Quirk::EmptyNetworkAdapterControllers,
                     Quirk::SseWrongTimestampOffset,
+                    Quirk::InvalidChassisUuidField,
                 ][..],
             ),
             (
