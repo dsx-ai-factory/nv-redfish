@@ -16,7 +16,7 @@
 //! The rewrites the repair table composes. Each takes one document and
 //! returns it repaired; a document without the fault comes back unchanged.
 
-use nv_redfish_core::EdmGuid;
+use nv_redfish_core::{EdmDateTimeOffset, EdmGuid};
 use serde_json::Value;
 
 pub fn add_default_update_service_name(v: Value) -> Value {
@@ -143,6 +143,30 @@ pub fn remove_wrong_last_reset_time(v: Value) -> Value {
     } else {
         v
     }
+}
+
+// `PasswordExpiration` is an `Edm.DateTimeOffset`, which needs seconds, but
+// Lenovo XCC 3 leaves them out, as in `2026-10-26T16:49+00:00`; `:00` is
+// added.
+pub fn add_password_expiration_seconds(v: Value) -> Value {
+    if let Value::Object(mut obj) = v {
+        if let Some(Value::String(date)) = obj.get_mut("PasswordExpiration") {
+            if let Some(fixed) = with_seconds(date) {
+                *date = fixed;
+            }
+        }
+        Value::Object(obj)
+    } else {
+        v
+    }
+}
+
+/// `date` with `:00` seconds when it is `YYYY-MM-DDTHH:MM` and an offset,
+/// which is when the result is a valid `Edm.DateTimeOffset`.
+fn with_seconds(date: &str) -> Option<String> {
+    let (minutes, offset) = date.split_at_checked(16)?;
+    let fixed = format!("{minutes}:00{offset}");
+    fixed.parse::<EdmDateTimeOffset>().is_ok().then_some(fixed)
 }
 
 /// Vera Rubin firmware reports composite `BootOrder` entries such as
@@ -295,6 +319,25 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn password_expiration_gets_only_missing_seconds() {
+        let expiring = |date: &str| json!({ "PasswordExpiration": date });
+        for (date, repaired) in [
+            ("2026-10-26T16:49+00:00", "2026-10-26T16:49:00+00:00"),
+            ("2026-10-26T16:49Z", "2026-10-26T16:49:00Z"),
+            ("2026-10-26T16:49:30+00:00", "2026-10-26T16:49:30+00:00"),
+            ("XXXXXXXXXXTXX:XX+bad", "XXXXXXXXXXTXX:XX+bad"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                add_password_expiration_seconds(expiring(date)),
+                expiring(repaired),
+                "{date}"
+            );
+        }
+        assert_eq!(add_password_expiration_seconds(json!({})), json!({}));
     }
 
     #[test]

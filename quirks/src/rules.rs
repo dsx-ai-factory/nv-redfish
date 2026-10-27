@@ -124,6 +124,11 @@ const RULES: &[Rule] = &[
         enabled: BmcQuirks::bug_no_account_type_in_accounts,
         fix: fixes::append_default_account_type,
     },
+    Rule {
+        resource_type: "ManagerAccount",
+        enabled: BmcQuirks::bug_password_expiration_without_seconds,
+        fix: fixes::add_password_expiration_seconds,
+    },
     // Keyed on the AccountService rather than on the collections it
     // inlines: a complete collection read on its own is left alone.
     Rule {

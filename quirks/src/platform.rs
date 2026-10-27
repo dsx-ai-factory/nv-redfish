@@ -107,6 +107,7 @@ enum Quirk {
     RejectsOwnEtag,
     RejectsWildcardEtag,
     SuccessAsExtendedInfoError,
+    PasswordExpirationWithoutSeconds,
     AcceptedUpdateWithoutTask,
     AcceptedActionWithoutTask,
 }
@@ -146,6 +147,11 @@ const RULES: &[Rule] = &[
     Rule {
         covers: |root| root.vendor_is("AMI") || (root.vendor_is("Lenovo") && root.ami_oem),
         quirks: &[Quirk::RejectsOwnEtag],
+    },
+    // Lenovo XClarity Controller firmware: Lenovo, without AMI's OEM object.
+    Rule {
+        covers: |root| root.vendor_is("Lenovo") && !root.ami_oem,
+        quirks: &[Quirk::PasswordExpirationWithoutSeconds],
     },
     // The H100 Viking.
     Rule {
@@ -524,6 +530,12 @@ impl BmcQuirks {
         self.has(Quirk::SuccessAsExtendedInfoError)
     }
 
+    /// Lenovo XCC 3 writes an account's `PasswordExpiration` without
+    /// seconds, which an `Edm.DateTimeOffset` requires.
+    pub(crate) fn bug_password_expiration_without_seconds(&self) -> bool {
+        self.has(Quirk::PasswordExpirationWithoutSeconds)
+    }
+
     /// Supermicro answers a staged settings change with `202 Accepted` and
     /// nothing to poll: no `Location` and no Task.
     pub(crate) fn bug_accepted_update_without_task(&self) -> bool {
@@ -610,7 +622,10 @@ mod tests {
                 json!({ "Vendor": "Lenovo", "Oem": { "Ami": {} } }),
                 &[Quirk::RejectsOwnEtag],
             ),
-            (json!({ "Vendor": "Lenovo" }), &[]),
+            (
+                json!({ "Vendor": "Lenovo" }),
+                &[Quirk::PasswordExpirationWithoutSeconds],
+            ),
             (
                 json!({ "Vendor": "NVIDIA", "Product": "VR NVL72" }),
                 &[

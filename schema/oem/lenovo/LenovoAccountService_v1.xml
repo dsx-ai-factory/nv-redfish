@@ -27,19 +27,19 @@ limitations under the License.
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="LenovoAccountService.v1_0_0">
       <Annotation Term="Redfish.OwningEntity" String="Lenovo"/>
       <ComplexType Name="LenovoAccountServiceProperties" BaseType="LenovoAccountService.LenovoAccountServiceProperties">
-        <Property Name="PasswordExpirationPeriodDays" Type="Edm.Decimal" Nullable="false">
+        <Property Name="PasswordExpirationPeriodDays" Type="Edm.Int64" Nullable="false">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
         </Property>
         <Property Name="PasswordChangeOnFirstAccess" Type="Edm.Boolean" Nullable="false">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
         </Property>
-        <Property Name="MinimumPasswordChangeIntervalHours" Type="Edm.Decimal" Nullable="false">
+        <Property Name="MinimumPasswordChangeIntervalHours" Type="Edm.Int64" Nullable="false">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
         </Property>
-        <Property Name="MinimumPasswordReuseCycle" Type="Edm.Decimal" Nullable="false">
+        <Property Name="MinimumPasswordReuseCycle" Type="Edm.Int64" Nullable="false">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
         </Property>
-        <Property Name="PasswordExpirationWarningPeriod" Type="Edm.Decimal" Nullable="false">
+        <Property Name="PasswordExpirationWarningPeriod" Type="Edm.Int64" Nullable="false">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
         </Property>
       </ComplexType>
