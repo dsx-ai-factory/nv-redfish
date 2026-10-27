@@ -67,6 +67,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 trybuild = { workspace = true }
 url = { workspace = true }
 wiremock = { workspace = true }
+uuid = { workspace = true}
 
 [build-dependencies]
 nv-redfish-csdl-compiler = { workspace = true }
