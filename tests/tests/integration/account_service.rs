@@ -326,6 +326,7 @@ async fn get_account_service_with_config(
         json!({
             ODATA_ID: &account_service_id,
             ODATA_TYPE: &ACCOUNT_SERVICE_DATA_TYPE,
+            "@odata.etag": "W/\"account-service\"",
             "Id": "AccountService",
             "Name": "AccountService",
             "Accounts": {
@@ -679,6 +680,7 @@ async fn update_hpe_account_policy_composes_standard_and_oem_payloads() -> TestR
         json!({
             ODATA_ID: &service_id,
             ODATA_TYPE: ACCOUNT_SERVICE_DATA_TYPE,
+            "@odata.etag": "W/\"account-service-2\"",
             "Id": "AccountService",
             "Name": "AccountService",
             "Accounts": { ODATA_ID: &accounts_id }
@@ -1459,6 +1461,11 @@ async fn update_account_hpe_repairs_the_reply() -> TestResult<()> {
         .with_role_id("Operator".into())
         .build();
 
+    // The expanded account has no ETag, so it is read for one first.
+    bmc.expect(Expect::get(
+        &account_id,
+        json!({ ODATA_ID: &account_id, "@odata.etag": "W/\"account-1\"" }),
+    ));
     bmc.expect(Expect::update(
         &account_id,
         serde_json::to_value(&update)?,

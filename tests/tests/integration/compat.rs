@@ -34,6 +34,7 @@ use nv_redfish::schema::software_inventory_collection::SoftwareInventoryCollecti
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::Bmc;
 use nv_redfish_core::BmcError as _;
+use nv_redfish_core::ODataETag;
 use nv_redfish_core::ODataId;
 use nv_redfish_quirks::CompatBmc;
 use nv_redfish_quirks::CompatError;
@@ -434,8 +435,9 @@ async fn a_write_reply_is_the_transports_reading() -> Result<(), Box<dyn StdErro
             "Enabled": false,
         }),
     ));
+    let etag = ODataETag::from("W/\"1\"".to_owned());
     let error = compat
-        .update::<_, ManagerAccount>(&ODataId::from(id.to_owned()), None, &update)
+        .update::<_, ManagerAccount>(&ODataId::from(id.to_owned()), Some(&etag), &update)
         .await
         .expect_err("the reply is not repaired");
     assert!(matches!(error, CompatError::Decode(_)));

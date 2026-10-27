@@ -114,6 +114,13 @@ pub trait BmcError: StdError + Send + Sync {
         BmcErrorClass::Other
     }
 
+    /// The body of the HTTP response this error treats as one, when it has
+    /// one: a [`BmcErrorClass::HttpResponse`] whose body a layer above may
+    /// read in a platform's terms. The default is never one.
+    fn response_body(&self) -> Option<&str> {
+        None
+    }
+
     /// The document this error failed to deserialize, when it is that.
     ///
     /// A transport that deserializes documents itself reports its decode
