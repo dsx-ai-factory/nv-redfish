@@ -282,6 +282,18 @@ async fn oem_nvidia_reports_host_management_network_access() -> Result<(), Box<d
             Some(Some(false)),
         ),
         ("unreported", nvidia(json!({})), Some(None)),
+        (
+            "CBC chassis",
+            json!({
+                "Oem": {
+                    "Nvidia": {
+                        ODATA_TYPE: "#NvidiaChassis.v1_4_0.NvidiaCBCChassis",
+                        "TopologyId": 128
+                    }
+                }
+            }),
+            None,
+        ),
         ("no NVIDIA extension", json!({}), None),
     ] {
         let bmc = Arc::new(Bmc::default());

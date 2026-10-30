@@ -24,13 +24,16 @@
 //! {"Oem": {"Nvidia": {"HostManagementNetworkAccess": false}}}
 //! ```
 
+use crate::oem::declares;
 use crate::oem::nvidia::schema::nvidia_chassis::v1_14_0::NvidiaChassis as NvidiaChassisSchema;
 use crate::oem::nvidia::OEM_KEY;
 use crate::oem::oem_object;
+use crate::oem::oem_value;
 use crate::schema::chassis::ChassisUpdate;
 use crate::schema::resource::Oem as ResourceOemSchema;
 use crate::schema::resource::OemUpdate;
 use crate::Error;
+use nv_redfish_core::odata::ODataType;
 use nv_redfish_core::Bmc;
 use serde_json::Map;
 use serde_json::Value as JsonValue;
@@ -38,6 +41,11 @@ use std::sync::Arc;
 
 #[doc(inline)]
 pub use crate::oem::nvidia::schema::nvidia_chassis::v1_14_0::NvidiaChassisUpdate;
+
+/// Namespace the chassis shape is declared under.
+const NAMESPACE: &str = "NvidiaChassis";
+/// `@odata.type` name of the chassis shape.
+const TYPE_NAME: &str = "NvidiaChassis";
 
 /// Adds NVIDIA OEM settings to a standard Chassis update.
 pub trait NvidiaChassisUpdateExt: Sized {
@@ -81,8 +89,15 @@ pub struct NvidiaChassis {
 impl NvidiaChassis {
     /// Parse the extension advertised under `Chassis.Oem.Nvidia`.
     ///
-    /// Returns `Ok(None)` when the chassis carries no NVIDIA object.
+    /// Returns `Ok(None)` when the chassis carries no NVIDIA object, or one
+    /// that declares another chassis shape, such as `NvidiaCBCChassis`.
     pub(crate) fn new<B: Bmc>(oem: &ResourceOemSchema) -> Result<Option<Self>, Error<B>> {
+        let Some(nvidia) = oem_value(oem, OEM_KEY) else {
+            return Ok(None);
+        };
+        if ODataType::parse_from(nvidia).is_some() && !declares(nvidia, NAMESPACE, TYPE_NAME) {
+            return Ok(None);
+        }
         Ok(oem_object(oem, OEM_KEY)?.map(|data| Self { data }))
     }
 
