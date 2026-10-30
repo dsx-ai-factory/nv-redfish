@@ -15,8 +15,12 @@
 //! Integration tests for NVIDIA chassis OEM extensions.
 
 use nv_redfish::chassis::Chassis;
+use nv_redfish::chassis::ChassisUpdate;
 use nv_redfish::oem::nvidia::AuxPowerResetType;
 use nv_redfish::oem::nvidia::NvidiaChassisResetType;
+use nv_redfish::oem::nvidia::NvidiaChassisUpdate;
+use nv_redfish::oem::nvidia::NvidiaChassisUpdateExt as _;
+use nv_redfish::schema::resource::OemUpdate;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::ODataId;
@@ -252,6 +256,89 @@ async fn oem_nvidia_reset_returns_action_not_available_when_reset_is_absent(
             .aux_power_reset(AuxPowerResetType::AuxPowerCycle)
             .await,
         Err(nv_redfish::Error::ActionNotAvailable)
+    ));
+
+    Ok(())
+}
+
+/// Vera Rubin reports whether the host's onboard NICs reach the management
+/// network in the SMM chassis's `Oem.Nvidia.HostManagementNetworkAccess`.
+#[test]
+async fn oem_nvidia_reports_host_management_network_access() -> Result<(), Box<dyn StdError>> {
+    let nvidia = |fields: Value| {
+        json!({
+            "Oem": {
+                "Nvidia": json_merge([
+                    &json!({ ODATA_TYPE: "#NvidiaChassis.v1_14_0.NvidiaChassis" }),
+                    &fields,
+                ])
+            }
+        })
+    };
+    for (scenario, fields, expected) in [
+        (
+            "reported",
+            nvidia(json!({ "HostManagementNetworkAccess": false })),
+            Some(Some(false)),
+        ),
+        ("unreported", nvidia(json!({})), Some(None)),
+        (
+            "CBC chassis",
+            json!({
+                "Oem": {
+                    "Nvidia": {
+                        ODATA_TYPE: "#NvidiaChassis.v1_4_0.NvidiaCBCChassis",
+                        "TopologyId": 128
+                    }
+                }
+            }),
+            None,
+        ),
+        ("no NVIDIA extension", json!({}), None),
+    ] {
+        let bmc = Arc::new(Bmc::default());
+        let ids = chassis_ids_for("SMM_0");
+        let chassis = get_chassis(bmc, &ids, chassis_member(&ids, fields)).await?;
+
+        let access = chassis
+            .oem_nvidia()?
+            .map(|nvidia| nvidia.host_management_network_access());
+        assert_eq!(access, expected, "{scenario}");
+    }
+
+    Ok(())
+}
+
+#[test]
+async fn chassis_update_adds_oem_nvidia_beside_other_vendors() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = chassis_ids_for("SMM_0");
+    let member = chassis_member(&ids, json!({}));
+    let chassis = get_chassis(bmc.clone(), &ids, member.clone()).await?;
+    let update = ChassisUpdate::builder()
+        .with_oem(OemUpdate {
+            additional_properties: json!({ "OtherVendor": { "Keep": true } }),
+        })
+        .build()
+        .with_oem_nvidia(
+            NvidiaChassisUpdate::builder()
+                .with_host_management_network_access(false)
+                .build(),
+        )?;
+
+    bmc.expect(Expect::update(
+        &ids.chassis_id,
+        json!({
+            "Oem": {
+                "OtherVendor": { "Keep": true },
+                "Nvidia": { "HostManagementNetworkAccess": false }
+            }
+        }),
+        member,
+    ));
+    assert!(matches!(
+        chassis.update(&update).await?,
+        ModificationResponse::Entity(_)
     ));
 
     Ok(())
