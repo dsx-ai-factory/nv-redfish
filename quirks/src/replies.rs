@@ -27,9 +27,17 @@
 //! `InvalidOperationForSystemState` the same `Warning` or `OK` severity, so
 //! of its own messages only those its registry documents as these outcomes
 //! count.
+//!
+//! Lenovo XCC 3 answers a BIOS update it applied with `200` and a body that
+//! names only `@odata.context` and `@odata.type`, which is neither the
+//! resource nor a message.
 
 use nv_redfish_core::BmcError;
 use nv_redfish_core::BmcErrorClass;
+use nv_redfish_core::ModificationResponse;
+use serde::de::Error as _;
+use serde::Deserialize;
+use serde::Deserializer;
 use serde_json::Value;
 
 use crate::BmcQuirks;
@@ -120,6 +128,53 @@ fn ilo_success(body: &str) -> Option<Value> {
     (names_outcome || only_ilo_successes).then_some(reply)
 }
 
+/// The keys of the body Lenovo XCC 3 answers an applied BIOS update with.
+const ANNOTATION_ONLY_REPLY_KEYS: [&str; 2] = ["@odata.context", "@odata.type"];
+
+/// An update's reply, which Lenovo XCC 3 can send as OData annotations alone.
+pub enum UpdateReply<R> {
+    /// The reply the caller asked for.
+    Resource(R),
+    /// A body naming only `@odata.context` and `@odata.type`.
+    AnnotationsOnly,
+}
+
+impl<R> UpdateReply<R> {
+    /// The response to the update, with an annotation-only reply read as an
+    /// empty one.
+    pub fn into_response(response: ModificationResponse<Self>) -> ModificationResponse<R> {
+        match response {
+            ModificationResponse::Entity(Self::Resource(resource)) => {
+                ModificationResponse::Entity(resource)
+            }
+            ModificationResponse::Entity(Self::AnnotationsOnly) | ModificationResponse::Empty => {
+                ModificationResponse::Empty
+            }
+            ModificationResponse::Task(task) => ModificationResponse::Task(task),
+            ModificationResponse::Message(message) => ModificationResponse::Message(message),
+        }
+    }
+}
+
+impl<'de, R: for<'a> Deserialize<'a>> Deserialize<'de> for UpdateReply<R> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let reply = Value::deserialize(deserializer)?;
+        let annotations_only = reply.as_object().is_some_and(|reply| {
+            !reply.is_empty()
+                && reply
+                    .keys()
+                    .all(|key| ANNOTATION_ONLY_REPLY_KEYS.contains(&key.as_str()))
+        });
+        if annotations_only {
+            return Ok(Self::AnnotationsOnly);
+        }
+        // Keep the field path a direct decode of `R` would report.
+        serde_path_to_error::deserialize(&reply)
+            .map(Self::Resource)
+            .map_err(D::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -205,5 +260,61 @@ mod tests {
             assert_eq!(ilo_success(&text), success.then_some(body), "{scenario}");
         }
         assert_eq!(ilo_success("not json"), None);
+    }
+
+    /// Only the body XCC 3 answered a BIOS update with names no resource; a
+    /// resource, or an empty object, is decoded as the caller asked.
+    #[test]
+    fn only_an_annotation_only_body_names_no_resource() {
+        for (scenario, body, names_resource) in [
+            (
+                "XCC 3 BIOS update reply",
+                json!({
+                    "@odata.context": "/redfish/v1/$metadata#Bios.Bios",
+                    "@odata.type": "#Bios.v1_2_3.Bios"
+                }),
+                false,
+            ),
+            (
+                "a resource",
+                json!({
+                    "@odata.id": "/redfish/v1/Systems/1/Bios",
+                    "@odata.type": "#Bios.v1_2_3.Bios"
+                }),
+                true,
+            ),
+            ("an empty object", json!({}), true),
+        ] {
+            let reply: UpdateReply<Value> =
+                serde_json::from_value(body).expect("every body decodes as a Value");
+            assert_eq!(
+                matches!(reply, UpdateReply::Resource(_)),
+                names_resource,
+                "{scenario}"
+            );
+        }
+    }
+
+    /// A reply that is neither annotations alone nor the requested type
+    /// reports where it differs, as a direct decode would.
+    #[test]
+    fn a_mismatched_reply_keeps_its_field_path() {
+        #[derive(Debug, Deserialize)]
+        struct Requested {
+            #[allow(dead_code)]
+            status: Status,
+        }
+        #[derive(Debug, Deserialize)]
+        struct Status {
+            #[allow(dead_code)]
+            health: u8,
+        }
+
+        let error = serde_json::from_value::<UpdateReply<Requested>>(json!({
+            "status": { "health": "OK" }
+        }))
+        .err()
+        .expect("a string health is not the requested type");
+        assert!(error.to_string().contains("status.health"), "{}", error);
     }
 }

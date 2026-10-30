@@ -1057,6 +1057,14 @@ csdl_files = []
 
 [[oem-features]]
 vendor = "lenovo"
+name = "bios"
+oem_csdl_files = [
+    "LenovoBios_v1.xml",
+]
+csdl_files = []
+
+[[oem-features]]
+vendor = "lenovo"
 name = "computer-systems"
 oem_csdl_files = [
     "LenovoBootManager_v1.xml",

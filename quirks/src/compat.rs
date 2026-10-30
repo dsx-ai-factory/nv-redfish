@@ -73,6 +73,7 @@ use serde::Serialize;
 
 use crate::events::EventRepairs;
 use crate::replies::SuccessReplies;
+use crate::replies::UpdateReply;
 use crate::rules;
 use crate::rules::Enabled;
 use crate::BmcQuirks;
@@ -308,7 +309,15 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         } else {
             etag
         };
-        match self.inner.update(id, etag, update).await {
+        let response = if self.quirks.bug_annotation_only_update_reply() {
+            self.inner
+                .update::<V, UpdateReply<R>>(id, etag, update)
+                .await
+                .map(UpdateReply::into_response)
+        } else {
+            self.inner.update(id, etag, update).await
+        };
+        match response {
             Err(error)
                 if self.quirks.bug_accepted_update_without_task()
                     && error.error_class() == BmcErrorClass::HttpResponse { status: 202 } =>

@@ -110,6 +110,7 @@ enum Quirk {
     PasswordExpirationWithoutSeconds,
     AcceptedUpdateWithoutTask,
     AcceptedActionWithoutTask,
+    AnnotationOnlyUpdateReply,
 }
 
 // Devices whose service root `covers` matches have `quirks`.
@@ -151,7 +152,10 @@ const RULES: &[Rule] = &[
     // Lenovo XClarity Controller firmware: Lenovo, without AMI's OEM object.
     Rule {
         covers: |root| root.vendor_is("Lenovo") && !root.ami_oem,
-        quirks: &[Quirk::PasswordExpirationWithoutSeconds],
+        quirks: &[
+            Quirk::PasswordExpirationWithoutSeconds,
+            Quirk::AnnotationOnlyUpdateReply,
+        ],
     },
     // The H100 Viking.
     Rule {
@@ -548,6 +552,13 @@ impl BmcQuirks {
     pub(crate) fn bug_accepted_action_without_task(&self) -> bool {
         self.has(Quirk::AcceptedActionWithoutTask)
     }
+
+    /// Lenovo XCC 3 answers a BIOS update it applied with `200` and a body
+    /// naming only `@odata.context` and `@odata.type`: neither the resource
+    /// nor a message.
+    pub(crate) fn bug_annotation_only_update_reply(&self) -> bool {
+        self.has(Quirk::AnnotationOnlyUpdateReply)
+    }
 }
 
 /// Whether a resource's `Manufacturer` names a Lite-On device.
@@ -624,7 +635,10 @@ mod tests {
             ),
             (
                 json!({ "Vendor": "Lenovo" }),
-                &[Quirk::PasswordExpirationWithoutSeconds],
+                &[
+                    Quirk::PasswordExpirationWithoutSeconds,
+                    Quirk::AnnotationOnlyUpdateReply,
+                ],
             ),
             (
                 json!({ "Vendor": "NVIDIA", "Product": "VR NVL72" }),

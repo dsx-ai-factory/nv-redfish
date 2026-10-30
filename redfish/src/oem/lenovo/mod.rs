@@ -19,6 +19,7 @@ mod compiled_schema;
 
 #[cfg(any(
     feature = "accounts",
+    feature = "bios",
     feature = "computer-systems",
     feature = "managers"
 ))]
@@ -26,10 +27,15 @@ mod update;
 
 #[cfg(any(
     feature = "accounts",
+    feature = "bios",
     feature = "computer-systems",
     feature = "managers"
 ))]
 pub(crate) use update::oem_update;
+
+/// Support of Lenovo BIOS OEM attributes.
+#[cfg(all(feature = "bios", feature = "computer-systems"))]
+pub mod bios;
 
 /// Support of Lenovo Manager OEM attributes.
 #[cfg(feature = "managers")]
@@ -59,6 +65,9 @@ pub mod account_service;
 #[cfg(feature = "ports")]
 pub mod port;
 
+#[cfg(all(feature = "bios", feature = "computer-systems"))]
+#[doc(inline)]
+pub use bios::{LenovoBios, LenovoBiosUpdate, LenovoBiosUpdateExt};
 #[cfg(feature = "computer-systems")]
 #[doc(inline)]
 pub use computer_system_actions::LenovoComputerSystemActions;

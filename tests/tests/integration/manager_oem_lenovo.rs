@@ -190,7 +190,46 @@ async fn lenovo_security_fw_rollback_disabled() -> Result<(), Box<dyn StdError>>
     let lenovo = manager.oem_lenovo()?.unwrap();
     let security = lenovo.security().await?.unwrap();
     assert_eq!(security.fw_rollback(), Some(FwRollbackState::Disabled));
+    // Firmware before XCC3 2.97 does not report FWLockdown.
+    assert_eq!(security.fw_lockdown(), None);
 
+    Ok(())
+}
+
+#[test]
+async fn lenovo_security_updates_firmware_lockdown() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = ids();
+    let manager = get_manager(
+        bmc.clone(),
+        &ids,
+        manager_payload(&ids, Some(json!("Disabled")), true),
+    )
+    .await?;
+    let locked = |fw_lockdown: bool| {
+        json_merge([
+            &security_payload(&ids, "Disabled"),
+            &json!({ "FWLockdown": fw_lockdown }),
+        ])
+    };
+    bmc.expect(Expect::get(&ids.security_id, locked(false)));
+    let security = manager
+        .oem_lenovo()?
+        .ok_or("Lenovo OEM data missing")?
+        .security()
+        .await?
+        .ok_or("Lenovo security service missing")?;
+    assert_eq!(security.fw_lockdown(), Some(false));
+
+    bmc.expect(Expect::update(
+        &ids.security_id,
+        json!({ "FWLockdown": true }),
+        locked(true),
+    ));
+    let ModificationResponse::Entity(updated) = security.set_fw_lockdown(true).await? else {
+        return Err("expected updated Lenovo security service".into());
+    };
+    assert_eq!(updated.fw_lockdown(), Some(true));
     Ok(())
 }
 

@@ -107,6 +107,7 @@ compile-only-feature-sets = computer-systems,processors,controls \
              oem-lenovo \
              accounts,oem-lenovo \
              computer-systems,oem-lenovo \
+             computer-systems,bios,oem-lenovo \
              managers,oem-lenovo \
              chassis,network-adapters,ports,oem-lenovo \
              accounts,oem-dell \
