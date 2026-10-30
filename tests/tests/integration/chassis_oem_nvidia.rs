@@ -106,30 +106,80 @@ async fn oem_nvidia_cbc_wrong_odata_type_returns_not_available() -> Result<(), B
 
 #[test]
 async fn oem_nvidia_reset_invokes_advertised_action() -> Result<(), Box<dyn StdError>> {
-    let bmc = Arc::new(Bmc::default());
-    let ids = chassis_ids();
-    let action_target = format!("{}/Actions/Oem/NvidiaChassis.Reset", ids.chassis_id);
-    let chassis = chassis_member(
-        &ids,
-        json!({
-            "Actions": {
-                "Oem": {
-                    "#NvidiaChassis.Reset": {
-                        "target": &action_target
+    for (reset_type, wire_value) in [
+        (NvidiaChassisResetType::ForceDpuReset, "ForceDpuReset"),
+        (NvidiaChassisResetType::ForcedDpuReset, "ForcedDpuReset"),
+        (
+            NvidiaChassisResetType::DirectForcedDpuReset,
+            "DirectForcedDpuReset",
+        ),
+        (NvidiaChassisResetType::ForcedFullReset, "ForcedFullReset"),
+    ] {
+        let bmc = Arc::new(Bmc::default());
+        let ids = chassis_ids();
+        let action_target = format!("{}/Actions/Oem/NvidiaChassis.Reset", ids.chassis_id);
+        let chassis = chassis_member(
+            &ids,
+            json!({
+                "Actions": {
+                    "Oem": {
+                        "#NvidiaChassis.Reset": {
+                            "target": &action_target
+                        }
                     }
                 }
-            }
-        }),
-    );
-    let chassis = get_chassis(bmc.clone(), &ids, chassis).await?;
+            }),
+        );
+        let chassis = get_chassis(bmc.clone(), &ids, chassis).await?;
 
-    expect_redfish_reset_action(&bmc, &action_target, Some("ForceDpuReset"));
+        expect_redfish_reset_action(&bmc, &action_target, Some(wire_value));
 
-    let actions = chassis.oem_nvidia_actions()?.unwrap();
-    assert!(matches!(
-        actions.reset(NvidiaChassisResetType::ForceDpuReset).await?,
-        ModificationResponse::Entity(())
-    ));
+        let actions = chassis.oem_nvidia_actions()?.unwrap();
+        assert!(matches!(
+            actions.reset(reset_type).await?,
+            ModificationResponse::Entity(())
+        ));
+    }
+
+    Ok(())
+}
+
+/// BlueField-4 serves `NvidiaChassis.Reset` on `BlueField_0` while advertising
+/// only the standard `Chassis.Reset`; other BlueField products get no action
+/// they did not advertise.
+#[test]
+async fn oem_nvidia_reset_on_bluefield4_uses_unadvertised_action() -> Result<(), Box<dyn StdError>>
+{
+    for (product, supplied) in [("BlueField-4", true), ("BlueField-3 DPU", false)] {
+        let bmc = Arc::new(Bmc::default());
+        let ids = ChassisIds {
+            root_fields: json!({ "Vendor": "Nvidia", "Product": product }),
+            ..chassis_ids_for("BlueField_0")
+        };
+        let chassis = chassis_member(
+            &ids,
+            json!({
+                "Actions": {
+                    "#Chassis.Reset": {
+                        "@Redfish.ActionInfo": format!("{}/ResetActionInfo", ids.chassis_id),
+                        "target": format!("{}/Actions/Chassis.Reset", ids.chassis_id)
+                    }
+                }
+            }),
+        );
+        let chassis = get_chassis(bmc.clone(), &ids, chassis).await?;
+
+        let actions = chassis.oem_nvidia_actions()?;
+        assert_eq!(actions.is_some(), supplied, "{product}");
+        if let Some(actions) = actions {
+            let action_target = format!("{}/Actions/Oem/NvidiaChassis.Reset", ids.chassis_id);
+            expect_redfish_reset_action(&bmc, &action_target, Some("ArmReset"));
+            assert!(matches!(
+                actions.reset(NvidiaChassisResetType::ArmReset).await?,
+                ModificationResponse::Entity(())
+            ));
+        }
+    }
 
     Ok(())
 }
@@ -237,9 +287,7 @@ async fn expect_service_root(
     bmc: Arc<Bmc>,
     ids: &ChassisIds,
 ) -> Result<ServiceRoot<Bmc>, Box<dyn StdError>> {
-    bmc.expect(Expect::get(
-        &ids.root_id,
-        json!({
+    let root = json!({
             ODATA_ID: &ids.root_id,
             ODATA_TYPE: SERVICE_ROOT_DATA_TYPE,
             "Id": "RootService",
@@ -255,7 +303,10 @@ async fn expect_service_root(
                     ODATA_ID: format!("{}/SessionService/Sessions", ids.root_id),
                 }
             },
-        }),
+    });
+    bmc.expect(Expect::get(
+        &ids.root_id,
+        json_merge([&root, &ids.root_fields]),
     ));
 
     ServiceRoot::new(bmc).await.map_err(Into::into)
@@ -263,16 +314,22 @@ async fn expect_service_root(
 
 struct ChassisIds {
     root_id: ODataId,
+    root_fields: Value,
     chassis_collection_id: String,
     chassis_id: String,
 }
 
 fn chassis_ids() -> ChassisIds {
+    chassis_ids_for("CBC_0")
+}
+
+fn chassis_ids_for(chassis: &str) -> ChassisIds {
     let root_id = ODataId::service_root();
     let chassis_collection_id = format!("{root_id}/Chassis");
-    let chassis_id = format!("{chassis_collection_id}/CBC_0");
+    let chassis_id = format!("{chassis_collection_id}/{chassis}");
     ChassisIds {
         root_id,
+        root_fields: json!({}),
         chassis_collection_id,
         chassis_id,
     }

@@ -17,6 +17,7 @@
 //! returns it repaired; a document without the fault comes back unchanged.
 
 use nv_redfish_core::{EdmDateTimeOffset, EdmGuid};
+use serde_json::json;
 use serde_json::Value;
 
 pub fn add_default_update_service_name(v: Value) -> Value {
@@ -108,6 +109,35 @@ pub fn normalize_invalid_uuid_field(mut v: Value) -> Value {
                 .is_some_and(|s| EdmGuid::parse_str(s).is_err());
             if is_invalid {
                 *uuid = Value::Null;
+            }
+        }
+    }
+    v
+}
+
+// BlueField-4 serves `NvidiaChassis.Reset` on its `BlueField_0` chassis
+// without advertising it; the action is advertised at the target the BMC
+// serves, and an advertised one is left as it came.
+pub fn advertise_bluefield_nvidia_chassis_reset(mut v: Value) -> Value {
+    let target = match (
+        v.get("Id").and_then(Value::as_str),
+        v.get("@odata.id").and_then(Value::as_str),
+    ) {
+        (Some("BlueField_0"), Some(chassis_id)) => {
+            Some(format!("{chassis_id}/Actions/Oem/NvidiaChassis.Reset"))
+        }
+        _ => None,
+    };
+    let Some(target) = target else {
+        return v;
+    };
+    if let Some(chassis) = v.as_object_mut() {
+        let actions = chassis.entry("Actions").or_insert_with(|| json!({}));
+        if let Some(actions) = actions.as_object_mut() {
+            let oem = actions.entry("Oem").or_insert_with(|| json!({}));
+            if let Some(oem) = oem.as_object_mut() {
+                oem.entry("#NvidiaChassis.Reset")
+                    .or_insert_with(|| json!({ "target": target }));
             }
         }
     }
@@ -284,6 +314,54 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// BlueField-4's `BlueField_0` chassis advertises only the standard
+    /// `Chassis.Reset`; the NVIDIA reset it serves is added beside it, and
+    /// nothing changes on another chassis or where the action is advertised.
+    #[test]
+    fn bluefield_chassis_reset_is_advertised_only_where_missing() {
+        let target = "/redfish/v1/Chassis/BlueField_0/Actions/Oem/NvidiaChassis.Reset";
+        let standard = json!({
+            "@Redfish.ActionInfo": "/redfish/v1/Chassis/BlueField_0/ResetActionInfo",
+            "target": "/redfish/v1/Chassis/BlueField_0/Actions/Chassis.Reset"
+        });
+        let chassis = |id: &str, actions: Value| json!({ "@odata.id": format!("/redfish/v1/Chassis/{id}"), "Id": id, "Actions": actions });
+        for (scenario, document, expected) in [
+            (
+                "BlueField_0 as captured",
+                chassis("BlueField_0", json!({ "#Chassis.Reset": standard })),
+                chassis(
+                    "BlueField_0",
+                    json!({
+                        "#Chassis.Reset": standard,
+                        "Oem": { "#NvidiaChassis.Reset": { "target": target } }
+                    }),
+                ),
+            ),
+            (
+                "another chassis",
+                chassis("BlueField_IRoT_NIC_0", json!({})),
+                chassis("BlueField_IRoT_NIC_0", json!({})),
+            ),
+            (
+                "advertised",
+                chassis(
+                    "BlueField_0",
+                    json!({ "Oem": { "#NvidiaChassis.Reset": { "target": "/advertised" } } }),
+                ),
+                chassis(
+                    "BlueField_0",
+                    json!({ "Oem": { "#NvidiaChassis.Reset": { "target": "/advertised" } } }),
+                ),
+            ),
+        ] {
+            assert_eq!(
+                advertise_bluefield_nvidia_chassis_reset(document),
+                expected,
+                "{scenario}"
+            );
+        }
+    }
 
     #[test]
     fn vera_rubin_boot_order_entry_reference_strips_display_name_suffix() {

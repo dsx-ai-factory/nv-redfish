@@ -1018,6 +1018,15 @@
         <Member Name="ForceDpuReset">
           <Annotation Term="OData.Description" String="DPU Level Immediate Reset"/>
         </Member>
+        <Member Name="ForcedDpuReset">
+          <Annotation Term="OData.Description" String="DPU Level Immediate Reset"/>
+        </Member>
+        <Member Name="DirectForcedDpuReset">
+          <Annotation Term="OData.Description" String="DPU Level Direct Forced Reset"/>
+        </Member>
+        <Member Name="ForcedFullReset">
+          <Annotation Term="OData.Description" String="Card Level Immediate Reset"/>
+        </Member>
         <Member Name="DpuReset">
           <Annotation Term="OData.Description" String="DPU Level Orchestrated Reset"/>
         </Member>
