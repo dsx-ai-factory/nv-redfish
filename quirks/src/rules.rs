@@ -85,6 +85,11 @@ const RULES: &[Rule] = &[
         fix: fixes::normalize_invalid_uuid_field,
     },
     Rule {
+        resource_type: "Chassis",
+        enabled: BmcQuirks::bug_unadvertised_nvidia_chassis_reset,
+        fix: fixes::advertise_bluefield_nvidia_chassis_reset,
+    },
+    Rule {
         resource_type: "ComputerSystem",
         enabled: BmcQuirks::computer_systems_wrong_last_reset_time,
         fix: fixes::remove_wrong_last_reset_time,

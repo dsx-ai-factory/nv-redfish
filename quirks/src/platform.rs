@@ -111,6 +111,7 @@ enum Quirk {
     AcceptedUpdateWithoutTask,
     AcceptedActionWithoutTask,
     AnnotationOnlyUpdateReply,
+    UnadvertisedNvidiaChassisReset,
 }
 
 // Devices whose service root `covers` matches have `quirks`.
@@ -239,6 +240,14 @@ const RULES: &[Rule] = &[
             Quirk::AcceptedUpdateWithoutTask,
             Quirk::AcceptedActionWithoutTask,
         ],
+    },
+    // BlueField-4 DPUs, which some firmware names by board, `B4240V`.
+    Rule {
+        covers: |root| {
+            root.vendor_is("Nvidia")
+                && (root.product_is("BlueField-4") || root.product_is("B4240V"))
+        },
+        quirks: &[Quirk::UnadvertisedNvidiaChassisReset],
     },
     // Lite-On power shelves that name their vendor.
     Rule {
@@ -559,6 +568,13 @@ impl BmcQuirks {
     pub(crate) fn bug_annotation_only_update_reply(&self) -> bool {
         self.has(Quirk::AnnotationOnlyUpdateReply)
     }
+
+    /// A BlueField-4 BMC serves `NvidiaChassis.Reset` on its `BlueField_0`
+    /// chassis, and documents its reset types in
+    /// `Oem/Nvidia/ResetActionInfo`, without advertising the action.
+    pub(crate) fn bug_unadvertised_nvidia_chassis_reset(&self) -> bool {
+        self.has(Quirk::UnadvertisedNvidiaChassisReset)
+    }
 }
 
 /// Whether a resource's `Manufacturer` names a Lite-On device.
@@ -676,7 +692,11 @@ mod tests {
             ),
             (
                 json!({ "Vendor": "Nvidia", "Product": "BlueField-4" }),
-                &dpu,
+                &[dpu.as_slice(), &[Quirk::UnadvertisedNvidiaChassisReset]].concat(),
+            ),
+            (
+                json!({ "Vendor": "Nvidia", "Product": "B4240V" }),
+                &[Quirk::UnadvertisedNvidiaChassisReset],
             ),
             (json!({ "Vendor": "Nvidia", "Product": "Other" }), &[]),
             (
