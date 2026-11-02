@@ -36,44 +36,6 @@
         <Annotation Term="OData.AdditionalProperties" Bool="false"/>
         <Annotation Term="OData.Description" String="This property shall represent the NVIDIA OEM properties for a ComputerSystem resource."/>
         <Annotation Term="OData.LongDescription" String="This property shall represent the NVIDIA OEM properties for a ComputerSystem resource."/>
-        <!-- Local additions for BlueField firmware properties omitted by the published CSDL. -->
-        <Property Name="BaseMAC" Type="Edm.String">
-          <Annotation Term="OData.Description" String="Base MAC address of the BlueField device."/>
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
-        </Property>
-        <Property Name="Mode" Type="NvidiaComputerSystem.Mode">
-          <Annotation Term="OData.Description" String="Current BlueField operating mode."/>
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
-        </Property>
-        <Property Name="HostRshim" Type="NvidiaComputerSystem.HostRshim">
-          <Annotation Term="OData.Description" String="Current host-side rshim interface state."/>
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
-        </Property>
-        <Property Name="Actions" Type="NvidiaComputerSystem.Actions" Nullable="false">
-          <Annotation Term="OData.Description" String="Actions advertised by the BlueField OEM resource."/>
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
-        </Property>
-      </ComplexType>
-      <EnumType Name="Mode">
-        <Annotation Term="OData.Description" String="Operating mode of a BlueField device."/>
-        <Member Name="NicMode">
-          <Annotation Term="OData.Description" String="The device operates as a regular NIC for the host."/>
-        </Member>
-        <Member Name="DpuMode">
-          <Annotation Term="OData.Description" String="The device controls packet processing as a DPU."/>
-        </Member>
-      </EnumType>
-      <EnumType Name="HostRshim">
-        <Annotation Term="OData.Description" String="State of the host-side rshim interface of a BlueField device."/>
-        <Member Name="Enabled">
-          <Annotation Term="OData.Description" String="The host can reach the DPU over rshim."/>
-        </Member>
-        <Member Name="Disabled">
-          <Annotation Term="OData.Description" String="The host cannot reach the DPU over rshim."/>
-        </Member>
-      </EnumType>
-      <ComplexType Name="Actions">
-        <Annotation Term="OData.AdditionalProperties" Bool="false"/>
       </ComplexType>
       <Action Name="VariableSpiErase" IsBound="true">
         <Annotation Term="OData.Description" String="This action initiates an erase operation on the active CPU variable SPI device."/>
@@ -392,27 +354,6 @@
           <Annotation Term="Measures.Unit" String="W"/>
         </Property>
       </ComplexType>
-    </Schema>
-    <!-- Local BlueField actions retain the namespaces advertised by the BMC. -->
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Mode">
-      <Action Name="Set" IsBound="true">
-        <Annotation Term="OData.Description" String="Set the BlueField operating mode."/>
-        <Parameter Name="ComputerSystem" Type="NvidiaComputerSystem.Actions"/>
-        <Parameter Name="Mode" Type="NvidiaComputerSystem.Mode" Nullable="false"/>
-      </Action>
-    </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="HostRshim">
-      <Action Name="Set" IsBound="true">
-        <Annotation Term="OData.Description" String="Enable or disable the host-side rshim interface."/>
-        <Parameter Name="ComputerSystem" Type="NvidiaComputerSystem.Actions"/>
-        <Parameter Name="HostRshim" Type="NvidiaComputerSystem.HostRshim" Nullable="false"/>
-      </Action>
-    </Schema>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="SOC">
-      <Action Name="ForceReset" IsBound="true">
-        <Annotation Term="OData.Description" String="Force a reset of the DPU Arm SoC."/>
-        <Parameter Name="ComputerSystem" Type="NvidiaComputerSystem.Actions"/>
-      </Action>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>
