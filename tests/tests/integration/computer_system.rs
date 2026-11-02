@@ -20,6 +20,7 @@ use std::sync::Arc;
 use nv_redfish::account::AccountServiceConfig;
 use nv_redfish::computer_system::BootOptionReference;
 use nv_redfish::computer_system::BootOptionUpdate;
+use nv_redfish::computer_system::BootUpdate;
 use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::computer_system::ComputerSystemUpdate;
 use nv_redfish::computer_system::SecureBootUpdate;
@@ -267,6 +268,79 @@ async fn set_boot_order_uses_advertised_settings_resource() -> Result<(), Box<dy
             .await?,
         ModificationResponse::Entity(_)
     ));
+    Ok(())
+}
+
+#[test]
+async fn settings_follows_advertised_reference_and_handles_absence() -> Result<(), Box<dyn StdError>>
+{
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let settings_id = format!("{}/SD", ids.system_id);
+    let system = get_system(
+        bmc.clone(),
+        &ids,
+        computer_system(
+            &ids,
+            json!({
+                "@Redfish.Settings": {
+                    "SettingsObject": { ODATA_ID: &settings_id }
+                },
+                "Boot": { "BootOrder": ["Boot0001"] }
+            }),
+        ),
+    )
+    .await?;
+
+    let settings_etag = "W/\"system-settings\"";
+    bmc.expect(Expect::get(
+        &settings_id,
+        json!({
+            ODATA_ID: &settings_id,
+            ODATA_TYPE: SYSTEM_DATA_TYPE,
+            "@odata.etag": settings_etag,
+            "Id": "SD",
+            "Name": "System Settings",
+            "Boot": { "BootOrder": ["Boot0002"] }
+        }),
+    ));
+    let settings = system.settings().await?.ok_or("settings object missing")?;
+    assert_eq!(settings.raw().id, "SD");
+    assert_eq!(
+        settings.boot_order(),
+        Some(vec![BootOptionReference::new("Boot0002")])
+    );
+
+    bmc.expect(Expect::update_with_etag(
+        &settings_id,
+        Some(settings_etag),
+        json!({ "Boot": { "BootOrder": ["Boot0003"] } }),
+        json!({ ODATA_ID: &settings_id }),
+    ));
+    bmc.expect(Expect::get(
+        &settings_id,
+        json!({
+            ODATA_ID: &settings_id,
+            ODATA_TYPE: SYSTEM_DATA_TYPE,
+            "Id": "SD",
+            "Name": "System Settings",
+            "Boot": { "BootOrder": ["Boot0003"] }
+        }),
+    ));
+    let update = ComputerSystemUpdate::builder()
+        .with_boot(
+            BootUpdate::builder()
+                .with_boot_order(vec!["Boot0003".into()])
+                .build(),
+        )
+        .build();
+    assert!(matches!(
+        settings.update(&update).await?,
+        ModificationResponse::Entity(_)
+    ));
+
+    let system = get_system(bmc.clone(), &ids, computer_system(&ids, json!({}))).await?;
+    assert!(system.settings().await?.is_none());
     Ok(())
 }
 
