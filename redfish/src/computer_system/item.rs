@@ -226,6 +226,22 @@ impl<B: Bmc> ComputerSystem<B> {
             .await
     }
 
+    /// Get the advertised computer system settings object.
+    ///
+    /// Returns `Ok(None)` when this computer system does not advertise
+    /// `@Redfish.Settings`. [`Self::update`] on the returned handle writes
+    /// to the settings object with its own `ETag`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching the settings object fails.
+    pub async fn settings(&self) -> Result<Option<Self>, Error<B>> {
+        match self.data.settings_object() {
+            Some(settings) => Self::new(&self.bmc, &settings).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
     /// Reset this computer system.
     ///
     /// # Errors
