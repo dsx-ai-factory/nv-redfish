@@ -30,6 +30,31 @@ pub fn add_default_update_service_name(v: Value) -> Value {
     }
 }
 
+// The Viking and Lenovo AMI trays accept multipart firmware uploads at
+// `UpdateService/upload` without advertising `MultipartHttpPushUri`; the
+// URI is advertised there, and a non-empty advertised one is left as it
+// came.
+pub fn advertise_multipart_http_push_uri(mut v: Value) -> Value {
+    let advertised = v
+        .get("MultipartHttpPushUri")
+        .and_then(Value::as_str)
+        .is_some_and(|uri| !uri.trim().is_empty());
+    if advertised {
+        return v;
+    }
+    let Some(upload) = v
+        .get("@odata.id")
+        .and_then(Value::as_str)
+        .map(|service| format!("{}/upload", service.trim_end_matches('/')))
+    else {
+        return v;
+    };
+    if let Some(service) = v.as_object_mut() {
+        service.insert("MultipartHttpPushUri".into(), Value::String(upload));
+    }
+    v
+}
+
 // `ReleaseDate` is an `Edm.DateTimeOffset`, but some systems put
 // `00:00:00Z` there, which does not conform to its ABNF; the field is
 // removed.
@@ -314,6 +339,44 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// The upload URI is added where the update service advertises none or
+    /// an empty one; an advertised URI is left as it came.
+    #[test]
+    fn multipart_push_uri_is_advertised_only_where_missing() {
+        let service = |fields: Value| {
+            let mut service =
+                json!({ "@odata.id": "/redfish/v1/UpdateService", "Id": "UpdateService" });
+            if let (Some(service), Value::Object(fields)) = (service.as_object_mut(), fields) {
+                service.extend(fields);
+            }
+            service
+        };
+        let upload = json!({ "MultipartHttpPushUri": "/redfish/v1/UpdateService/upload" });
+        for (scenario, document, expected) in [
+            ("absent", service(json!({})), service(upload.clone())),
+            (
+                "empty",
+                service(json!({ "MultipartHttpPushUri": "" })),
+                service(upload),
+            ),
+            (
+                "advertised",
+                service(
+                    json!({ "MultipartHttpPushUri": "/redfish/v1/UpdateService/update-multipart" }),
+                ),
+                service(
+                    json!({ "MultipartHttpPushUri": "/redfish/v1/UpdateService/update-multipart" }),
+                ),
+            ),
+        ] {
+            assert_eq!(
+                advertise_multipart_http_push_uri(document),
+                expected,
+                "{scenario}"
+            );
+        }
+    }
 
     /// BlueField-4's `BlueField_0` chassis advertises only the standard
     /// `Chassis.Reset`; the NVIDIA reset it serves is added beside it, and

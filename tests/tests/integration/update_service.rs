@@ -36,6 +36,7 @@ use nv_redfish_core::ODataId;
 use nv_redfish_core::OemMultipartPart;
 use nv_redfish_core::UploadStream;
 use nv_redfish_tests::ami_viking_service_root;
+use nv_redfish_tests::json_merge;
 use nv_redfish_tests::Bmc;
 use nv_redfish_tests::Expect;
 use nv_redfish_tests::ODATA_ID;
@@ -508,6 +509,83 @@ async fn requires_multipart_http_push_uri() -> Result<(), Box<dyn StdError>> {
         Err(Error::UpdateServiceMultipartHttpPushUriNotAvailable)
     ));
 
+    Ok(())
+}
+
+/// The Viking and Lenovo AMI trays accept multipart uploads at
+/// `UpdateService/upload` without advertising `MultipartHttpPushUri`, so
+/// uploads go there; another AMI BMC that advertises none still fails.
+#[tokio::test]
+async fn ami_trays_upload_to_the_unadvertised_multipart_uri() -> Result<(), Box<dyn StdError>> {
+    let root_id = ODataId::service_root();
+    let lenovo_ami = json_merge([
+        &service_root_json(),
+        &json!({ "Vendor": "Lenovo", "Oem": { "Ami": {} } }),
+    ]);
+    let plain_ami = json_merge([&service_root_json(), &json!({ "Vendor": "AMI" })]);
+    for (scenario, root, uploads) in [
+        (
+            "Viking",
+            ami_viking_service_root(
+                &root_id,
+                json!({ "UpdateService": { ODATA_ID: UPDATE_SERVICE_URI } }),
+            ),
+            true,
+        ),
+        ("Lenovo AMI", lenovo_ami, true),
+        ("other AMI", plain_ami, false),
+    ] {
+        let bmc = Arc::new(Bmc::default());
+        bmc.expect(Expect::get(&root_id, root));
+        bmc.expect(Expect::get(
+            UPDATE_SERVICE_URI,
+            json_merge([
+                &update_service_json(None),
+                &json!({ ODATA_TYPE: UPDATE_SERVICE_DATA_TYPE }),
+            ]),
+        ));
+        if uploads {
+            bmc.expect(Expect::multipart_update(
+                "/redfish/v1/UpdateService/upload",
+                json!({}),
+                "firmware.bin",
+                json!({ "@odata.id": "/redfish/v1/TaskService/Tasks/42", "Id": "42" }),
+            ));
+        }
+
+        let update_service = ServiceRoot::new(Arc::clone(&bmc))
+            .await?
+            .update_service()
+            .await?
+            .ok_or("expected update service")?;
+        let result = update_service
+            .multipart_update_from_reader::<_, _, serde_json::Value>(
+                &MultipartUpdateParameters::default(),
+                DataStream::new("firmware.bin", Cursor::new(b"firmware".to_vec()))
+                    .with_content_length(8),
+                Duration::from_secs(600),
+            )
+            .await;
+
+        if uploads {
+            assert!(
+                matches!(result, Ok(ModificationResponse::Entity(_))),
+                "{}: {:?}",
+                scenario,
+                result
+            );
+        } else {
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::UpdateServiceMultipartHttpPushUriNotAvailable)
+                ),
+                "{}: {:?}",
+                scenario,
+                result
+            );
+        }
+    }
     Ok(())
 }
 
