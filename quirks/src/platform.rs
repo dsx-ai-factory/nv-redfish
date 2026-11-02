@@ -112,6 +112,7 @@ enum Quirk {
     AcceptedActionWithoutTask,
     AnnotationOnlyUpdateReply,
     UnadvertisedNvidiaChassisReset,
+    UnadvertisedMultipartHttpPushUri,
 }
 
 // Devices whose service root `covers` matches have `quirks`.
@@ -150,6 +151,11 @@ const RULES: &[Rule] = &[
         covers: |root| root.vendor_is("AMI") || (root.vendor_is("Lenovo") && root.ami_oem),
         quirks: &[Quirk::RejectsOwnEtag],
     },
+    // Lenovo trays (HS350x class) on AMI MegaRAC firmware.
+    Rule {
+        covers: |root| root.vendor_is("Lenovo") && root.ami_oem,
+        quirks: &[Quirk::UnadvertisedMultipartHttpPushUri],
+    },
     // Lenovo XClarity Controller firmware: Lenovo, without AMI's OEM object.
     Rule {
         covers: |root| root.vendor_is("Lenovo") && !root.ami_oem,
@@ -172,6 +178,7 @@ const RULES: &[Rule] = &[
             Quirk::WrongComputerSystemMembers,
             Quirk::WrongManagerMembers,
             Quirk::ExpandIsNotWorkingProperly,
+            Quirk::UnadvertisedMultipartHttpPushUri,
         ],
     },
     // The GB300 host BMC on AMI firmware, told apart from other AMI BMCs by
@@ -575,6 +582,12 @@ impl BmcQuirks {
     pub(crate) fn bug_unadvertised_nvidia_chassis_reset(&self) -> bool {
         self.has(Quirk::UnadvertisedNvidiaChassisReset)
     }
+
+    /// The Viking and Lenovo AMI trays accept multipart firmware uploads at
+    /// `UpdateService/upload` without advertising `MultipartHttpPushUri`.
+    pub(crate) fn bug_unadvertised_multipart_http_push_uri(&self) -> bool {
+        self.has(Quirk::UnadvertisedMultipartHttpPushUri)
+    }
 }
 
 /// Whether a resource's `Manufacturer` names a Lite-On device.
@@ -638,6 +651,7 @@ mod tests {
                     Quirk::WrongComputerSystemMembers,
                     Quirk::WrongManagerMembers,
                     Quirk::ExpandIsNotWorkingProperly,
+                    Quirk::UnadvertisedMultipartHttpPushUri,
                 ],
             ),
             (
@@ -647,7 +661,10 @@ mod tests {
             (json!({ "Vendor": "AMI" }), &[Quirk::RejectsOwnEtag]),
             (
                 json!({ "Vendor": "Lenovo", "Oem": { "Ami": {} } }),
-                &[Quirk::RejectsOwnEtag],
+                &[
+                    Quirk::RejectsOwnEtag,
+                    Quirk::UnadvertisedMultipartHttpPushUri,
+                ],
             ),
             (
                 json!({ "Vendor": "Lenovo" }),

@@ -55,6 +55,11 @@ const RULES: &[Rule] = &[
         fix: fixes::add_default_update_service_name,
     },
     Rule {
+        resource_type: "UpdateService",
+        enabled: BmcQuirks::bug_unadvertised_multipart_http_push_uri,
+        fix: fixes::advertise_multipart_http_push_uri,
+    },
+    Rule {
         resource_type: "SoftwareInventory",
         enabled: BmcQuirks::fw_inventory_wrong_release_date,
         fix: fixes::remove_wrong_release_date,
