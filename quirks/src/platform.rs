@@ -263,7 +263,6 @@ const RULES: &[Rule] = &[
                 .is_some_and(|vendor| vendor.starts_with("LITE-ON"))
         },
         quirks: &[
-            Quirk::MissingRootNavProperties,
             Quirk::ResetToDefaultsTypeParameter,
             Quirk::PowerSupplyLocationIndicatorObject,
             Quirk::PowerShelfStates,
@@ -273,7 +272,7 @@ const RULES: &[Rule] = &[
     // Lite-On power shelves often do; Delta shelves do too.
     Rule {
         covers: |root| root.vendor.is_none() && root.redfish_version_is("1.9.0"),
-        quirks: &[Quirk::MissingRootNavProperties, Quirk::PowerShelfStates],
+        quirks: &[Quirk::PowerShelfStates],
     },
 ];
 
@@ -353,8 +352,7 @@ impl BmcQuirks {
     }
 
     /// The service root omits navigation properties that a direct GET
-    /// still serves: Vikings before a BMC reset, Lite-On power shelves for
-    /// `/Systems`.
+    /// still serves: Vikings before a BMC reset.
     #[must_use]
     pub fn bug_missing_root_nav_properties(&self) -> bool {
         self.has(Quirk::MissingRootNavProperties)
@@ -734,7 +732,6 @@ mod tests {
             (
                 json!({ "Vendor": "LITE-ON Technology" }),
                 &[
-                    Quirk::MissingRootNavProperties,
                     Quirk::ResetToDefaultsTypeParameter,
                     Quirk::PowerSupplyLocationIndicatorObject,
                     Quirk::PowerShelfStates,
@@ -742,7 +739,7 @@ mod tests {
             ),
             (
                 json!({ "RedfishVersion": "1.9.0" }),
-                &[Quirk::MissingRootNavProperties, Quirk::PowerShelfStates],
+                &[Quirk::PowerShelfStates],
             ),
             (json!({ "Vendor": "Contoso" }), &[]),
             (json!({}), &[]),

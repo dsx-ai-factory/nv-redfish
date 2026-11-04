@@ -557,54 +557,59 @@ async fn ami_viking_missing_root_systems_nav_workaround() -> Result<(), Box<dyn 
 }
 
 #[test]
-async fn liteon_f16_missing_root_systems_nav_workaround() -> Result<(), Box<dyn StdError>> {
-    // Platform under test: Lite-On F16 power shelf (`Vendor=LITE-ON TECHNOLOGY CORP.`).
-    // Quirk under test: missing root Systems navigation property; `/Systems` is fetched directly.
+async fn liteon_f16_missing_root_systems_is_not_probed() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = computer_system_ids();
-    let computer_system = computer_system(&ids, json!({}));
-    let service_root =
-        expect_liteon_powershelf_service_root_without_systems(bmc.clone(), &ids).await?;
-    bmc.expect(Expect::get(
-        &ids.systems_id,
-        json!({
-            ODATA_ID: &ids.systems_id,
-            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
-            "Id": resource_name(&ids.systems_id),
-            "Name": "Computer System Collection",
-            "Members": [computer_system]
-        }),
-    ));
+    let service_root = expect_liteon_powershelf_service_root_without_systems(bmc, &ids).await?;
 
-    let systems = service_root.systems().await?.unwrap();
-    let members = systems.members().await?;
-    assert_eq!(members.len(), 1);
+    // No GET is expected for any unadvertised root resource.
+    assert!(service_root.systems().await?.is_none());
+    assert!(service_root.chassis().await?.is_none());
+    assert!(service_root.managers().await?.is_none());
+    assert!(service_root.update_service().await?.is_none());
 
     Ok(())
 }
 
 #[test]
-async fn anonymous_1_9_0_missing_root_systems_nav_workaround() -> Result<(), Box<dyn StdError>> {
-    // Platform under test: anonymous Redfish 1.9.0 root (no vendor).
-    // Quirk under test: missing root Systems navigation property.
+async fn anonymous_1_9_0_missing_root_systems_is_not_probed() -> Result<(), Box<dyn StdError>> {
+    // Lite-On and Delta shelves can both have this vendor-less root.
     let bmc = Arc::new(Bmc::default());
     let ids = computer_system_ids();
-    let computer_system = computer_system(&ids, json!({}));
-    let service_root = expect_anonymous_1_9_service_root_without_systems(bmc.clone(), &ids).await?;
-    bmc.expect(Expect::get(
-        &ids.systems_id,
-        json!({
-            ODATA_ID: &ids.systems_id,
-            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
-            "Id": resource_name(&ids.systems_id),
-            "Name": "Computer System Collection",
-            "Members": [computer_system]
-        }),
-    ));
+    let service_root = expect_anonymous_1_9_service_root_without_systems(bmc, &ids).await?;
 
-    let systems = service_root.systems().await?.unwrap();
-    let members = systems.members().await?;
-    assert_eq!(members.len(), 1);
+    assert!(service_root.systems().await?.is_none());
+    assert!(service_root.chassis().await?.is_none());
+    assert!(service_root.managers().await?.is_none());
+    assert!(service_root.update_service().await?.is_none());
+
+    Ok(())
+}
+
+#[test]
+async fn power_shelf_advertised_systems_are_read() -> Result<(), Box<dyn StdError>> {
+    let ids = computer_system_ids();
+    let fields = json!({ "Systems": { ODATA_ID: &ids.systems_id } });
+    for root in [
+        liteon_powershelf_service_root(&ids.root_id, fields.clone()),
+        anonymous_1_9_service_root(&ids.root_id, fields),
+    ] {
+        let bmc = Arc::new(Bmc::default());
+        bmc.expect(Expect::get(&ids.root_id, root));
+        let service_root = ServiceRoot::new(bmc.clone()).await?;
+        bmc.expect(Expect::get(
+            &ids.systems_id,
+            json!({
+                ODATA_ID: &ids.systems_id,
+                ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
+                "Name": "Computer System Collection",
+                "Members": [computer_system(&ids, json!({}))]
+            }),
+        ));
+
+        let systems = service_root.systems().await?.unwrap();
+        assert_eq!(systems.members().await?.len(), 1);
+    }
 
     Ok(())
 }
