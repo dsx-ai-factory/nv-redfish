@@ -432,6 +432,8 @@ enum FilterExpr {
 }
 
 impl FilterExpr {
+    /// Render the expression as `$filter` text, adding parentheses where
+    /// DSP0266 operator precedence would otherwise change its meaning.
     fn to_odata_string(&self) -> String {
         match self {
             Self::Comparison {
