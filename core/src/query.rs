@@ -432,6 +432,8 @@ enum FilterExpr {
 }
 
 impl FilterExpr {
+    /// Render the expression as `$filter` text, adding parentheses where
+    /// DSP0266 operator precedence would otherwise change its meaning.
     fn to_odata_string(&self) -> String {
         match self {
             Self::Comparison {
@@ -442,17 +444,28 @@ impl FilterExpr {
                 format!("{} {} {}", property, operator, value.to_odata_string())
             }
             Self::And(left, right) => {
-                format!("{} and {}", left.to_odata_string(), right.to_odata_string())
+                format!("{} and {}", left.to_and_operand(), right.to_and_operand())
             }
             Self::Or(left, right) => {
                 format!("{} or {}", left.to_odata_string(), right.to_odata_string())
             }
-            Self::Not(expr) => {
-                format!("not {}", expr.to_odata_string())
-            }
+            // DSP0266 gives `not` a higher precedence than comparisons, so
+            // the operand always needs parentheses.
+            Self::Not(expr) => match expr.as_ref() {
+                Self::Group(_) => format!("not {}", expr.to_odata_string()),
+                _ => format!("not ({})", expr.to_odata_string()),
+            },
             Self::Group(expr) => {
                 format!("({})", expr.to_odata_string())
             }
+        }
+    }
+
+    /// `and` binds tighter than `or`: keep an `or` operand together.
+    fn to_and_operand(&self) -> String {
+        match self {
+            Self::Or(..) => format!("({})", self.to_odata_string()),
+            _ => self.to_odata_string(),
         }
     }
 }
@@ -816,7 +829,45 @@ mod tests {
     #[test]
     fn test_not_operator() {
         let filter = FilterQuery::eq(&"Count", 2).not();
-        assert_eq!(filter.to_query_string(), "$filter=not Count eq 2");
+        assert_eq!(filter.to_query_string(), "$filter=not (Count eq 2)");
+    }
+
+    #[test]
+    fn test_not_of_compound_expression() {
+        let filter = FilterQuery::eq(&"A", 1).and().eq_then(&"B", 2).not();
+        assert_eq!(filter.to_query_string(), "$filter=not (A eq 1 and B eq 2)");
+    }
+
+    #[test]
+    fn test_not_of_group_is_not_double_wrapped() {
+        let filter = FilterQuery::eq(&"A", 1).or().eq_then(&"B", 2).group().not();
+        assert_eq!(filter.to_query_string(), "$filter=not (A eq 1 or B eq 2)");
+    }
+
+    #[test]
+    fn test_and_after_or_keeps_builder_order() {
+        let filter = FilterQuery::eq(&"A", 1)
+            .or()
+            .eq_then(&"B", 2)
+            .and()
+            .eq_then(&"C", 3);
+        assert_eq!(
+            filter.to_query_string(),
+            "$filter=(A eq 1 or B eq 2) and C eq 3"
+        );
+    }
+
+    #[test]
+    fn test_or_after_and_needs_no_parentheses() {
+        let filter = FilterQuery::eq(&"A", 1)
+            .and()
+            .eq_then(&"B", 2)
+            .or()
+            .eq_then(&"C", 3);
+        assert_eq!(
+            filter.to_query_string(),
+            "$filter=A eq 1 and B eq 2 or C eq 3"
+        );
     }
 
     #[test]
