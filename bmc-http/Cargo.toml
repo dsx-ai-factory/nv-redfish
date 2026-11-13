@@ -14,16 +14,16 @@ documentation = "https://docs.rs/nv-redfish-bmc-http"
 [features]
 default = ["reqwest"]
 
-# The reqwest client, using rustls with its ring crypto provider and the
-# webpki root certificates.
-reqwest = ["reqwest-client", "reqwest?/rustls-tls"]
+# The reqwest client, using rustls with its aws-lc-rs crypto provider and
+# the bundled Mozilla root certificates.
+reqwest = ["reqwest-client", "reqwest?/rustls", "dep:webpki-root-certs"]
 # The reqwest client, using the platform's TLS library: OpenSSL,
 # SChannel or Security.framework.
-reqwest-native-tls = ["reqwest-client", "reqwest?/native-tls"]
-# The reqwest client, using rustls with the webpki root certificates and
-# the process-default rustls CryptoProvider, which the application
-# installs before it builds a client.
-reqwest-rustls-no-provider = ["reqwest-client", "reqwest?/rustls-tls-webpki-roots-no-provider"]
+reqwest-native-tls = ["reqwest-client", "reqwest?/native-tls-no-alpn"]
+# The reqwest client, using rustls with the bundled Mozilla root
+# certificates and the process-default rustls CryptoProvider, which the
+# application installs before it builds a client.
+reqwest-rustls-no-provider = ["reqwest-client", "reqwest?/rustls-no-provider", "dep:webpki-root-certs"]
 # The reqwest client without TLS, for plain HTTP; the features above add
 # TLS.
 reqwest-client = ["dep:reqwest", "dep:futures-util", "dep:sse-stream", "dep:tokio-util", "dep:tokio", "tokio/time", "dep:bytes"]
@@ -48,6 +48,7 @@ sse-stream = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true, features = ["compat", "io"] }
 url = { workspace = true }
+webpki-root-certs = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["serde"] }
 time = { workspace = true, features = ["serde", "formatting", "parsing"] }
 
