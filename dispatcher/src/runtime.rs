@@ -924,13 +924,20 @@ struct CompletedWork<Ev, Err, M> {
 mod tests {
     #![allow(clippy::expect_used)]
 
+    use core::future::Future as _;
+    use core::pin::pin;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use core::task::{Context, Waker};
     use core::time::Duration;
+    use std::sync::Arc;
+    use std::task::Wake;
     use std::{num::NonZeroUsize, time::Instant};
 
     use futures_util::future::{pending, poll_immediate};
 
     use super::{ClockConfig, FutureWork, ManualClock, Runtime, RuntimeConfig, RuntimeOutput};
-    use crate::schedulers::{PeriodicLeaf, RoundRobin};
+    use crate::scheduler::ScheduledWork;
+    use crate::schedulers::{BoundedQueueBuilder, PeriodicLeaf, RoundRobin};
 
     type TestWork = FutureWork<u64, String>;
     type TestRoot = RoundRobin<TestWork, ()>;
@@ -948,6 +955,48 @@ mod tests {
             Box::pin(async { Ok(vec![7_u64]) }) as TestWork
         }));
         root
+    }
+
+    #[derive(Default)]
+    struct WokenFlag(AtomicBool);
+
+    impl Wake for WokenFlag {
+        fn wake(self: Arc<Self>) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Poll an idle runtime once and return the flag its waker sets.
+    fn park(rt: &mut Runtime<u64, String, ()>) -> Arc<WokenFlag> {
+        let flag = Arc::new(WokenFlag::default());
+        let waker = Waker::from(flag.clone());
+        assert!(pin!(rt.next())
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending());
+        flag
+    }
+
+    #[test]
+    fn push_to_an_empty_queue_wakes_the_latest_parked_waker() {
+        let (queue, producer) = BoundedQueueBuilder::new(NonZeroUsize::MIN)
+            .fifo()
+            .build::<TestWork, ()>();
+        let mut rt: Runtime<u64, String, ()> = Runtime::new(config(), queue);
+        let _replaced = park(&mut rt);
+        let parked = park(&mut rt);
+
+        let work: TestWork = Box::pin(async { Ok(vec![1]) });
+        let _ = producer.try_push(ScheduledWork::new((), work));
+        assert!(parked.0.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn graceful_shutdown_wakes_a_parked_runtime() {
+        let mut rt: Runtime<u64, String, ()> = Runtime::new(config(), TestRoot::new());
+        let parked = park(&mut rt);
+
+        rt.handle().graceful_shutdown();
+        assert!(parked.0.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
