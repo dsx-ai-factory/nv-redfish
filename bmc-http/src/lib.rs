@@ -1026,6 +1026,24 @@ mod tests {
     }
 
     #[test]
+    fn filter_string_literal_survives_url_query() -> Result<(), Box<dyn Error>> {
+        let endpoint = RedfishEndpoint::new(Url::parse("https://bmc.example")?);
+        let id = ODataId::from("/redfish/v1/Systems".to_string());
+
+        for value in ["A&B", "50%", "a+b", "x#1"] {
+            let query = FilterQuery::eq(&"Name", value);
+            let resolved = endpoint.with_odata_id_and_query(&id, &query.to_query_string());
+            let pairs: Vec<_> = resolved.query_pairs().collect();
+
+            assert_eq!(pairs.len(), 1, "{value}: {pairs:?}");
+            assert_eq!(pairs[0].0, "$filter");
+            assert_eq!(pairs[0].1, format!("Name eq '{value}'"));
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn uri_reference_relative_path_follows_base_path() -> Result<(), Box<dyn Error>> {
         let endpoint = RedfishEndpoint::new(Url::parse("https://bmc.example/proxy/")?);
 
