@@ -701,7 +701,6 @@ mod tests {
     use futures_util::task::AtomicWaker;
     use std::num::{NonZeroU32, NonZeroUsize};
     use std::panic::{catch_unwind, AssertUnwindSafe};
-    #[cfg(feature = "runtime-events")]
     use std::sync::Arc;
     use std::thread;
     use std::time::Instant;
@@ -714,10 +713,13 @@ mod tests {
     };
     use crate::scheduler::{ScheduledWork, Scheduler as _};
     use crate::schedulers::{
-        BoundedConcurrency, BoundedQueue, Fifo, RoundRobin, StrictPriority, TailDrop,
+        BoundedConcurrency, BoundedQueue, CircuitBreaker, CircuitBreakerConfig, Fifo, FixedCost,
+        RoundRobin, StrictPriority, TailDrop, TokenBucket, TokenBucketConfig,
     };
-    use crate::work::{Completion, CompletionOutcome, RoutingPath, WithPriority};
-    use crate::{Runtime, RuntimeConfig, RuntimeOutput};
+    use crate::work::{
+        Completion, CompletionOutcome, CostUnits, RoutingPath, WithCost, WithPriority,
+    };
+    use crate::{QueueEventSink, QueueId, Runtime, RuntimeConfig, RuntimeOutput};
 
     const fn capacity(value: usize) -> NonZeroUsize {
         NonZeroUsize::new(value).expect("non-zero test capacity")
@@ -1011,6 +1013,77 @@ mod tests {
             producer.try_push(ScheduledWork::new((), 2)),
             EnqueueOutcome::Closed(work) if work.payload == 2
         ));
+    }
+
+    #[test]
+    fn completion_drains_only_a_closed_queue_with_nothing_in_flight() {
+        fn complete<S: crate::Scheduler<u8, Meta = ()>>(queue: &mut S) {
+            queue.on_complete(Completion {
+                outcome: CompletionOutcome::Succeeded,
+                latency: Duration::ZERO,
+                meta: (),
+                routing: RoutingPath::empty(),
+            });
+        }
+
+        let (mut queue, producer) = BoundedQueueBuilder::new(capacity(2)).fifo().build();
+        let _ = producer.try_push(ScheduledWork::new((), 1_u8));
+        let _ = queue.take_next().expect("queued work");
+        complete(&mut queue);
+        assert_eq!(producer.stats().lifecycle, QueueLifecycle::Open);
+
+        let _ = producer.try_push(ScheduledWork::new((), 2));
+        let _ = producer.try_push(ScheduledWork::new((), 3));
+        let _ = queue.take_next().expect("queued work");
+        let _ = queue.take_next().expect("queued work");
+        assert_eq!(producer.close(), QueueLifecycle::Draining);
+        complete(&mut queue);
+        assert_eq!(producer.stats().lifecycle, QueueLifecycle::Draining);
+        complete(&mut queue);
+        assert_eq!(producer.stats().lifecycle, QueueLifecycle::Drained);
+    }
+
+    #[test]
+    fn wrappers_pass_the_event_sink_down_to_the_queue() {
+        fn sink() -> QueueEventSink {
+            QueueEventSink::new(|_| {}, || QueueId::new(7), Arc::new(()))
+        }
+        let assigned = Some(QueueId::new(7));
+
+        let (queue, producer) = BoundedQueueBuilder::new(capacity(1))
+            .fifo()
+            .build::<u8, ()>();
+        let cap = NonZeroU32::new(1).expect("non-zero");
+        BoundedConcurrency::new(cap, queue).register_queue_event_sink(sink());
+        assert_eq!(producer.queue_id(), assigned, "BoundedConcurrency");
+
+        let (queue, producer) = BoundedQueueBuilder::new(capacity(1))
+            .fifo()
+            .build::<u8, ()>();
+        CircuitBreaker::new(CircuitBreakerConfig::default(), queue)
+            .register_queue_event_sink(sink());
+        assert_eq!(producer.queue_id(), assigned, "CircuitBreaker");
+
+        let (queue, producer) = BoundedQueueBuilder::new(capacity(1))
+            .fifo()
+            .build::<u8, ()>();
+        FixedCost::new(CostUnits::new(1), queue).register_queue_event_sink(sink());
+        assert_eq!(producer.queue_id(), assigned, "FixedCost");
+
+        let (queue, producer) = BoundedQueueBuilder::new(capacity(1))
+            .fifo()
+            .build::<u8, ()>();
+        let mut priority = StrictPriority::new();
+        priority.add_child(queue, 0);
+        priority.register_queue_event_sink(sink());
+        assert_eq!(producer.queue_id(), assigned, "StrictPriority");
+
+        let (queue, producer) = BoundedQueueBuilder::new(capacity(1))
+            .fifo()
+            .build::<u8, WithCost<()>>();
+        TokenBucket::new(Instant::now(), TokenBucketConfig::default(), queue)
+            .register_queue_event_sink(sink());
+        assert_eq!(producer.queue_id(), assigned, "TokenBucket");
     }
 
     #[test]
