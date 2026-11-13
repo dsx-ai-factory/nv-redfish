@@ -44,6 +44,20 @@ pub use crate::schema::resource::PowerState;
 ))]
 pub use crate::schema::resource::ResetType;
 
+/// Whether one read of a collection holds all of its members.
+///
+/// Counts the members the service sent, before a quirk filter leaves any out.
+#[cfg(feature = "patch-collection")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Completeness {
+    /// `Members@odata.count` equals the members sent and no `Members@odata.nextLink`.
+    Whole,
+    /// A `Members@odata.nextLink`, or a `Members@odata.count` that differs.
+    Partial,
+    /// No `Members@odata.nextLink` and no non-negative integer `Members@odata.count`.
+    Unknown,
+}
+
 /// The status and health of a resource and its children.
 #[cfg(feature = "resource-status")]
 #[derive(Clone, Debug)]

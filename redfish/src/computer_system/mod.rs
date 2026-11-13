@@ -45,6 +45,7 @@ use crate::entity_link::EntityLink;
 use crate::patch_support::CollectionWithPatch;
 use crate::patch_support::FilterFn;
 use crate::patch_support::JsonValue;
+use crate::resource::Completeness;
 use crate::schema::computer_system::ComputerSystem as ComputerSystemSchema;
 use crate::schema::computer_system_collection::ComputerSystemCollection as ComputerSystemCollectionSchema;
 use crate::schema::resource::ResourceCollection;
@@ -110,6 +111,7 @@ pub type ComputerSystemLink<B> = EntityLink<B, ComputerSystemSchema>;
 pub struct SystemCollection<B: Bmc> {
     bmc: NvBmc<B>,
     collection: Arc<ComputerSystemCollectionSchema>,
+    completeness: Completeness,
 }
 
 impl<B: Bmc> SystemCollection<B> {
@@ -129,25 +131,25 @@ impl<B: Bmc> SystemCollection<B> {
         let filters_fn = (!filters.is_empty())
             .then(move || Arc::new(move |v: &JsonValue| filters.iter().any(|f| f(v))) as FilterFn);
 
-        if let Some(collection_ref) = &root.root.systems {
-            Self::expand_collection(bmc, collection_ref, None, filters_fn.as_ref())
-                .await
-                .map(Some)
-        } else if bmc.quirks.bug_missing_root_nav_properties() {
-            bmc.expand_property(&NavProperty::new_reference(
-                format!("{}/Systems", root.root.odata_id).into(),
-            ))
-            .await
-            .map(Some)
-        } else {
-            Ok(None)
-        }
-        .map(|c| {
-            c.map(|collection| Self {
-                bmc: bmc.clone(),
-                collection,
-            })
-        })
+        let id = match &root.root.systems {
+            Some(collection_ref) => collection_ref.id().clone(),
+            None if bmc.quirks.bug_missing_root_nav_properties() => {
+                format!("{}/Systems", root.root.odata_id).into()
+            }
+            None => return Ok(None),
+        };
+        let (collection, completeness) = Self::read_collection(
+            bmc,
+            &NavProperty::new_reference(id),
+            None,
+            filters_fn.as_ref(),
+        )
+        .await?;
+        Ok(Some(Self {
+            bmc: bmc.clone(),
+            collection,
+            completeness,
+        }))
     }
 
     /// Links to the computer systems in this collection.
@@ -163,6 +165,14 @@ impl<B: Bmc> SystemCollection<B> {
                 ComputerSystemLink::new(&self.bmc, NavProperty::new_reference(member.id().clone()))
             })
             .collect()
+    }
+
+    /// Whether the read of this collection holds all of its members.
+    ///
+    /// Makes no request.
+    #[must_use]
+    pub const fn completeness(&self) -> Completeness {
+        self.completeness
     }
 
     /// List all computer systems available in this BMC.

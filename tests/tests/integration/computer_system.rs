@@ -25,6 +25,7 @@ use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::computer_system::ComputerSystemUpdate;
 use nv_redfish::computer_system::SecureBootUpdate;
 use nv_redfish::computer_system::SystemCollection;
+use nv_redfish::resource::Completeness;
 use nv_redfish::resource::ResetType;
 use nv_redfish::ServiceRoot;
 use nv_redfish_core::ModificationResponse;
@@ -536,7 +537,8 @@ async fn dell_wrong_last_reset_time_workaround() -> Result<(), Box<dyn StdError>
 async fn ami_viking_missing_root_systems_nav_workaround() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = computer_system_ids();
-    let computer_system = computer_system(&ids, json!({}));
+    let computer_system =
+        computer_system(&ids, json!({ ODATA_ID: format!("{}/DGX", ids.systems_id) }));
     let service_root = expect_viking_service_root_without_systems(bmc.clone(), &ids).await?;
     bmc.expect(Expect::get(
         &ids.systems_id,
@@ -794,6 +796,152 @@ async fn system_links_read_systems_without_expand() -> Result<(), Box<dyn StdErr
     assert!(links[1].upgrade::<ComputerSystem<Bmc>>().await.is_err());
 
     Ok(())
+}
+
+#[test]
+async fn systems_with_next_link_are_partial() -> Result<(), Box<dyn StdError>> {
+    let systems = nvidia_systems_without_expand(json!({
+        "Members@odata.count": 4,
+        "Members@odata.nextLink": "/redfish/v1/Systems?$skip=2"
+    }))
+    .await?;
+
+    assert_eq!(systems.member_links().len(), 2);
+    assert_eq!(systems.completeness(), Completeness::Partial);
+
+    Ok(())
+}
+
+#[test]
+async fn systems_with_other_count_are_partial() -> Result<(), Box<dyn StdError>> {
+    let systems = nvidia_systems_without_expand(json!({ "Members@odata.count": 3 })).await?;
+
+    assert_eq!(systems.member_links().len(), 2);
+    assert_eq!(systems.completeness(), Completeness::Partial);
+
+    Ok(())
+}
+
+#[test]
+async fn systems_with_equal_count_are_whole() -> Result<(), Box<dyn StdError>> {
+    let systems = nvidia_systems_without_expand(json!({ "Members@odata.count": 2 })).await?;
+
+    assert_eq!(systems.member_links().len(), 2);
+    assert_eq!(systems.completeness(), Completeness::Whole);
+
+    Ok(())
+}
+
+#[test]
+async fn systems_without_count_or_next_link_are_unknown() -> Result<(), Box<dyn StdError>> {
+    let systems = nvidia_systems_without_expand(json!({})).await?;
+
+    assert_eq!(systems.member_links().len(), 2);
+    assert_eq!(systems.completeness(), Completeness::Unknown);
+
+    Ok(())
+}
+
+#[test]
+async fn viking_garbage_member_counts_as_whole() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    bmc.expect(Expect::get(
+        &ids.root_id,
+        ami_viking_service_root(
+            &ids.root_id,
+            json!({ "Systems": { ODATA_ID: &ids.systems_id } }),
+        ),
+    ));
+    let service_root = ServiceRoot::new(bmc.clone()).await?;
+    bmc.expect(Expect::get(
+        &ids.systems_id,
+        systems_collection(
+            &ids,
+            viking_members_with_garbage(&ids),
+            json!({ "Members@odata.count": 3 }),
+        ),
+    ));
+
+    let systems = service_root.restrict_expand().systems().await?.unwrap();
+
+    assert_eq!(link_ids(&systems), viking_system_ids(&ids));
+    assert_eq!(systems.completeness(), Completeness::Whole);
+
+    Ok(())
+}
+
+#[test]
+async fn missing_root_systems_drop_garbage_member() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let service_root = expect_viking_service_root_without_systems(bmc.clone(), &ids).await?;
+    bmc.expect(Expect::get(
+        &ids.systems_id,
+        systems_collection(&ids, viking_members_with_garbage(&ids), json!({})),
+    ));
+
+    let systems = service_root.restrict_expand().systems().await?.unwrap();
+
+    assert_eq!(link_ids(&systems), viking_system_ids(&ids));
+
+    Ok(())
+}
+
+async fn nvidia_systems_without_expand(
+    annotations: Value,
+) -> Result<SystemCollection<Bmc>, Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let service_root = expect_service_root(bmc.clone(), &ids, "NVIDIA").await?;
+    bmc.expect(Expect::get(
+        &ids.systems_id,
+        systems_collection(&ids, system_references(&ids), annotations),
+    ));
+
+    service_root
+        .restrict_expand()
+        .systems()
+        .await
+        .map(Option::unwrap)
+        .map_err(Into::into)
+}
+
+fn systems_collection(ids: &ComputerSystemIds, members: Vec<Value>, annotations: Value) -> Value {
+    json_merge([
+        &json!({
+            ODATA_ID: &ids.systems_id,
+            ODATA_TYPE: SYSTEM_COLLECTION_DATA_TYPE,
+            "Name": "Computer System Collection",
+            "Members": members
+        }),
+        &annotations,
+    ])
+}
+
+fn viking_system_ids(ids: &ComputerSystemIds) -> [String; 2] {
+    [
+        format!("{}/DGX", ids.systems_id),
+        format!("{}/HGX_Baseboard_0", ids.systems_id),
+    ]
+}
+
+fn viking_members_with_garbage(ids: &ComputerSystemIds) -> Vec<Value> {
+    let [dgx_id, hgx_id] = viking_system_ids(ids);
+    let garbage_id = format!("{hgx_id}/LogServices/FDR");
+    vec![
+        json!({ ODATA_ID: dgx_id }),
+        json!({ ODATA_ID: garbage_id }),
+        json!({ ODATA_ID: hgx_id }),
+    ]
+}
+
+fn link_ids(systems: &SystemCollection<Bmc>) -> Vec<String> {
+    systems
+        .member_links()
+        .iter()
+        .map(|link| link.odata_id().to_string())
+        .collect()
 }
 
 #[test]

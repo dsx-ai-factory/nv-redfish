@@ -17,6 +17,7 @@ use crate::patch_support::FilterFn;
 use crate::patch_support::JsonValue;
 use crate::patch_support::Payload;
 use crate::patch_support::ReadPatchFn;
+use crate::resource::Completeness;
 use crate::schema::resource::Oem;
 use crate::schema::resource::ResourceCollection;
 use crate::schema::SettingsAnnotations;
@@ -45,6 +46,7 @@ where
 {
     fn convert_patched(base: ResourceCollection, members: Vec<NavProperty<M>>) -> T;
 
+    #[allow(dead_code)] // feature-enabled func
     async fn expand_collection(
         bmc: &NvBmc<B>,
         nav: &NavProperty<T>,
@@ -55,15 +57,29 @@ where
             // Patches are not free so we keep separate branch for
             // patched collections only having this cost on systems
             // that requires to pay the price.
-            let patched_collection_ref = NavProperty::<Collection>::new_reference(nav.id().clone());
-            let collection = bmc.expand_property(&patched_collection_ref).await?;
-            let patch_fn = patch_fn.map(AsRef::as_ref);
-            let filter_fn = filter_fn.map(AsRef::as_ref);
-            let members = collection.members(patch_fn, filter_fn)?;
-            Ok(Arc::new(Self::convert_patched(collection.base(), members)))
+            Self::read_collection(bmc, nav, patch_fn, filter_fn)
+                .await
+                .map(|(collection, _)| collection)
         } else {
             bmc.expand_property(nav).await
         }
+    }
+
+    async fn read_collection(
+        bmc: &NvBmc<B>,
+        nav: &NavProperty<T>,
+        patch_fn: Option<&ReadPatchFn>,
+        filter_fn: Option<&FilterFn>,
+    ) -> Result<(Arc<T>, Completeness), Error<B>> {
+        let patched_collection_ref = NavProperty::<Collection>::new_reference(nav.id().clone());
+        let collection = bmc.expand_property(&patched_collection_ref).await?;
+        let patch_fn = patch_fn.map(AsRef::as_ref);
+        let filter_fn = filter_fn.map(AsRef::as_ref);
+        let members = collection.members(patch_fn, filter_fn)?;
+        Ok((
+            Arc::new(Self::convert_patched(collection.base(), members)),
+            collection.completeness(),
+        ))
     }
 }
 
@@ -74,9 +90,23 @@ struct Collection {
     base: ResourceCollection,
     #[serde(rename = "Members")]
     members: Option<Vec<Payload>>,
+    #[serde(rename = "Members@odata.count", default)]
+    count: Option<JsonValue>,
+    #[serde(rename = "Members@odata.nextLink", default)]
+    next_link: Option<JsonValue>,
 }
 
 impl Collection {
+    fn completeness(&self) -> Completeness {
+        let sent_before_filter = self.members.as_ref().map_or(0, Vec::len);
+        match self.count.as_ref().and_then(JsonValue::as_u64) {
+            _ if self.next_link.is_some() => Completeness::Partial,
+            Some(count) if count == sent_before_filter as u64 => Completeness::Whole,
+            Some(_) => Completeness::Partial,
+            None => Completeness::Unknown,
+        }
+    }
+
     fn base(&self) -> ResourceCollection {
         ResourceCollection {
             odata_id: self.base.odata_id.clone(),
