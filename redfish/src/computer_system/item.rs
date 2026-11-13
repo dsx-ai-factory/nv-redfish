@@ -18,6 +18,7 @@ use crate::core::EntityTypeRef as _;
 use crate::core::ModificationResponse;
 use crate::core::NavProperty;
 use crate::core::RedfishSettings as _;
+use crate::entity_link::FromLink;
 use crate::hardware_id::HardwareIdRef;
 use crate::hardware_id::Manufacturer as HardwareIdManufacturer;
 use crate::hardware_id::Model as HardwareIdModel;
@@ -33,6 +34,7 @@ use crate::Error;
 use crate::NvBmc;
 
 use std::convert::identity;
+use std::future::Future;
 use std::sync::Arc;
 use tagged_types::TaggedType;
 
@@ -631,5 +633,16 @@ impl<B: Bmc> ComputerSystem<B> {
                 || Ok(None),
                 |actions| SupermicroComputerSystemActions::new(&self.bmc, actions),
             )
+    }
+}
+
+impl<B: Bmc> FromLink<B> for ComputerSystem<B> {
+    type Schema = ComputerSystemSchema;
+
+    fn from_link(
+        bmc: &NvBmc<B>,
+        nav: &NavProperty<Self::Schema>,
+    ) -> impl Future<Output = Result<Self, Error<B>>> + Send {
+        Self::new(bmc, nav)
     }
 }

@@ -41,6 +41,7 @@ pub mod secure_boot_database;
 #[cfg(feature = "storages")]
 pub mod storage;
 
+use crate::entity_link::EntityLink;
 use crate::patch_support::CollectionWithPatch;
 use crate::patch_support::FilterFn;
 use crate::patch_support::JsonValue;
@@ -100,6 +101,9 @@ pub use secure_boot_database::{
 #[cfg(feature = "storages")]
 pub use storage::{Storage, StorageController, Volume, VolumeCollection};
 
+/// Link for accessing a computer system.
+pub type ComputerSystemLink<B> = EntityLink<B, ComputerSystemSchema>;
+
 /// Computer system collection.
 ///
 /// Provides functions to access collection members.
@@ -144,6 +148,21 @@ impl<B: Bmc> SystemCollection<B> {
                 collection,
             })
         })
+    }
+
+    /// Links to the computer systems in this collection.
+    ///
+    /// Makes no request. [`EntityLink::upgrade`] loads one
+    /// [`ComputerSystem`] without the other members.
+    #[must_use]
+    pub fn member_links(&self) -> Vec<ComputerSystemLink<B>> {
+        self.collection
+            .members
+            .iter()
+            .map(|member| {
+                ComputerSystemLink::new(&self.bmc, NavProperty::new_reference(member.id().clone()))
+            })
+            .collect()
     }
 
     /// List all computer systems available in this BMC.
