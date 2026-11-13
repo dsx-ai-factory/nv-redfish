@@ -241,6 +241,31 @@ mod reqwest_client_tests {
     }
 
     #[tokio::test]
+    async fn test_filter_string_literal_with_reserved_characters() {
+        let mock_server = MockServer::start().await;
+        let resource_path = paths::SYSTEMS_1;
+
+        let test_resource =
+            create_test_resource(resource_path, Some("790"), names::TEST_SYSTEM, 50);
+
+        Mock::given(method("GET"))
+            .and(path(resource_path))
+            .and(query_param("$filter", "Name eq 'A&B+C 50%#1\t\n\r'"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&test_resource))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let bmc = create_test_bmc(&mock_server);
+
+        let resource_id = create_odata_id(resource_path);
+        let filter_query = FilterQuery::eq(&"Name", "A&B+C 50%#1\t\n\r");
+        let result = bmc.filter::<TestResource>(&resource_id, filter_query).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn body_bearing_create_response_ignores_invalid_location(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mock_server = MockServer::start().await;

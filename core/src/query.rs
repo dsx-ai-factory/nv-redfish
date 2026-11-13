@@ -731,9 +731,16 @@ impl FilterQuery {
     /// Convert to the `OData` query string
     #[must_use]
     pub fn to_query_string(&self) -> String {
-        self.expr.as_ref().map_or_else(String::new, |expr| {
-            format!("$filter={}", expr.to_odata_string())
-        })
+        self.expression()
+            .map_or_else(String::new, |expr| format!("$filter={expr}"))
+    }
+
+    /// The `$filter` value without the `$filter=` prefix. It is not
+    /// URL-encoded, so a transport must percent-encode it before putting it
+    /// in a URL.
+    #[must_use]
+    pub fn expression(&self) -> Option<String> {
+        self.expr.as_ref().map(FilterExpr::to_odata_string)
     }
 }
 
@@ -909,6 +916,15 @@ mod tests {
     fn test_string_escaping() {
         let filter = FilterQuery::eq(&"Name", "O'Brien");
         assert_eq!(filter.to_query_string(), "$filter=Name eq 'O''Brien'");
+    }
+
+    #[test]
+    fn test_string_literal_is_not_url_encoded() {
+        let filter = FilterQuery::eq(&"Name", "50% A&B+C#1 it's\t\n");
+        assert_eq!(
+            filter.expression().as_deref(),
+            Some("Name eq '50% A&B+C#1 it''s\t\n'")
+        );
     }
 
     #[test]

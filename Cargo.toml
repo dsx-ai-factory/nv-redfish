@@ -61,6 +61,7 @@ tagged-types = { version = "^0.2.3" }
 reqwest = { version = "0.13", default-features = false }
 webpki-root-certs = { version = "1.0.12" }
 url = { version = "2.5" }
+percent-encoding = { version = "2.3" }
 uuid = { version = "1.18", default-features = false }
 time = { version = "0.3", default-features = false }
 rust_decimal = { version = "1.38", default-features = false }
