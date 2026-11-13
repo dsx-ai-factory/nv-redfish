@@ -1019,6 +1019,7 @@ mod tests {
     fn completion_drains_only_a_closed_queue_with_nothing_in_flight() {
         fn complete<S: crate::Scheduler<u8, Meta = ()>>(queue: &mut S) {
             queue.on_complete(Completion {
+                completed_at: Instant::now(),
                 outcome: CompletionOutcome::Succeeded,
                 latency: Duration::ZERO,
                 meta: (),
