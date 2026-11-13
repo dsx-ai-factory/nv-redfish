@@ -24,7 +24,7 @@ all-features = true
 default = []
 
 # Re-exports nv-redfish-bmc-http as `bmc_http`, with its reqwest client
-# using rustls and ring.
+# using rustls and aws-lc-rs.
 bmc-http = [ "dep:nv-redfish-bmc-http", "nv-redfish-bmc-http/reqwest" ]
 # As `bmc-http`, with the reqwest client using the platform's TLS library.
 bmc-http-native-tls = [
@@ -32,7 +32,7 @@ bmc-http-native-tls = [
     "nv-redfish-bmc-http/reqwest-native-tls",
 ]
 # As `bmc-http`, with the reqwest client using rustls and the
-# application's rustls CryptoProvider instead of ring.
+# application's rustls CryptoProvider instead of aws-lc-rs.
 bmc-http-rustls-no-provider = [
     "dep:nv-redfish-bmc-http",
     "nv-redfish-bmc-http/reqwest-rustls-no-provider",

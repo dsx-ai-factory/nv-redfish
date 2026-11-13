@@ -76,8 +76,9 @@ request and received response. Set `max_retries` to allow extra attempts and
 streaming upload bodies are sent once. Choose the methods and response statuses
 that your application can retry.
 
-The default transport uses rustls with the `ring` cryptographic provider.
-Choose another backend by disabling default features:
+The default transport uses rustls with the `aws-lc-rs` cryptographic provider.
+Both rustls options trust the bundled Mozilla root certificates, not the
+system trust store. Choose another backend by disabling default features:
 
 ```toml
 nv-redfish-bmc-http = { version = "0.1", default-features = false, features = ["reqwest-native-tls"] }
@@ -85,7 +86,7 @@ nv-redfish-bmc-http = { version = "0.1", default-features = false, features = ["
 
 | Option | Purpose |
 | --- | --- |
-| `reqwest` | Default client with rustls, `ring`, and webpki roots. |
+| `reqwest` | Default client with rustls, `aws-lc-rs`, and the bundled Mozilla roots. |
 | `reqwest-native-tls` | Client using the platform's TLS library. |
 | `reqwest-rustls-no-provider` | Client using rustls with a provider installed by the application. |
 | `reqwest-client` | Base reqwest client; TLS is added by the options above. |

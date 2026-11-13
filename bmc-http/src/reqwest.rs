@@ -17,18 +17,22 @@
 //!
 //! The TLS of the client comes from a crate feature:
 //!
-//! - `reqwest` (default): rustls with its `ring` crypto provider and the
-//!   webpki root certificates.
+//! - `reqwest` (default): rustls with its `aws-lc-rs` crypto provider and the
+//!   bundled Mozilla root certificates.
 //! - `reqwest-native-tls`: the platform's TLS library: OpenSSL, SChannel or
 //!   Security.framework.
-//! - `reqwest-rustls-no-provider`: rustls with the webpki root certificates
-//!   and the process-default rustls `CryptoProvider`. The application installs
-//!   one before it builds a client; reqwest panics without one.
+//! - `reqwest-rustls-no-provider`: rustls with the bundled Mozilla root
+//!   certificates and the process-default rustls `CryptoProvider`. The
+//!   application installs one before it builds a client; reqwest panics
+//!   without one.
 //! - `reqwest-client` alone: no TLS, for plain HTTP.
 //!
-//! Only `reqwest` compiles in `ring`. With both rustls and native TLS built,
-//! [`ClientParams::use_rust_tls`] (which defaults to `true`) selects between
-//! them. In particular, enabling both `reqwest-native-tls` and
+//! The rustls client trusts the bundled roots only, not the system trust
+//! store, so it builds the same on a host without CA certificates.
+//!
+//! Only `reqwest` compiles in `aws-lc-rs`. With both rustls and native TLS
+//! built, [`ClientParams::use_rust_tls`] (which defaults to `true`) selects
+//! between them. In particular, enabling both `reqwest-native-tls` and
 //! `reqwest-rustls-no-provider` without `reqwest` still selects rustls by
 //! default, so [`Client::new`] (or [`Client::with_params`] with
 //! `use_rust_tls: true`) panics unless a process-default `CryptoProvider` is
@@ -750,8 +754,8 @@ impl Client {
         let mut builder = ReqwestClient::builder();
 
         #[cfg(any(feature = "reqwest", feature = "reqwest-rustls-no-provider"))]
-        if params.use_rust_tls {
-            builder = builder.use_rustls_tls();
+        if params.use_rust_tls || !cfg!(feature = "reqwest-native-tls") {
+            builder = builder.use_rustls_tls().tls_certs_only(mozilla_roots()?);
         }
 
         #[cfg(feature = "reqwest-native-tls")]
@@ -1009,6 +1013,16 @@ impl Client {
             }),
         }
     }
+}
+
+/// The Mozilla root certificates of `webpki-root-certs`, which the rustls
+/// client trusts in place of the system trust store.
+#[cfg(any(feature = "reqwest", feature = "reqwest-rustls-no-provider"))]
+fn mozilla_roots() -> Result<Vec<reqwest::Certificate>, ReqwestError> {
+    webpki_root_certs::TLS_SERVER_ROOT_CERTS
+        .iter()
+        .map(|cert| reqwest::Certificate::from_der(cert))
+        .collect()
 }
 
 /// Wraps a redirect policy to reject cross-origin targets.

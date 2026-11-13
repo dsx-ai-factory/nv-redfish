@@ -123,10 +123,10 @@ compile-only-feature-sets = computer-systems,processors,controls \
 
 check-one-feature = $(indent)cargo check -p nv-redfish --features $1$(new-line)
 
-# Builds of the reqwest client without ring, as package:features. Each must
-# build, and ring must not be in its dependency tree on any target, so one
-# platform checks them all.
-no-ring-builds = nv-redfish-bmc-http:reqwest-client \
+# Builds of the reqwest client without aws-lc-rs or ring, as package:features.
+# Each must build, and neither may be in its dependency tree on any target, so
+# one platform checks them all.
+no-provider-builds = nv-redfish-bmc-http:reqwest-client \
              nv-redfish-bmc-http:reqwest-native-tls \
              nv-redfish-bmc-http:reqwest-rustls-no-provider \
              nv-redfish:bmc-http-native-tls \
@@ -134,8 +134,8 @@ no-ring-builds = nv-redfish-bmc-http:reqwest-client \
              nv-redfish:bmc-http-native-tls,http-extras \
              nv-redfish:bmc-http-rustls-no-provider,http-extras
 
-no-ring-args = -p $(word 1,$(subst :, ,$1)) --no-default-features --features $(word 2,$(subst :, ,$1))
-check-no-ring = $(indent)cargo check $(call no-ring-args,$1)$(new-line)$(indent)tree=$$(cargo tree $(call no-ring-args,$1) -e no-dev --prefix none --target all) && ! printf '%s\n' "$$tree" | grep '^ring '$(new-line)
+no-provider-args = -p $(word 1,$(subst :, ,$1)) --no-default-features --features $(word 2,$(subst :, ,$1))
+check-no-provider = $(indent)cargo check $(call no-provider-args,$1)$(new-line)$(indent)tree=$$(cargo tree $(call no-provider-args,$1) -e no-dev --prefix none --target all) && ! printf '%s\n' "$$tree" | grep -E '^(aws-lc-rs|ring) '$(new-line)
 
 # CI runs the three groups below as separate jobs. Only `test` runs on every
 # OS; `lint` and `features` are platform independent and run on Linux alone.
@@ -156,7 +156,7 @@ define features
 	cargo check -p nv-redfish
 	cargo check -p nv-redfish-bmc-mock
 	cargo check -p nv-redfish-bmc-http --no-default-features --features http-extras
-	$(foreach b,$(no-ring-builds),$(call check-no-ring,$b))
+	$(foreach b,$(no-provider-builds),$(call check-no-provider,$b))
 	cargo build -p update-multipart
 
 endef
