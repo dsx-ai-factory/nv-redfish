@@ -771,6 +771,63 @@ async fn nvidia_dpu_empty_system_uuid_on_member_fetch_workaround() -> Result<(),
     Ok(())
 }
 
+#[test]
+async fn system_links_read_systems_without_expand() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let service_root = expect_service_root(bmc.clone(), &ids, "NVIDIA").await?;
+    bmc.expect(Expect::get(
+        &ids.systems_id,
+        json!({
+            ODATA_ID: &ids.systems_id,
+            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
+            "Name": "Computer System Collection",
+            "Members": system_references(&ids)
+        }),
+    ));
+    let links = service_root.system_links().await?.unwrap();
+    expect_second_system_broken(&bmc, &ids);
+
+    assert_eq!(links.len(), 2);
+    let system = links[0].upgrade::<ComputerSystem<Bmc>>().await?;
+    assert_eq!(system.raw().id, "System-1");
+    assert!(links[1].upgrade::<ComputerSystem<Bmc>>().await.is_err());
+
+    Ok(())
+}
+
+#[test]
+async fn system_members_fail_when_one_member_fails() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let systems = get_systems(bmc.clone(), &ids, "NVIDIA", system_references(&ids)).await?;
+    expect_second_system_broken(&bmc, &ids);
+
+    assert!(systems.members().await.is_err());
+
+    Ok(())
+}
+
+fn second_system_id(ids: &ComputerSystemIds) -> String {
+    format!("{}/System-2", ids.systems_id)
+}
+
+fn system_references(ids: &ComputerSystemIds) -> Vec<Value> {
+    vec![
+        json!({ ODATA_ID: &ids.system_id }),
+        json!({ ODATA_ID: second_system_id(ids) }),
+    ]
+}
+
+fn expect_second_system_broken(bmc: &Bmc, ids: &ComputerSystemIds) {
+    let second_id = second_system_id(ids);
+    bmc.expect(Expect::get(&ids.system_id, computer_system(ids, json!({}))));
+    bmc.expect(Expect::get(
+        &second_id,
+        computer_system(ids, json!({ ODATA_ID: &second_id, "Id": 2 })),
+    ));
+}
+
 async fn get_systems(
     bmc: Arc<Bmc>,
     ids: &ComputerSystemIds,
