@@ -221,6 +221,7 @@ const RULES: &[Rule] = &[
             root.vendor_is("Nvidia")
                 && (root.product_is("Nvidia-BMCMezz")
                     || root.product_is("BlueField-3 DPU")
+                    || root.product_is("BlueField-3 SuperNIC")
                     || root.product_is("BlueField-4"))
         },
         quirks: &[
@@ -700,6 +701,10 @@ mod tests {
                     Quirk::SseMissingEventType,
                     Quirk::FilteredLogEntriesCount,
                 ],
+            ),
+            (
+                json!({ "Vendor": "Nvidia", "Product": "BlueField-3 SuperNIC" }),
+                &dpu,
             ),
             (
                 json!({ "Vendor": "Nvidia", "Product": "BlueField-3 DPU" }),
