@@ -365,27 +365,9 @@ pub enum FilterLiteral {
 }
 
 impl FilterLiteral {
-    /// Render the literal for a URL query. Callers put the result into the
-    /// URL as an already-encoded query, so string literals percent-encode
-    /// the characters that would otherwise split or alter it there.
     fn to_odata_string(&self) -> String {
         match self {
-            Self::String(s) => {
-                let mut out = String::with_capacity(s.len() + 2);
-                out.push('\'');
-                for c in s.chars() {
-                    match c {
-                        '\'' => out.push_str("''"),
-                        '%' => out.push_str("%25"),
-                        '&' => out.push_str("%26"),
-                        '+' => out.push_str("%2B"),
-                        '#' => out.push_str("%23"),
-                        _ => out.push(c),
-                    }
-                }
-                out.push('\'');
-                out
-            }
+            Self::String(s) => format!("'{}'", s.replace('\'', "''")),
             Self::Number(n) => n.to_string(),
             Self::Integer(i) => i.to_string(),
             Self::Boolean(b) => b.to_string(),
@@ -749,9 +731,16 @@ impl FilterQuery {
     /// Convert to the `OData` query string
     #[must_use]
     pub fn to_query_string(&self) -> String {
-        self.expr.as_ref().map_or_else(String::new, |expr| {
-            format!("$filter={}", expr.to_odata_string())
-        })
+        self.expression()
+            .map_or_else(String::new, |expr| format!("$filter={expr}"))
+    }
+
+    /// The `$filter` value without the `$filter=` prefix. It is not
+    /// URL-encoded, so a transport must percent-encode it before putting it
+    /// in a URL.
+    #[must_use]
+    pub fn expression(&self) -> Option<String> {
+        self.expr.as_ref().map(FilterExpr::to_odata_string)
     }
 }
 
@@ -930,11 +919,11 @@ mod tests {
     }
 
     #[test]
-    fn test_string_literal_url_reserved_characters() {
-        let filter = FilterQuery::eq(&"Name", "50% A&B+C#1");
+    fn test_string_literal_is_not_url_encoded() {
+        let filter = FilterQuery::eq(&"Name", "50% A&B+C#1 it's\t\n");
         assert_eq!(
-            filter.to_query_string(),
-            "$filter=Name eq '50%25 A%26B%2BC%231'"
+            filter.expression().as_deref(),
+            Some("Name eq '50% A&B+C#1 it''s\t\n'")
         );
     }
 
