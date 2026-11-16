@@ -700,16 +700,29 @@ async fn get_systems(
 ) -> Result<SystemCollection<Bmc>, Box<dyn StdError>> {
     let service_root = expect_service_root(bmc.clone(), ids, vendor).await?;
     let systems_name = resource_name(&ids.systems_id);
-    bmc.expect(Expect::expand(
-        &ids.systems_id,
-        json!({
-            ODATA_ID: &ids.systems_id,
-            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
-            "Id": systems_name,
-            "Name": "Computer System Collection",
-            "Members": members
-        }),
-    ));
+    if vendor.to_lowercase().contains("dell") {
+        bmc.expect(Expect::get(
+            &ids.systems_id,
+            json!({
+                ODATA_ID: &ids.systems_id,
+                ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
+                "Id": systems_name,
+                "Name": "Computer System Collection",
+                "Members": members
+            }),
+        ));
+    } else {
+        bmc.expect(Expect::expand(
+            &ids.systems_id,
+            json!({
+                ODATA_ID: &ids.systems_id,
+                ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
+                "Id": systems_name,
+                "Name": "Computer System Collection",
+                "Members": members
+            }),
+        ));
+    }
 
     service_root
         .systems()

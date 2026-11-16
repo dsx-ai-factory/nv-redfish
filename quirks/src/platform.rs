@@ -132,6 +132,8 @@ const RULES: &[Rule] = &[
             Quirk::ComputerSystemsWrongLastResetTime,
             Quirk::EmptyNetworkAdapterControllers,
             Quirk::SseWrongTimestampOffset,
+            Quirk::InvalidChassisUuidField,
+            Quirk::ExpandIsNotWorkingProperly,
         ],
     },
     // AMI MegaRAC firmware, including Lenovo trays (HS350x class) that keep
@@ -241,6 +243,12 @@ const RULES: &[Rule] = &[
     Rule {
         covers: |root| root.vendor.is_none() && root.redfish_version_is("1.9.0"),
         quirks: &[Quirk::MissingRootNavProperties, Quirk::PowerShelfStates],
+    },
+    // Lenovo XClarity Controller (no AMI OEM object), e.g. SR680a V3 with an HGX
+    // baseboard: HGX ConnectX/IRoT chassis report UUID "STATIC:514:<n>".
+    Rule {
+        covers: |root| root.vendor_is("Lenovo") && !root.ami_oem,
+        quirks: &[Quirk::InvalidChassisUuidField],
     },
 ];
 
@@ -483,8 +491,8 @@ impl BmcQuirks {
     /// `$expand` responses drop required fields (`Id`, `Name`,
     /// `ChassisType`) from embedded members while the standalone GETs are
     /// complete, so expansion is not used and each member is fetched on its
-    /// own. Seen on the Viking, and on GB300 host BMCs with AMI or NVIDIA
-    /// firmware.
+    /// own. Seen on the Viking, Dell XE9780 and on GB300 host BMCs with AMI
+    /// or NVIDIA firmware.
     #[must_use]
     pub fn expand_is_not_working_properly(&self) -> bool {
         self.has(Quirk::ExpandIsNotWorkingProperly)
@@ -552,6 +560,8 @@ mod tests {
                     Quirk::ComputerSystemsWrongLastResetTime,
                     Quirk::EmptyNetworkAdapterControllers,
                     Quirk::SseWrongTimestampOffset,
+                    Quirk::InvalidChassisUuidField,
+                    Quirk::ExpandIsNotWorkingProperly,
                 ][..],
             ),
             (
@@ -583,7 +593,10 @@ mod tests {
                 json!({ "Vendor": "Lenovo", "Oem": { "Ami": {} } }),
                 &[Quirk::RejectsOwnEtag],
             ),
-            (json!({ "Vendor": "Lenovo" }), &[]),
+            (
+                json!({ "Vendor": "Lenovo" }),
+                &[Quirk::InvalidChassisUuidField],
+            ),
             (
                 json!({ "Vendor": "NVIDIA", "Product": "VR NVL72" }),
                 &[
