@@ -70,42 +70,51 @@ async fn list_dell_fw_inventores() -> Result<(), Box<dyn StdError>> {
         format!("{fw_inventories_id}/Installed-0-2.1.3__Disk.Bay.0:Enclosure.Internal.0-1");
     let fw_inventory_id2 =
         format!("{fw_inventories_id}/Installed-0-3.0.0__Disk.Bay.1:Enclosure.Internal.0-1");
-    bmc.expect(Expect::expand(
+    bmc.expect(Expect::get(
         &fw_inventories_id,
         json!({
             ODATA_ID: &fw_inventory_id,
             ODATA_TYPE: &SW_INVENTORIES_DATA_TYPE,
             "Name": "Firmware Inventory Collection",
             "Members": [
-                {
-                    "@odata.id": &fw_inventory_id,
-                    "@odata.type": &SW_INVENTORY_DATA_TYPE,
-                    "Id": "Installed-0-1.0.0__Disk.Bay.0:Enclosure.Internal.0-1",
-                    "Name": "PCIe SSD in Slot 0 in Bay 1",
-                    "ReleaseDate": "00:00:00Z",
-                    "SoftwareId": "0",
-                    "Status": {
-                        "Health": "OK",
-                        "State": "Enabled"
-                    },
-                    "Updateable": true,
-                    "Version": "1.0.0"
-                },
-                {
-                    "@odata.id": &fw_inventory_id2,
-                    "@odata.type": &SW_INVENTORY_DATA_TYPE,
-                    "Id": "Installed-0-3.0.0__Disk.Bay.1:Enclosure.Internal.0-1",
-                    "Name": "PCIe SSD in Slot 0 in Bay 2",
-                    "ReleaseDate": "0000-00-00T00:00:00Z",
-                    "SoftwareId": "0",
-                    "Status": {
-                        "Health": "OK",
-                        "State": "Enabled"
-                    },
-                    "Updateable": true,
-                    "Version": "3.0.0"
-                }
-            ]
+            {ODATA_ID: &fw_inventory_id},
+            {ODATA_ID: &fw_inventory_id2},
+            ],
+            "Members@odata.count": 2
+        }),
+    ));
+    bmc.expect(Expect::get(
+        &fw_inventory_id,
+        json!({
+            "@odata.id": &fw_inventory_id,
+            "@odata.type": &SW_INVENTORY_DATA_TYPE,
+            "Id": "Installed-0-1.0.0__Disk.Bay.0:Enclosure.Internal.0-1",
+            "Name": "PCIe SSD in Slot 0 in Bay 1",
+            "ReleaseDate": "00:00:00Z",
+            "SoftwareId": "0",
+            "Status": {
+                "Health": "OK",
+                "State": "Enabled"
+            },
+            "Updateable": true,
+               "Version": "1.0.0"
+        }),
+    ));
+    bmc.expect(Expect::get(
+        &fw_inventory_id2,
+        json!({
+            "@odata.id": &fw_inventory_id2,
+            "@odata.type": &SW_INVENTORY_DATA_TYPE,
+            "Id": "Installed-0-3.0.0__Disk.Bay.1:Enclosure.Internal.0-1",
+            "Name": "PCIe SSD in Slot 0 in Bay 2",
+            "ReleaseDate": "0000-00-00T00:00:00Z",
+            "SoftwareId": "0",
+            "Status": {
+                "Health": "OK",
+                "State": "Enabled"
+            },
+            "Updateable": true,
+            "Version": "3.0.0"
         }),
     ));
     let inventories = update_service.firmware_inventories().await?.unwrap();

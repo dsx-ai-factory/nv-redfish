@@ -125,6 +125,7 @@ async fn list_accounts() -> Result<(), Box<dyn StdError>> {
             "RoleId": "AdministratorRole",
             "AccountTypes": []
         }]},
+        true,
     )
     .await?;
     let accounts = accounts.all_accounts_data().await?;
@@ -154,6 +155,7 @@ async fn list_hpe_accounts() -> Result<(), Box<dyn StdError>> {
             "UserName": "Administrator",
             "RoleId": "AdministratorRole",
         }]},
+        true,
     )
     .await?;
     let accounts = accounts.all_accounts_data().await?;
@@ -181,6 +183,7 @@ async fn list_no_patch_accounts() -> Result<(), Box<dyn StdError>> {
             "UserName": "Administrator",
             "RoleId": "AdministratorRole",
         }]},
+        true,
     )
     .await
     .is_err());
@@ -731,17 +734,49 @@ async fn get_account_collection(
     bmc: Arc<Bmc>,
     account_service: &AccountService<Bmc>,
     members: JsonValue,
+    is_expand: bool,
 ) -> Result<AccountCollection<Bmc>, Box<dyn StdError>> {
     let accounts_id = format!("{}/Accounts", account_service.raw().odata_id());
-    bmc.expect(Expect::expand(
-        &accounts_id,
-        json!({
-            ODATA_ID: &accounts_id,
-            ODATA_TYPE: &ACCOUNTS_DATA_TYPE,
-            "Name": "User Accounts",
-            "Members": members,
-        }),
-    ));
+    let (members, size) = if is_expand {
+        (members, 0)
+    } else {
+        let members = members
+            .as_array()
+            .ok_or::<Box<dyn StdError>>("members argument has to be array".into())?
+            .into_iter()
+            .map(|item| {
+                item.as_object()
+                    .ok_or::<Box<dyn StdError>>("items have to be objects".into())?
+                    .get(ODATA_ID)
+                    .ok_or::<Box<dyn StdError>>("object has to have @odata.id member".into())
+                    .map(|i| json!({ ODATA_ID: i }))
+            })
+            .collect::<Result<Vec<JsonValue>, _>>()?;
+        let size = members.len();
+        (members.into(), size)
+    };
+    if is_expand {
+        bmc.expect(Expect::expand(
+            &accounts_id,
+            json!({
+                ODATA_ID: &accounts_id,
+                ODATA_TYPE: &ACCOUNTS_DATA_TYPE,
+                "Name": "User Accounts",
+                "Members": members,
+            }),
+        ));
+    } else {
+        bmc.expect(Expect::get(
+            &accounts_id,
+            json!({
+                ODATA_ID: &accounts_id,
+                ODATA_TYPE: &ACCOUNTS_DATA_TYPE,
+                "Name": "User Accounts",
+                "Members": members,
+                "Members@odata.count": size,
+            }),
+        ));
+    }
     Ok(account_service.accounts().await.map(Option::unwrap)?)
 }
 
@@ -792,30 +827,59 @@ async fn account_fixture_with_config(
     slots: &[(u32, bool, &str)],
     config: AccountServiceConfig,
 ) -> TestResult<(Arc<Bmc>, String, AccountCollection<Bmc>)> {
+    let is_dell = vendor.to_lowercase().contains("dell");
     let bmc = Arc::new(Bmc::default());
     let root_id = ODataId::service_root();
     let account_service =
         get_account_service_with_config(bmc.clone(), &root_id, vendor, config).await?;
     let accounts_id = format!("{}/Accounts", account_service.raw().odata_id());
 
-    let members = JsonValue::Array(
-        slots
-            .iter()
-            .map(|&(id, enabled, user_name)| {
-                slot_member(&accounts_id, id, enabled, user_name, None)
-            })
-            .collect(),
-    );
+    let members = if is_dell {
+        JsonValue::Array(
+            slots
+                .iter()
+                .map(|&(id, _enabled, _user_name)| json!({ODATA_ID: format!("{accounts_id}/{id}")}))
+                .collect(),
+        )
+    } else {
+        JsonValue::Array(
+            slots
+                .iter()
+                .map(|&(id, enabled, user_name)| {
+                    slot_member(&accounts_id, id, enabled, user_name, None)
+                })
+                .collect(),
+        )
+    };
 
-    bmc.expect(Expect::expand(
-        &accounts_id,
-        json!({
-            ODATA_ID: &accounts_id,
-            ODATA_TYPE: &ACCOUNTS_DATA_TYPE,
-            "Name": "User Accounts",
-            "Members": members,
-        }),
-    ));
+    if is_dell {
+        bmc.expect(Expect::get(
+            &accounts_id,
+            json!({
+                ODATA_ID: &accounts_id,
+                ODATA_TYPE: &ACCOUNTS_DATA_TYPE,
+                "Name": "User Accounts",
+                "Members": members,
+                "Members@odata.count": slots.len(),
+            }),
+        ));
+        for &(id, enabled, user_name) in slots {
+            bmc.expect(Expect::get(
+                format!("{accounts_id}/{id}"),
+                slot_member(&accounts_id, id, enabled, user_name, None),
+            ));
+        }
+    } else {
+        bmc.expect(Expect::expand(
+            &accounts_id,
+            json!({
+                ODATA_ID: &accounts_id,
+                ODATA_TYPE: &ACCOUNTS_DATA_TYPE,
+                "Name": "User Accounts",
+                "Members": members,
+            }),
+        ));
+    }
     let accounts = account_service
         .accounts()
         .await?
@@ -1139,12 +1203,23 @@ async fn create_account_slot_defined_skips_response_parse_errors() -> TestResult
             slot_member(&accounts_id, 4, false, "", None),
             slot_member(&accounts_id, 5, false, "", None),
         ]),
+        false,
     )
     .await?;
 
     bmc.expect(Expect::get(
-        &unreadable_member_id,
+        &unreadable_candidate_id,
         json!({ "malformed": true }),
+    ));
+
+    bmc.expect(Expect::get(
+        format!("{accounts_id}/4"),
+        slot_member(&accounts_id, 4, false, "", None),
+    ));
+
+    bmc.expect(Expect::get(
+        format!("{accounts_id}/5"),
+        slot_member(&accounts_id, 5, false, "", None),
     ));
 
     bmc.expect(Expect::get(

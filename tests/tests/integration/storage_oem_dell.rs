@@ -71,6 +71,34 @@ fn system_collection_payload() -> Value {
     })
 }
 
+fn system_collection_payload_no_expand(bmc: Arc<Bmc>) {
+    bmc.expect(Expect::get(
+        SYSTEMS_ID,
+        json!({
+            ODATA_ID: SYSTEMS_ID,
+            ODATA_TYPE: "#ComputerSystemCollection.ComputerSystemCollection",
+            "Id": "Systems",
+            "Name": "Systems",
+            "Members": [{
+                ODATA_ID: SYSTEM_ID
+            }],
+                "Members@odata.count": 1,
+        }),
+    ));
+
+    bmc.expect(Expect::get(
+        SYSTEM_ID,
+        json!({
+            ODATA_ID: SYSTEM_ID,
+            ODATA_TYPE: "#ComputerSystem.v1_22_0.ComputerSystem",
+            "Id": "system-1",
+            "Name": "System",
+            "SystemType": "Physical",
+            "Storage": { ODATA_ID: STORAGE_COLLECTION_ID }
+        }),
+    ));
+}
+
 fn storage_collection_payload(oem_actions: Option<Value>) -> Value {
     let mut storage = json!({
         ODATA_ID: STORAGE_ID,
@@ -90,6 +118,33 @@ fn storage_collection_payload(oem_actions: Option<Value>) -> Value {
         "Name": "Storage",
         "Members": [storage]
     })
+}
+
+fn storage_collection_payload_no_expand(bmc: Arc<Bmc>, oem_actions: Option<Value>) {
+    bmc.expect(Expect::get(
+        STORAGE_COLLECTION_ID,
+        json!({
+        ODATA_ID: STORAGE_COLLECTION_ID,
+        ODATA_TYPE: "#StorageCollection.StorageCollection",
+        "Id": "Storage",
+        "Name": "Storage",
+        "Members": [{ODATA_ID: STORAGE_ID}],
+        "Members@odata.count": 1,
+        }),
+    ));
+
+    let mut storage = json!({
+        ODATA_ID: STORAGE_ID,
+        ODATA_TYPE: "#Storage.v1_17_0.Storage",
+        "Id": "controller-1",
+        "Name": "Storage controller",
+        "Volumes": { ODATA_ID: VOLUMES_ID }
+    });
+    if let Some(actions) = oem_actions {
+        storage["Actions"] = json!({ "Oem": actions });
+    }
+
+    bmc.expect(Expect::get(STORAGE_ID, storage));
 }
 
 fn volume_payload(id: &str, name: &str) -> Value {
@@ -122,11 +177,18 @@ async fn storage_from_vendor(
     vendor: Option<&str>,
     oem_actions: Option<Value>,
 ) -> Result<Storage<Bmc>, Box<dyn StdError>> {
+    let is_dell = vendor
+        .map(|v| v.to_lowercase().contains("dell"))
+        .unwrap_or(false);
     let root_id = ODataId::service_root();
     bmc.expect(Expect::get(&root_id, service_root_payload(vendor)));
     let root = ServiceRoot::new(bmc.clone()).await?;
 
-    bmc.expect(Expect::expand(SYSTEMS_ID, system_collection_payload()));
+    if is_dell {
+        system_collection_payload_no_expand(bmc.clone());
+    } else {
+        bmc.expect(Expect::expand(SYSTEMS_ID, system_collection_payload()));
+    }
     let system = root
         .systems()
         .await?
@@ -137,10 +199,14 @@ async fn storage_from_vendor(
         .next()
         .expect("system exists");
 
-    bmc.expect(Expect::expand(
-        STORAGE_COLLECTION_ID,
-        storage_collection_payload(oem_actions),
-    ));
+    if is_dell {
+        storage_collection_payload_no_expand(bmc.clone(), oem_actions);
+    } else {
+        bmc.expect(Expect::expand(
+            STORAGE_COLLECTION_ID,
+            storage_collection_payload(oem_actions),
+        ));
+    }
     Ok(system
         .storage_controllers()
         .await?
