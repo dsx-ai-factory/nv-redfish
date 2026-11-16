@@ -38,6 +38,8 @@ use crate::chassis::ChassisLink;
 #[cfg(feature = "component-integrity")]
 use crate::component_integrity::ComponentIntegrityCollection;
 #[cfg(feature = "computer-systems")]
+use crate::computer_system::ComputerSystemLink;
+#[cfg(feature = "computer-systems")]
 use crate::computer_system::SystemCollection;
 #[cfg(feature = "event-service")]
 use crate::event_service::EventService;
@@ -276,6 +278,22 @@ impl<B: Bmc> ServiceRoot<B> {
     #[cfg(feature = "computer-systems")]
     pub async fn systems(&self) -> Result<Option<SystemCollection<B>>, Error<B>> {
         SystemCollection::new(&self.bmc, self).await
+    }
+
+    /// Get computer system links
+    ///
+    /// Reads the system collection without `$expand`, so no member
+    /// record is read. Returns `Ok(None)` when the BMC does not expose
+    /// Systems.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if retrieving system collection data fails.
+    #[cfg(feature = "computer-systems")]
+    pub async fn system_links(&self) -> Result<Option<Vec<ComputerSystemLink<B>>>, Error<B>> {
+        SystemCollection::new(&self.bmc.clone().restrict_expand(), self)
+            .await
+            .map(|systems| systems.as_ref().map(SystemCollection::member_links))
     }
 
     /// Get fabric collection in BMC

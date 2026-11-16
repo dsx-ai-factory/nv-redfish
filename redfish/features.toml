@@ -497,6 +497,7 @@ csdl_files = [
     "Storage_v1.xml",
     "StorageCollection_v1.xml",
     "StorageController_v1.xml",
+    "StorageControllerCollection_v1.xml",
     "StorageControllerMetrics_v1.xml",
     "Volume_v1.xml",
     "VolumeCollection_v1.xml",
@@ -509,8 +510,10 @@ swordfish_csdl_files = [
 ]
 patterns = [
     "Storage.*",
+    "Storage.*.StorageController",
     "StorageCollection.*",
     "StorageController.*",
+    "StorageControllerCollection.*",
     "StorageControllerMetrics.*",
     "Volume.*",
     "VolumeCollection.*",
@@ -556,9 +559,10 @@ patterns = [
 # NVIDIA OEM schemas, vendored verbatim from NVIDIA/bmcweb
 # (redfish-core/schema/oem/nvidia/csdl) at commit
 # 145ee5400553630637f01734915abde5915751a7 of the `develop` branch.
-# Re-vendoring means replacing schema/oem/nvidia/*.xml from that path
+# Re-vendoring means replacing schema/oem/nvidia/*_v1.xml from that path
 # wholesale and updating this commit id; the files are not edited
-# locally, so fix schema problems upstream instead.
+# locally. nv-redfish additions live alongside them in ExtNvidia*.xml;
+# keep those files when updating the published schemas.
 #
 # This is the whole of NVIDIA's OEM CSDL. The per-platform directories
 # upstream (BlueField and friends) duplicate these files and no
@@ -596,6 +600,7 @@ vendor = "nvidia"
 name = "chassis"
 oem_csdl_files = [
     "NvidiaChassis_v1.xml",
+    "ExtNvidiaChassis.xml",
     "NvidiaRoTChassis_v1.xml",
     "NvidiaCable_v1.xml",
     "NvidiaPCIeSlots_v1.xml",
@@ -607,7 +612,20 @@ patterns = [
     "NvidiaCable.*.*",
     "NvidiaPCIeSlots.*.*",
 ]
-action_patterns = ["NvidiaChassis.*"]
+# The local Reset action uses an enum with additional BlueField-4 values.
+# Both Reset definitions generate the same Rust and wire names, so exclude
+# the upstream Reset. Filters do not support exclusions; list the remaining
+# upstream actions explicitly and check this list when updating NVIDIA schemas.
+action_patterns = [
+    "NvidiaChassis.AuxPowerReset",
+    "NvidiaChassis.BootProtectedDevice",
+    "NvidiaChassis.VariableSpiErase",
+    "NvidiaChassis.VariableSpiRead",
+    "NvidiaChassis.SetRecoveryMode",
+    "NvidiaChassis.SetCPURecoveryMode",
+    "NvidiaChassis.ResetFPGAs",
+    "NvidiaChassis.NvRedfish.Reset",
+]
 
 [[oem-features]]
 # NVIDIA manager, power-compliance manager and managed-entity inventory..
@@ -615,6 +633,7 @@ vendor = "nvidia"
 name = "managers"
 oem_csdl_files = [
     "NvidiaManager_v1.xml",
+    "ExtNvidiaManager.xml",
     "NvidiaPowerComplianceManager_v1.xml",
     "NvidiaManagedEntity_v1.xml",
     "NvidiaManagedEntityCollection_v1.xml",
@@ -652,6 +671,7 @@ vendor = "nvidia"
 name = "computer-systems"
 oem_csdl_files = [
     "NvidiaComputerSystem_v1.xml",
+    "ExtNvidiaComputerSystem.xml",
 ]
 csdl_files = []
 patterns = [
@@ -696,6 +716,7 @@ vendor = "nvidia"
 name = "network-adapters"
 oem_csdl_files = [
     "NvidiaNetworkAdapter_v1.xml",
+    "ExtNvidiaNetworkAdapter.xml",
     "NvidiaHostPrivilegeConfig_v1.xml",
 ]
 csdl_files = []
@@ -742,6 +763,7 @@ vendor = "nvidia"
 name = "update-service"
 oem_csdl_files = [
     "NvidiaUpdateService_v1.xml",
+    "ExtNvidiaUpdateService.xml",
     "NvidiaSoftwareInventory_v1.xml",
     "NvidiaFirmwarePackage_v1.xml",
     "NvidiaFirmwarePackageCollection_v1.xml",
@@ -758,6 +780,7 @@ patterns = [
 action_patterns = [
     "NvidiaPersistentStorage.*",
     "NvidiaUpdateService.*",
+    "NvidiaUpdateService.NvRedfish.*",
 ]
 
 [[oem-features]]
@@ -1049,6 +1072,14 @@ vendor = "lenovo"
 name = "accounts"
 oem_csdl_files = [
     "LenovoAccountService_v1.xml",
+]
+csdl_files = []
+
+[[oem-features]]
+vendor = "lenovo"
+name = "bios"
+oem_csdl_files = [
+    "LenovoBios_v1.xml",
 ]
 csdl_files = []
 

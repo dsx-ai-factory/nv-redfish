@@ -72,6 +72,8 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::events::EventRepairs;
+use crate::replies::SuccessReplies;
+use crate::replies::UpdateReply;
 use crate::rules;
 use crate::rules::Enabled;
 use crate::BmcQuirks;
@@ -152,6 +154,23 @@ impl<B: Bmc> CompatBmc<B> {
     #[must_use]
     pub const fn quirks(&self) -> &Arc<BmcQuirks> {
         &self.quirks
+    }
+
+    /// A write's failure as the transport reported it, or the success
+    /// message it is on a platform that answers successes as `200` errors.
+    ///
+    /// That message is the platform's own reply, such as HPE iLO's
+    /// `iLO.2.15.SystemResetRequired`, as [`ModificationResponse::Message`];
+    /// `success_code` reads only the standard registry, so it names no
+    /// outcome for it.
+    fn failed_write<R>(
+        &self,
+        error: B::Error,
+    ) -> Result<ModificationResponse<R>, CompatError<B::Error>> {
+        let Some(reply) = SuccessReplies::new(&self.quirks).read(&error) else {
+            return Err(CompatError::from_transport(error));
+        };
+        Ok(ModificationResponse::Message(reply))
     }
 
     /// The repairs for the payloads of one event stream.
@@ -249,7 +268,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .create(id, query)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn create_session<
@@ -275,21 +294,38 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         etag: Option<&ODataETag>,
         update: &V,
     ) -> Result<ModificationResponse<R>, Self::Error> {
-        // Without an ETag the transport sends `If-Match: *`, the only one
-        // such firmware accepts.
+        // Without an ETag the transport sends `If-Match: *`: the only one
+        // AMI firmware accepts, and one iLO refuses.
+        let read;
         let etag = if self.quirks.bug_rejects_own_etag() {
             None
+        } else if etag.is_none() && self.quirks.bug_rejects_wildcard_etag() {
+            read = self
+                .inner
+                .get::<Raw>(id)
+                .await
+                .map_err(CompatError::from_transport)?;
+            read.etag()
         } else {
             etag
         };
-        match self.inner.update(id, etag, update).await {
+        let response = if self.quirks.bug_annotation_only_update_reply() {
+            self.inner
+                .update::<V, UpdateReply<R>>(id, etag, update)
+                .await
+                .map(UpdateReply::into_response)
+        } else {
+            self.inner.update(id, etag, update).await
+        };
+        match response {
             Err(error)
                 if self.quirks.bug_accepted_update_without_task()
                     && error.error_class() == BmcErrorClass::HttpResponse { status: 202 } =>
             {
                 Ok(ModificationResponse::Empty)
             }
-            result => result.map_err(CompatError::from_transport),
+            Err(error) => self.failed_write(error),
+            Ok(response) => Ok(response),
         }
     }
 
@@ -300,7 +336,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .delete(id)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn action<
@@ -318,7 +354,8 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
             {
                 Ok(ModificationResponse::Empty)
             }
-            result => result.map_err(CompatError::from_transport),
+            Err(error) => self.failed_write(error),
+            Ok(response) => Ok(response),
         }
     }
 
@@ -329,7 +366,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .poll(uri)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn multipart_update<U, V, R>(
@@ -345,7 +382,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .multipart_update(uri, request)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn http_push_uri_update<U, R>(
@@ -360,7 +397,7 @@ impl<B: Bmc> Bmc for CompatBmc<B> {
         self.inner
             .http_push_uri_update(uri, request)
             .await
-            .map_err(CompatError::from_transport)
+            .or_else(|error| self.failed_write(error))
     }
 
     async fn stream<T: Sized + for<'de> Deserialize<'de> + Send + 'static>(

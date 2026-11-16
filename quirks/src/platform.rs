@@ -105,8 +105,14 @@ enum Quirk {
     ExpandIsNotWorkingProperly,
     NullableMembers,
     RejectsOwnEtag,
+    RejectsWildcardEtag,
+    SuccessAsExtendedInfoError,
+    PasswordExpirationWithoutSeconds,
     AcceptedUpdateWithoutTask,
     AcceptedActionWithoutTask,
+    AnnotationOnlyUpdateReply,
+    UnadvertisedNvidiaChassisReset,
+    UnadvertisedMultipartHttpPushUri,
 }
 
 // Devices whose service root `covers` matches have `quirks`.
@@ -122,7 +128,11 @@ struct Rule {
 const RULES: &[Rule] = &[
     Rule {
         covers: |root| root.vendor_is("HPE"),
-        quirks: &[Quirk::NoAccountTypeInAccounts],
+        quirks: &[
+            Quirk::NoAccountTypeInAccounts,
+            Quirk::RejectsWildcardEtag,
+            Quirk::SuccessAsExtendedInfoError,
+        ],
     },
     Rule {
         covers: |root| root.vendor_is("Dell"),
@@ -142,6 +152,19 @@ const RULES: &[Rule] = &[
         covers: |root| root.vendor_is("AMI") || (root.vendor_is("Lenovo") && root.ami_oem),
         quirks: &[Quirk::RejectsOwnEtag],
     },
+    // Lenovo trays (HS350x class) on AMI MegaRAC firmware.
+    Rule {
+        covers: |root| root.vendor_is("Lenovo") && root.ami_oem,
+        quirks: &[Quirk::UnadvertisedMultipartHttpPushUri],
+    },
+    // Lenovo XClarity Controller firmware: Lenovo, without AMI's OEM object.
+    Rule {
+        covers: |root| root.vendor_is("Lenovo") && !root.ami_oem,
+        quirks: &[
+            Quirk::PasswordExpirationWithoutSeconds,
+            Quirk::AnnotationOnlyUpdateReply,
+        ],
+    },
     // The H100 Viking.
     Rule {
         covers: |root| root.vendor_is("AMI") && root.redfish_version_is("1.11.0"),
@@ -156,6 +179,7 @@ const RULES: &[Rule] = &[
             Quirk::WrongComputerSystemMembers,
             Quirk::WrongManagerMembers,
             Quirk::ExpandIsNotWorkingProperly,
+            Quirk::UnadvertisedMultipartHttpPushUri,
         ],
     },
     // The GB300 host BMC on AMI firmware, told apart from other AMI BMCs by
@@ -225,6 +249,14 @@ const RULES: &[Rule] = &[
             Quirk::AcceptedActionWithoutTask,
         ],
     },
+    // BlueField-4 DPUs, which some firmware names by board, `B4240V`.
+    Rule {
+        covers: |root| {
+            root.vendor_is("Nvidia")
+                && (root.product_is("BlueField-4") || root.product_is("B4240V"))
+        },
+        quirks: &[Quirk::UnadvertisedNvidiaChassisReset],
+    },
     // Lite-On power shelves that name their vendor.
     Rule {
         covers: |root| {
@@ -232,7 +264,6 @@ const RULES: &[Rule] = &[
                 .is_some_and(|vendor| vendor.starts_with("LITE-ON"))
         },
         quirks: &[
-            Quirk::MissingRootNavProperties,
             Quirk::ResetToDefaultsTypeParameter,
             Quirk::PowerSupplyLocationIndicatorObject,
             Quirk::PowerShelfStates,
@@ -242,7 +273,7 @@ const RULES: &[Rule] = &[
     // Lite-On power shelves often do; Delta shelves do too.
     Rule {
         covers: |root| root.vendor.is_none() && root.redfish_version_is("1.9.0"),
-        quirks: &[Quirk::MissingRootNavProperties, Quirk::PowerShelfStates],
+        quirks: &[Quirk::PowerShelfStates],
     },
     // Lenovo XClarity Controller (no AMI OEM object), e.g. SR680a V3 with an HGX
     // baseboard: HGX ConnectX/IRoT chassis report UUID "STATIC:514:<n>".
@@ -328,8 +359,7 @@ impl BmcQuirks {
     }
 
     /// The service root omits navigation properties that a direct GET
-    /// still serves: Vikings before a BMC reset, Lite-On power shelves for
-    /// `/Systems`.
+    /// still serves: Vikings before a BMC reset.
     #[must_use]
     pub fn bug_missing_root_nav_properties(&self) -> bool {
         self.has(Quirk::MissingRootNavProperties)
@@ -510,6 +540,27 @@ impl BmcQuirks {
         self.has(Quirk::RejectsOwnEtag)
     }
 
+    /// HPE iLO answers `If-Match: *` with `412` and leaves `@odata.etag` out
+    /// of members it expands inline, so a write without an ETag reads the
+    /// resource on its own for one first. Seen on iLO 5 and iLO 6.
+    pub(crate) fn bug_rejects_wildcard_etag(&self) -> bool {
+        self.has(Quirk::RejectsWildcardEtag)
+    }
+
+    /// HPE iLO answers a property change it accepted but has not yet put in
+    /// effect, or one that changed nothing, with a `200` whose body is an
+    /// `error` coded `iLO.0.10.ExtendedInfo`, so the transport reports it as
+    /// failed. A write is that reply as a message instead.
+    pub(crate) fn bug_success_as_extended_info_error(&self) -> bool {
+        self.has(Quirk::SuccessAsExtendedInfoError)
+    }
+
+    /// Lenovo XCC 3 writes an account's `PasswordExpiration` without
+    /// seconds, which an `Edm.DateTimeOffset` requires.
+    pub(crate) fn bug_password_expiration_without_seconds(&self) -> bool {
+        self.has(Quirk::PasswordExpirationWithoutSeconds)
+    }
+
     /// Supermicro answers a staged settings change with `202 Accepted` and
     /// nothing to poll: no `Location` and no Task.
     pub(crate) fn bug_accepted_update_without_task(&self) -> bool {
@@ -521,6 +572,26 @@ impl BmcQuirks {
     /// `Location` and no Task.
     pub(crate) fn bug_accepted_action_without_task(&self) -> bool {
         self.has(Quirk::AcceptedActionWithoutTask)
+    }
+
+    /// Lenovo XCC 3 answers a BIOS update it applied with `200` and a body
+    /// naming only `@odata.context` and `@odata.type`: neither the resource
+    /// nor a message.
+    pub(crate) fn bug_annotation_only_update_reply(&self) -> bool {
+        self.has(Quirk::AnnotationOnlyUpdateReply)
+    }
+
+    /// A BlueField-4 BMC serves `NvidiaChassis.Reset` on its `BlueField_0`
+    /// chassis, and documents its reset types in
+    /// `Oem/Nvidia/ResetActionInfo`, without advertising the action.
+    pub(crate) fn bug_unadvertised_nvidia_chassis_reset(&self) -> bool {
+        self.has(Quirk::UnadvertisedNvidiaChassisReset)
+    }
+
+    /// The Viking and Lenovo AMI trays accept multipart firmware uploads at
+    /// `UpdateService/upload` without advertising `MultipartHttpPushUri`.
+    pub(crate) fn bug_unadvertised_multipart_http_push_uri(&self) -> bool {
+        self.has(Quirk::UnadvertisedMultipartHttpPushUri)
     }
 }
 
@@ -566,7 +637,11 @@ mod tests {
             ),
             (
                 json!({ "Vendor": "HPE" }),
-                &[Quirk::NoAccountTypeInAccounts],
+                &[
+                    Quirk::NoAccountTypeInAccounts,
+                    Quirk::RejectsWildcardEtag,
+                    Quirk::SuccessAsExtendedInfoError,
+                ],
             ),
             (
                 json!({ "Vendor": "AMI", "RedfishVersion": "1.11.0" }),
@@ -582,6 +657,7 @@ mod tests {
                     Quirk::WrongComputerSystemMembers,
                     Quirk::WrongManagerMembers,
                     Quirk::ExpandIsNotWorkingProperly,
+                    Quirk::UnadvertisedMultipartHttpPushUri,
                 ],
             ),
             (
@@ -591,11 +667,18 @@ mod tests {
             (json!({ "Vendor": "AMI" }), &[Quirk::RejectsOwnEtag]),
             (
                 json!({ "Vendor": "Lenovo", "Oem": { "Ami": {} } }),
-                &[Quirk::RejectsOwnEtag],
+                &[
+                    Quirk::RejectsOwnEtag,
+                    Quirk::UnadvertisedMultipartHttpPushUri,
+                ],
             ),
             (
                 json!({ "Vendor": "Lenovo" }),
-                &[Quirk::InvalidChassisUuidField],
+                &[
+                    Quirk::PasswordExpirationWithoutSeconds,
+                    Quirk::AnnotationOnlyUpdateReply,
+                    Quirk::InvalidChassisUuidField,
+                ],
             ),
             (
                 json!({ "Vendor": "NVIDIA", "Product": "VR NVL72" }),
@@ -633,7 +716,11 @@ mod tests {
             ),
             (
                 json!({ "Vendor": "Nvidia", "Product": "BlueField-4" }),
-                &dpu,
+                &[dpu.as_slice(), &[Quirk::UnadvertisedNvidiaChassisReset]].concat(),
+            ),
+            (
+                json!({ "Vendor": "Nvidia", "Product": "B4240V" }),
+                &[Quirk::UnadvertisedNvidiaChassisReset],
             ),
             (json!({ "Vendor": "Nvidia", "Product": "Other" }), &[]),
             (
@@ -654,7 +741,6 @@ mod tests {
             (
                 json!({ "Vendor": "LITE-ON Technology" }),
                 &[
-                    Quirk::MissingRootNavProperties,
                     Quirk::ResetToDefaultsTypeParameter,
                     Quirk::PowerSupplyLocationIndicatorObject,
                     Quirk::PowerShelfStates,
@@ -662,7 +748,7 @@ mod tests {
             ),
             (
                 json!({ "RedfishVersion": "1.9.0" }),
-                &[Quirk::MissingRootNavProperties, Quirk::PowerShelfStates],
+                &[Quirk::PowerShelfStates],
             ),
             (json!({ "Vendor": "Contoso" }), &[]),
             (json!({}), &[]),

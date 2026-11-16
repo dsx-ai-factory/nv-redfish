@@ -161,9 +161,10 @@ pub mod test_utils {
     }
 
     /// Installs a minimal process-default [`rustls::crypto::CryptoProvider`]
-    /// when `reqwest-rustls-no-provider` is tested without `reqwest`'s `ring`
-    /// provider. All integration tests connect to plain-HTTP mock servers, so
-    /// the provider only needs to satisfy `reqwest::ClientBuilder::build`.
+    /// when `reqwest-rustls-no-provider` is tested without `reqwest`'s
+    /// `aws-lc-rs` provider. All integration tests connect to plain-HTTP mock
+    /// servers, so the provider only needs to satisfy
+    /// `reqwest::ClientBuilder::build`.
     #[cfg(all(feature = "reqwest-rustls-no-provider", not(feature = "reqwest")))]
     fn install_test_crypto_provider() {
         use std::sync::Arc;

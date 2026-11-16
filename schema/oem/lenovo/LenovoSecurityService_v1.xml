@@ -43,6 +43,9 @@ limitations under the License.
         <Property Name="Configurator" Type="LenovoSecurityService.v1_0_0.ConfiguratorState">
           <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
         </Property>
+        <Property Name="FWLockdown" Type="Edm.Boolean" Nullable="false">
+          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/ReadWrite"/>
+        </Property>
       </EntityType>
       <ComplexType Name="ConfiguratorState">
         <Property Name="FWRollback" Type="LenovoSecurityService.v1_0_0.FWRollbackState">

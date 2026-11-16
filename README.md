@@ -25,10 +25,11 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
   - Provides `HttpBmc<C>`, `BmcCredentials`, ETag/cache handling, and the
     `HttpClient` trait.
   - The built-in reqwest client is behind the `reqwest` feature, enabled by
-    default for this crate, which uses rustls with `ring`. The
-    `reqwest-native-tls` feature builds it with the platform's TLS library
-    instead, and `reqwest-rustls-no-provider` with rustls and a
-    `CryptoProvider` the application installs; neither compiles in `ring`.
+    default for this crate, which uses rustls with `aws-lc-rs` and the bundled
+    Mozilla root certificates. The `reqwest-native-tls` feature builds it with
+    the platform's TLS library instead, and `reqwest-rustls-no-provider` with
+    rustls, the bundled roots and a `CryptoProvider` the application installs;
+    neither compiles in `aws-lc-rs`.
     Because `ClientParams::use_rust_tls` defaults to `true`, enabling both
     `reqwest-native-tls` and `reqwest-rustls-no-provider` (without `reqwest`)
     causes `Client::new()` to panic unless a `CryptoProvider` is installed (or
@@ -103,12 +104,12 @@ your client needs, or use `std-redfish` for a broad standard Redfish build.
 Common feature groups:
 
 - `bmc-http`: re-export `nv-redfish-bmc-http` from `nv_redfish::bmc_http`, with
-  its reqwest client using rustls and `ring`.
+  its reqwest client using rustls and `aws-lc-rs`.
 - `bmc-http-native-tls`, `bmc-http-rustls-no-provider`: the same with the
   reqwest client using the platform's TLS library, or rustls with the
-  application's `CryptoProvider`, without `ring`. If both are enabled without
-  `bmc-http`, `bmc_http::reqwest::Client::new()` still uses rustls by default
-  (`ClientParams::use_rust_tls` defaults to `true`) and panics unless a
+  application's `CryptoProvider`, without `aws-lc-rs`. If both are enabled
+  without `bmc-http`, `bmc_http::reqwest::Client::new()` still uses rustls by
+  default (`ClientParams::use_rust_tls` defaults to `true`) and panics unless a
   `CryptoProvider` is installed.
 - `http-extras`: re-export `nv-redfish-bmc-http` from `nv_redfish::bmc_http`
   with optional HTTP client capabilities, including per-BMC operation

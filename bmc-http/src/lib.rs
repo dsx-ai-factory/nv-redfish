@@ -74,8 +74,19 @@ use nv_redfish_core::RepairError;
 use nv_redfish_core::SessionCreateResponse;
 use nv_redfish_core::StreamEvent;
 use nv_redfish_core::UploadReader;
+use percent_encoding::utf8_percent_encode;
+use percent_encoding::AsciiSet;
+use percent_encoding::NON_ALPHANUMERIC;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
+
+/// Characters percent-encoded in a query parameter value: everything except
+/// the RFC 3986 unreserved characters.
+const QUERY_VALUE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 #[cfg(feature = "http-extras")]
 pub use concurrency::ConcurrencyLimitedBmc;
@@ -480,6 +491,19 @@ impl RedfishEndpoint {
         url
     }
 
+    /// Convert an OData identifier and append a `$filter` parameter.
+    ///
+    /// The filter value is percent-encoded, so `&`, `#`, `+`, `%` and control
+    /// characters in string literals reach the server unchanged instead of
+    /// splitting the query or being dropped by `Url::set_query`. Spaces become
+    /// `%20`, not `+`, because `OData` does not read `+` as whitespace.
+    fn with_odata_id_and_filter(&self, id: &ODataId, query: &FilterQuery) -> Url {
+        let query = query.expression().map_or_else(String::new, |expr| {
+            format!("$filter={}", utf8_percent_encode(&expr, QUERY_VALUE))
+        });
+        self.with_odata_id_and_query(id, &query)
+    }
+
     /// Resolve a URI reference and verify that it stays on the BMC origin.
     ///
     /// Callers must explicitly wrap service-provided values in
@@ -745,9 +769,7 @@ where
         query: FilterQuery,
         repair: &impl Repair,
     ) -> Result<Arc<T>, RepairError<Self::Error>> {
-        let endpoint_url = self
-            .redfish_endpoint
-            .with_odata_id_and_query(id, &query.to_query_string());
+        let endpoint_url = self.redfish_endpoint.with_odata_id_and_filter(id, &query);
         self.get_with_cache(endpoint_url, repair)
             .await
             .map_err(RepairError::from_transport)
@@ -891,9 +913,7 @@ where
         id: &ODataId,
         query: FilterQuery,
     ) -> Result<Arc<T>, Self::Error> {
-        let endpoint_url = self
-            .redfish_endpoint
-            .with_odata_id_and_query(id, &query.to_query_string());
+        let endpoint_url = self.redfish_endpoint.with_odata_id_and_filter(id, &query);
 
         self.get_with_cache(endpoint_url, &NoRepair).await
     }
@@ -1021,6 +1041,38 @@ mod tests {
             resolved.query(),
             Some("$skiptoken=abc&$filter=value%20gt%2010")
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn filter_string_literal_survives_url_query() -> Result<(), Box<dyn Error>> {
+        let endpoint = RedfishEndpoint::new(Url::parse("https://bmc.example")?);
+        let id = ODataId::from("/redfish/v1/Systems".to_string());
+
+        for value in [
+            "A&B",
+            "50%",
+            "a+b",
+            "x#1",
+            "a\tb",
+            "a\nb",
+            "a\rb",
+            "it's",
+            "caf\u{e9}",
+        ] {
+            let query = FilterQuery::eq(&"Name", value);
+            let resolved = endpoint.with_odata_id_and_filter(&id, &query);
+            let pairs: Vec<_> = resolved.query_pairs().collect();
+
+            assert_eq!(pairs.len(), 1, "{value:?}: {pairs:?}");
+            assert_eq!(pairs[0].0, "$filter");
+            assert_eq!(Some(pairs[0].1.to_string()), query.expression());
+        }
+
+        let query = FilterQuery::eq(&"Count", 2);
+        let resolved = endpoint.with_odata_id_and_filter(&id, &query);
+        assert_eq!(resolved.query(), Some("$filter=Count%20eq%202"));
 
         Ok(())
     }

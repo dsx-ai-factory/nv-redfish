@@ -299,6 +299,64 @@ async fn a_staged_change_without_a_task_is_empty_only_on_supermicro(
 }
 
 #[test]
+async fn an_ilo_reset_required_reply_is_a_success_message_only_on_hpe(
+) -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+    let reply = json!({"error": {
+        "code": "iLO.0.10.ExtendedInfo",
+        "message": "See @Message.ExtendedInfo for more information.",
+        "@Message.ExtendedInfo": [{"MessageId": "iLO.2.15.SystemResetRequired"}]
+    }});
+    Mock::given(method("PATCH"))
+        .and(path(FIRMWARE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&reply))
+        .mount(&server)
+        .await;
+    let http = transport(&server)?;
+    let update = json!({ "Version": "1" });
+    let etag = ODataETag::from(ETAG.to_owned());
+
+    let hpe: Layer = CompatBmc::new(http.clone(), platform("HPE"));
+    let response = hpe
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), Some(&etag), &update)
+        .await?;
+    assert!(matches!(response, ModificationResponse::Message(body) if body == reply));
+
+    let dell: Layer = CompatBmc::new(http, platform("Dell"));
+    let response = dell
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), Some(&etag), &update)
+        .await;
+    assert!(matches!(response, Err(CompatError::Transport(_))));
+    Ok(())
+}
+
+#[test]
+async fn an_ilo_success_reply_to_a_delete_is_a_success_message_only_on_hpe(
+) -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+    let reply = json!({"error": {
+        "code": "iLO.0.10.ExtendedInfo",
+        "message": "See @Message.ExtendedInfo for more information.",
+        "@Message.ExtendedInfo": [{"MessageId": "Base.1.18.Success"}]
+    }});
+    Mock::given(method("DELETE"))
+        .and(path(FIRMWARE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&reply))
+        .mount(&server)
+        .await;
+    let http = transport(&server)?;
+
+    let hpe: Layer = CompatBmc::new(http.clone(), platform("HPE"));
+    let response = hpe.delete::<SoftwareInventory>(&id(FIRMWARE)).await?;
+    assert!(matches!(response, ModificationResponse::Message(body) if body == reply));
+
+    let dell: Layer = CompatBmc::new(http, platform("Dell"));
+    let response = dell.delete::<SoftwareInventory>(&id(FIRMWARE)).await;
+    assert!(matches!(response, Err(CompatError::Transport(_))));
+    Ok(())
+}
+
+#[test]
 async fn ami_firmware_is_sent_a_wildcard_if_match() -> Result<(), Box<dyn StdError>> {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
@@ -327,6 +385,47 @@ async fn ami_firmware_is_sent_a_wildcard_if_match() -> Result<(), Box<dyn StdErr
     let dell: Layer = CompatBmc::new(http, platform("Dell"));
     let reply = dell
         .update::<_, SoftwareInventory>(&id(FIRMWARE), Some(&etag), &update)
+        .await?;
+    assert!(matches!(reply, ModificationResponse::Empty));
+    Ok(())
+}
+
+#[test]
+async fn hpe_firmware_is_sent_the_resource_etag_instead_of_a_wildcard(
+) -> Result<(), Box<dyn StdError>> {
+    let server = MockServer::start().await;
+    let mut firmware = undated_firmware();
+    firmware["@odata.etag"] = json!(ETAG);
+    Mock::given(method("GET"))
+        .and(path(FIRMWARE))
+        .respond_with(ResponseTemplate::new(200).set_body_json(firmware))
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path(FIRMWARE))
+        .and(header("if-match", ETAG))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path(FIRMWARE))
+        .and(header("if-match", "*"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let http = transport(&server)?;
+    let update = json!({ "Version": "1" });
+
+    let hpe: Layer = CompatBmc::new(http.clone(), platform("HPE"));
+    let reply = hpe
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), None, &update)
+        .await?;
+    assert!(matches!(reply, ModificationResponse::Empty));
+    let dell: Layer = CompatBmc::new(http, platform("Dell"));
+    let reply = dell
+        .update::<_, SoftwareInventory>(&id(FIRMWARE), None, &update)
         .await?;
     assert!(matches!(reply, ModificationResponse::Empty));
     Ok(())

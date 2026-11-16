@@ -55,6 +55,11 @@ const RULES: &[Rule] = &[
         fix: fixes::add_default_update_service_name,
     },
     Rule {
+        resource_type: "UpdateService",
+        enabled: BmcQuirks::bug_unadvertised_multipart_http_push_uri,
+        fix: fixes::advertise_multipart_http_push_uri,
+    },
+    Rule {
         resource_type: "SoftwareInventory",
         enabled: BmcQuirks::fw_inventory_wrong_release_date,
         fix: fixes::remove_wrong_release_date,
@@ -83,6 +88,11 @@ const RULES: &[Rule] = &[
         resource_type: "Chassis",
         enabled: BmcQuirks::bug_invalid_chassis_uuid_field,
         fix: fixes::normalize_invalid_uuid_field,
+    },
+    Rule {
+        resource_type: "Chassis",
+        enabled: BmcQuirks::bug_unadvertised_nvidia_chassis_reset,
+        fix: fixes::advertise_bluefield_nvidia_chassis_reset,
     },
     Rule {
         resource_type: "ComputerSystem",
@@ -123,6 +133,11 @@ const RULES: &[Rule] = &[
         resource_type: "ManagerAccount",
         enabled: BmcQuirks::bug_no_account_type_in_accounts,
         fix: fixes::append_default_account_type,
+    },
+    Rule {
+        resource_type: "ManagerAccount",
+        enabled: BmcQuirks::bug_password_expiration_without_seconds,
+        fix: fixes::add_password_expiration_seconds,
     },
     // Keyed on the AccountService rather than on the collections it
     // inlines: a complete collection read on its own is left alone.

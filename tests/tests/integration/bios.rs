@@ -19,6 +19,8 @@ use nv_redfish::computer_system::Bios;
 use nv_redfish::computer_system::BiosUpdate;
 use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::oem::hpe::schema::hpe_server_boot_settings::HpeServerBootSettingsUpdate;
+use nv_redfish::oem::lenovo::LenovoBiosUpdate;
+use nv_redfish::oem::lenovo::LenovoBiosUpdateExt as _;
 use nv_redfish::schema::settings::ApplyTime;
 use nv_redfish::schema::SettingsApplyTimeUpdate;
 use nv_redfish::ServiceRoot;
@@ -40,6 +42,7 @@ const COMPUTER_SYSTEM_DATA_TYPE: &str = "#ComputerSystem.v1_20_1.ComputerSystem"
 const BIOS_DATA_TYPE: &str = "#Bios.v1_2_1.Bios";
 const HPE_BIOS_DATA_TYPE: &str = "#HpeBiosExt.v2_0_1.HpeBiosExt";
 const HPE_BOOT_DATA_TYPE: &str = "#HpeServerBootSettings.v2_0_0.HpeServerBootSettings";
+const LENOVO_BIOS_DATA_TYPE: &str = "#LenovoBios.v1_0_0.LenovoBios";
 
 #[test]
 async fn bios_dynamic_attribute_update_serializes_and_redacts_debug() {
@@ -447,6 +450,105 @@ async fn bios_actions_must_be_advertised() -> Result<(), Box<dyn StdError>> {
         .await,
         Err(nv_redfish::Error::ActionNotAvailable)
     ));
+    Ok(())
+}
+
+/// XCC3 2.97 reports its lockdown controls under `Bios.Oem.Lenovo`; older
+/// firmware reports the extension without them.
+#[test]
+async fn lenovo_bios_reports_lockdown_controls_when_advertised() -> Result<(), Box<dyn StdError>> {
+    let cases = [
+        (
+            "XCC3 2.97",
+            json!({
+                "Oem": {
+                    "Lenovo": {
+                        ODATA_TYPE: LENOVO_BIOS_DATA_TYPE,
+                        "IsUefiAdminPasswordSet": true,
+                        "IsUefiPowerOnPasswordSet": false,
+                        "SettingsLockdown": false,
+                        "UEFIVariablesRO": true
+                    }
+                }
+            }),
+            Some((Some(false), Some(true))),
+        ),
+        (
+            "older firmware",
+            json!({
+                "Oem": {
+                    "Lenovo": {
+                        ODATA_TYPE: LENOVO_BIOS_DATA_TYPE,
+                        "IsUefiAdminPasswordSet": true,
+                        "IsUefiPowerOnPasswordSet": false
+                    }
+                }
+            }),
+            Some((None, None)),
+        ),
+        ("no Lenovo extension", json!({}), None),
+    ];
+    for (name, fields, expected) in cases {
+        let bmc = Arc::new(Bmc::default());
+        let ids = bios_ids();
+        let system = get_computer_system(bmc.clone(), &ids, "Lenovo").await?;
+        bmc.expect(Expect::get(
+            &ids.bios_id,
+            bios_payload(&ids.bios_id, fields),
+        ));
+        let bios = system.bios().await?.ok_or("BIOS missing")?;
+
+        let controls = bios
+            .oem_lenovo()?
+            .map(|lenovo| (lenovo.settings_lockdown(), lenovo.uefi_variables_ro()));
+        assert_eq!(controls, expected, "{name}");
+    }
+    Ok(())
+}
+
+/// Lenovo applies its lockdown controls to the current BIOS resource, not
+/// its settings object, and XCC 3 answers with a body naming no resource,
+/// which only a Lenovo XCC service root reads as an empty reply.
+#[test]
+async fn lenovo_bios_update_patches_the_current_resource() -> Result<(), Box<dyn StdError>> {
+    for (vendor, empty) in [("Lenovo", true), ("Contoso", false)] {
+        let bmc = Arc::new(Bmc::default());
+        let ids = bios_ids();
+        let system = get_computer_system(bmc.clone(), &ids, vendor).await?;
+        bmc.expect(Expect::get(
+            &ids.bios_id,
+            bios_payload(
+                &ids.bios_id,
+                json!({
+                    "@Redfish.Settings": {
+                        "SettingsObject": { ODATA_ID: format!("{}/Pending", ids.bios_id) }
+                    }
+                }),
+            ),
+        ));
+        let bios = system.bios().await?.ok_or("BIOS missing")?;
+        let update = BiosUpdate::builder().build().with_oem_lenovo(
+            LenovoBiosUpdate::builder()
+                .with_settings_lockdown(true)
+                .with_uefi_variables_ro(true)
+                .build(),
+        )?;
+
+        bmc.expect(Expect::update(
+            &ids.bios_id,
+            json!({ "Oem": { "Lenovo": { "SettingsLockdown": true, "UEFIVariablesRO": true } } }),
+            json!({
+                "@odata.context": "/redfish/v1/$metadata#Bios.Bios",
+                "@odata.type": "#Bios.v1_2_3.Bios"
+            }),
+        ));
+        let response = bios.update(&update).await;
+        assert_eq!(
+            matches!(response, Ok(ModificationResponse::Empty)),
+            empty,
+            "{vendor}"
+        );
+    }
     Ok(())
 }
 

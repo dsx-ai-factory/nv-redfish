@@ -38,11 +38,6 @@
         <Annotation Term="OData.AdditionalProperties" Bool="false"/>
         <Annotation Term="OData.Description" String="This property shall represent the NVIDIA OEM properties for a NetworkAdapter resource."/>
         <Annotation Term="OData.LongDescription" String="This property shall represent the NVIDIA OEM properties for a NetworkAdapter resource."/>
-        <!-- Local addition for the BlueField base MAC address. -->
-        <Property Name="BaseMAC" Type="Edm.String">
-          <Annotation Term="OData.Description" String="Base MAC address of the BlueField device."/>
-          <Annotation Term="OData.Permissions" EnumMember="OData.Permission/Read"/>
-        </Property>
       </ComplexType>
       <Action Name="SetRecoveryMode" IsBound="true">
         <Annotation Term="OData.Description" String="This action sets the device into recovery mode."/>

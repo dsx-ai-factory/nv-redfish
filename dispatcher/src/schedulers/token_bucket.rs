@@ -568,6 +568,10 @@ mod tests {
             });
         }
         assert_eq!(handle.take_next_count(), 10);
+        assert_eq!(handle.completion_count(), 10);
+        assert_eq!(tb.available(), 2, "always the full capacity");
+        tb.set_config(cfg(5, 1, Duration::from_secs(1)));
+        assert_eq!(tb.available(), 2, "limited again from a full bucket");
     }
 
     #[test]
@@ -579,6 +583,9 @@ mod tests {
         assert_eq!(tb.available(), 10);
         tb.set_config(cfg(4, 2, Duration::from_millis(500)));
         assert_eq!(tb.available(), 4, "clamped to the new capacity");
+        let _ = tb.take_next().expect("covered");
+        tb.set_config(cfg(8, 2, Duration::from_millis(500)));
+        assert_eq!(tb.available(), 3, "a spent balance is not topped up");
     }
 
     #[test]
@@ -591,5 +598,122 @@ mod tests {
         let now = Instant::now();
         let mut tb = TokenBucket::new(now, cfg(3, 1, Duration::from_secs(1)), leaf);
         assert!(!tb.update_ready(now).ready);
+    }
+
+    #[test]
+    fn wake_rounds_up_to_the_nanosecond_that_covers() {
+        // 3 tokens/s: one token takes a third of a second, which is not a
+        // whole number of nanoseconds.
+        let leaf = costed_leaf(1);
+        let t0 = Instant::now();
+        let mut tb = TokenBucket::new(t0, cfg(1, 3, Duration::from_secs(1)), leaf);
+        tb.update_ready(t0);
+        drain(&mut tb);
+
+        let eta = tb.update_ready(t0).next_update_at.expect("refill hint");
+        assert_eq!(eta, t0 + Duration::from_nanos(333_333_334));
+        assert!(
+            !tb.update_ready(t0 + Duration::from_nanos(333_333_333))
+                .ready
+        );
+        assert!(tb.update_ready(eta).ready);
+    }
+
+    #[test]
+    fn earlier_instant_does_not_move_the_refill_clock_back() {
+        let leaf = costed_leaf(1);
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_secs(10);
+        let mut tb = TokenBucket::new(t0, cfg(2, 1, Duration::from_secs(1)), leaf);
+        tb.update_ready(t1);
+        drain(&mut tb);
+        assert_eq!(tb.available(), 0);
+
+        // A pass at an earlier instant accrues nothing and must not let
+        // the next one count the ten seconds again.
+        tb.update_ready(t0);
+        assert_eq!(tb.available(), 0);
+        tb.update_ready(t1 + Duration::from_secs(1));
+        assert_eq!(tb.available(), 1);
+    }
+
+    #[test]
+    fn no_hint_at_zero_balance_waits_for_one_token() {
+        // No hint, actual cost 2: the full bucket admits it and is left
+        // at exactly zero.
+        let leaf = MockLeaf::new(
+            WithCost::new((), CostUnits::new(2)),
+            Readiness::ready(None),
+            Some(1),
+        );
+        let t0 = Instant::now();
+        let mut tb = TokenBucket::new(t0, cfg(2, 1, Duration::from_secs(1)), leaf);
+        assert!(tb.update_ready(t0).ready);
+        assert!(tb.take_next().is_some());
+        assert_eq!(tb.available(), 0);
+
+        let r = tb.update_ready(t0);
+        assert!(!r.ready, "zero balance does not cover the one-token gate");
+        assert_eq!(r.next_update_at, Some(t0 + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn debt_with_recovery_eta_does_not_consult_the_child() {
+        // The child would say "not ready until 7s"; in debt with a finite
+        // recovery the bucket answers with its own ETA instead.
+        let t0 = Instant::now();
+        let leaf: MockLeaf<WithCost<()>> = MockLeaf::new(
+            WithCost::new((), CostUnits::new(5)),
+            Readiness::not_ready(Some(t0 + Duration::from_secs(7))),
+            None,
+        );
+        let mut tb = TokenBucket::new(t0, cfg(1, 1, Duration::from_secs(1)), leaf);
+        tb.spend(CostUnits::new(5));
+        assert_eq!(tb.available(), -4);
+
+        let r = tb.update_ready(t0);
+        assert!(!r.ready);
+        // Debt 4 + last-known gate 1 at 1 token/s.
+        assert_eq!(r.next_update_at, Some(t0 + Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn held_back_eta_is_for_the_clamped_gate_not_the_hint() {
+        // Hint 5 against capacity 2 gates at 2; actual cost 2 leaves the
+        // balance at zero, out of debt.
+        let leaf = MockLeaf::new(
+            WithCost::new((), CostUnits::new(2)),
+            Readiness::ready(Some(CostUnits::new(5))),
+            Some(1),
+        );
+        let t0 = Instant::now();
+        let mut tb = TokenBucket::new(t0, cfg(2, 1, Duration::from_secs(1)), leaf);
+        assert!(tb.update_ready(t0).ready);
+        assert!(tb.take_next().is_some());
+        assert_eq!(tb.available(), 0);
+
+        let r = tb.update_ready(t0);
+        assert!(!r.ready);
+        assert_eq!(r.next_update_at, Some(t0 + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn admitted_readiness_keeps_the_child_wake_hint() {
+        let t0 = Instant::now();
+        let child_due = t0 + Duration::from_secs(3);
+        let leaf = MockLeaf::new(
+            WithCost::new((), CostUnits::new(1)),
+            Readiness {
+                ready: true,
+                next_update_at: Some(child_due),
+                next_cost: Some(CostUnits::new(1)),
+            },
+            Some(1),
+        );
+        let mut tb = TokenBucket::new(t0, cfg(2, 1, Duration::from_secs(1)), leaf);
+
+        let r = tb.update_ready(t0);
+        assert!(r.ready);
+        assert_eq!(r.next_update_at, Some(child_due));
     }
 }

@@ -20,6 +20,7 @@ use std::sync::Arc;
 use nv_redfish::account::AccountServiceConfig;
 use nv_redfish::computer_system::BootOptionReference;
 use nv_redfish::computer_system::BootOptionUpdate;
+use nv_redfish::computer_system::BootUpdate;
 use nv_redfish::computer_system::ComputerSystem;
 use nv_redfish::computer_system::ComputerSystemUpdate;
 use nv_redfish::computer_system::SecureBootUpdate;
@@ -270,6 +271,79 @@ async fn set_boot_order_uses_advertised_settings_resource() -> Result<(), Box<dy
     Ok(())
 }
 
+#[test]
+async fn settings_follows_advertised_reference_and_handles_absence() -> Result<(), Box<dyn StdError>>
+{
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let settings_id = format!("{}/SD", ids.system_id);
+    let system = get_system(
+        bmc.clone(),
+        &ids,
+        computer_system(
+            &ids,
+            json!({
+                "@Redfish.Settings": {
+                    "SettingsObject": { ODATA_ID: &settings_id }
+                },
+                "Boot": { "BootOrder": ["Boot0001"] }
+            }),
+        ),
+    )
+    .await?;
+
+    let settings_etag = "W/\"system-settings\"";
+    bmc.expect(Expect::get(
+        &settings_id,
+        json!({
+            ODATA_ID: &settings_id,
+            ODATA_TYPE: SYSTEM_DATA_TYPE,
+            "@odata.etag": settings_etag,
+            "Id": "SD",
+            "Name": "System Settings",
+            "Boot": { "BootOrder": ["Boot0002"] }
+        }),
+    ));
+    let settings = system.settings().await?.ok_or("settings object missing")?;
+    assert_eq!(settings.raw().id, "SD");
+    assert_eq!(
+        settings.boot_order(),
+        Some(vec![BootOptionReference::new("Boot0002")])
+    );
+
+    bmc.expect(Expect::update_with_etag(
+        &settings_id,
+        Some(settings_etag),
+        json!({ "Boot": { "BootOrder": ["Boot0003"] } }),
+        json!({ ODATA_ID: &settings_id }),
+    ));
+    bmc.expect(Expect::get(
+        &settings_id,
+        json!({
+            ODATA_ID: &settings_id,
+            ODATA_TYPE: SYSTEM_DATA_TYPE,
+            "Id": "SD",
+            "Name": "System Settings",
+            "Boot": { "BootOrder": ["Boot0003"] }
+        }),
+    ));
+    let update = ComputerSystemUpdate::builder()
+        .with_boot(
+            BootUpdate::builder()
+                .with_boot_order(vec!["Boot0003".into()])
+                .build(),
+        )
+        .build();
+    assert!(matches!(
+        settings.update(&update).await?,
+        ModificationResponse::Entity(_)
+    ));
+
+    let system = get_system(bmc.clone(), &ids, computer_system(&ids, json!({}))).await?;
+    assert!(system.settings().await?.is_none());
+    Ok(())
+}
+
 // Lenovo HS350X V3 AMI firmware returns `AliasBootOrder: [null]` from its `SD` settings object.
 #[test]
 async fn settings_object_accepts_null_alias_boot_order_entries() -> Result<(), Box<dyn StdError>> {
@@ -483,54 +557,59 @@ async fn ami_viking_missing_root_systems_nav_workaround() -> Result<(), Box<dyn 
 }
 
 #[test]
-async fn liteon_f16_missing_root_systems_nav_workaround() -> Result<(), Box<dyn StdError>> {
-    // Platform under test: Lite-On F16 power shelf (`Vendor=LITE-ON TECHNOLOGY CORP.`).
-    // Quirk under test: missing root Systems navigation property; `/Systems` is fetched directly.
+async fn liteon_f16_missing_root_systems_is_not_probed() -> Result<(), Box<dyn StdError>> {
     let bmc = Arc::new(Bmc::default());
     let ids = computer_system_ids();
-    let computer_system = computer_system(&ids, json!({}));
-    let service_root =
-        expect_liteon_powershelf_service_root_without_systems(bmc.clone(), &ids).await?;
-    bmc.expect(Expect::get(
-        &ids.systems_id,
-        json!({
-            ODATA_ID: &ids.systems_id,
-            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
-            "Id": resource_name(&ids.systems_id),
-            "Name": "Computer System Collection",
-            "Members": [computer_system]
-        }),
-    ));
+    let service_root = expect_liteon_powershelf_service_root_without_systems(bmc, &ids).await?;
 
-    let systems = service_root.systems().await?.unwrap();
-    let members = systems.members().await?;
-    assert_eq!(members.len(), 1);
+    // No GET is expected for any unadvertised root resource.
+    assert!(service_root.systems().await?.is_none());
+    assert!(service_root.chassis().await?.is_none());
+    assert!(service_root.managers().await?.is_none());
+    assert!(service_root.update_service().await?.is_none());
 
     Ok(())
 }
 
 #[test]
-async fn anonymous_1_9_0_missing_root_systems_nav_workaround() -> Result<(), Box<dyn StdError>> {
-    // Platform under test: anonymous Redfish 1.9.0 root (no vendor).
-    // Quirk under test: missing root Systems navigation property.
+async fn anonymous_1_9_0_missing_root_systems_is_not_probed() -> Result<(), Box<dyn StdError>> {
+    // Lite-On and Delta shelves can both have this vendor-less root.
     let bmc = Arc::new(Bmc::default());
     let ids = computer_system_ids();
-    let computer_system = computer_system(&ids, json!({}));
-    let service_root = expect_anonymous_1_9_service_root_without_systems(bmc.clone(), &ids).await?;
-    bmc.expect(Expect::get(
-        &ids.systems_id,
-        json!({
-            ODATA_ID: &ids.systems_id,
-            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
-            "Id": resource_name(&ids.systems_id),
-            "Name": "Computer System Collection",
-            "Members": [computer_system]
-        }),
-    ));
+    let service_root = expect_anonymous_1_9_service_root_without_systems(bmc, &ids).await?;
 
-    let systems = service_root.systems().await?.unwrap();
-    let members = systems.members().await?;
-    assert_eq!(members.len(), 1);
+    assert!(service_root.systems().await?.is_none());
+    assert!(service_root.chassis().await?.is_none());
+    assert!(service_root.managers().await?.is_none());
+    assert!(service_root.update_service().await?.is_none());
+
+    Ok(())
+}
+
+#[test]
+async fn power_shelf_advertised_systems_are_read() -> Result<(), Box<dyn StdError>> {
+    let ids = computer_system_ids();
+    let fields = json!({ "Systems": { ODATA_ID: &ids.systems_id } });
+    for root in [
+        liteon_powershelf_service_root(&ids.root_id, fields.clone()),
+        anonymous_1_9_service_root(&ids.root_id, fields),
+    ] {
+        let bmc = Arc::new(Bmc::default());
+        bmc.expect(Expect::get(&ids.root_id, root));
+        let service_root = ServiceRoot::new(bmc.clone()).await?;
+        bmc.expect(Expect::get(
+            &ids.systems_id,
+            json!({
+                ODATA_ID: &ids.systems_id,
+                ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
+                "Name": "Computer System Collection",
+                "Members": [computer_system(&ids, json!({}))]
+            }),
+        ));
+
+        let systems = service_root.systems().await?.unwrap();
+        assert_eq!(systems.members().await?.len(), 1);
+    }
 
     Ok(())
 }
@@ -690,6 +769,63 @@ async fn nvidia_dpu_empty_system_uuid_on_member_fetch_workaround() -> Result<(),
     assert_eq!(members[0].raw().uuid, Some(None));
 
     Ok(())
+}
+
+#[test]
+async fn system_links_read_systems_without_expand() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let service_root = expect_service_root(bmc.clone(), &ids, "NVIDIA").await?;
+    bmc.expect(Expect::get(
+        &ids.systems_id,
+        json!({
+            ODATA_ID: &ids.systems_id,
+            ODATA_TYPE: &SYSTEM_COLLECTION_DATA_TYPE,
+            "Name": "Computer System Collection",
+            "Members": system_references(&ids)
+        }),
+    ));
+    let links = service_root.system_links().await?.unwrap();
+    expect_second_system_broken(&bmc, &ids);
+
+    assert_eq!(links.len(), 2);
+    let system = links[0].upgrade::<ComputerSystem<Bmc>>().await?;
+    assert_eq!(system.raw().id, "System-1");
+    assert!(links[1].upgrade::<ComputerSystem<Bmc>>().await.is_err());
+
+    Ok(())
+}
+
+#[test]
+async fn system_members_fail_when_one_member_fails() -> Result<(), Box<dyn StdError>> {
+    let bmc = Arc::new(Bmc::default());
+    let ids = computer_system_ids();
+    let systems = get_systems(bmc.clone(), &ids, "NVIDIA", system_references(&ids)).await?;
+    expect_second_system_broken(&bmc, &ids);
+
+    assert!(systems.members().await.is_err());
+
+    Ok(())
+}
+
+fn second_system_id(ids: &ComputerSystemIds) -> String {
+    format!("{}/System-2", ids.systems_id)
+}
+
+fn system_references(ids: &ComputerSystemIds) -> Vec<Value> {
+    vec![
+        json!({ ODATA_ID: &ids.system_id }),
+        json!({ ODATA_ID: second_system_id(ids) }),
+    ]
+}
+
+fn expect_second_system_broken(bmc: &Bmc, ids: &ComputerSystemIds) {
+    let second_id = second_system_id(ids);
+    bmc.expect(Expect::get(&ids.system_id, computer_system(ids, json!({}))));
+    bmc.expect(Expect::get(
+        &second_id,
+        computer_system(ids, json!({ ODATA_ID: &second_id, "Id": 2 })),
+    ));
 }
 
 async fn get_systems(

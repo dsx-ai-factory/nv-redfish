@@ -94,6 +94,29 @@ impl<B: Bmc> LenovoSecurityService<B> {
         self.update(&update).await
     }
 
+    /// Set whether all firmware updates are prohibited (`FWLockdown`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating or fetching the returned entity fails.
+    pub async fn set_fw_lockdown(
+        &self,
+        enabled: bool,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        let update = LenovoSecurityServiceUpdate::builder()
+            .with_fw_lockdown(enabled)
+            .build();
+        self.update(&update).await
+    }
+
+    /// Whether all firmware updates are prohibited (`FWLockdown`).
+    ///
+    /// Returns `None` when the firmware does not report the control.
+    #[must_use]
+    pub fn fw_lockdown(&self) -> Option<bool> {
+        self.data.fw_lockdown
+    }
+
     /// Firmware rollback is enabled.
     pub fn fw_rollback(&self) -> Option<FwRollbackState> {
         self.data

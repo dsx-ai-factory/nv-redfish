@@ -16,7 +16,8 @@
 //! The rewrites the repair table composes. Each takes one document and
 //! returns it repaired; a document without the fault comes back unchanged.
 
-use nv_redfish_core::EdmGuid;
+use nv_redfish_core::{EdmDateTimeOffset, EdmGuid};
+use serde_json::json;
 use serde_json::Value;
 
 pub fn add_default_update_service_name(v: Value) -> Value {
@@ -27,6 +28,31 @@ pub fn add_default_update_service_name(v: Value) -> Value {
     } else {
         v
     }
+}
+
+// The Viking and Lenovo AMI trays accept multipart firmware uploads at
+// `UpdateService/upload` without advertising `MultipartHttpPushUri`; the
+// URI is advertised there, and a non-empty advertised one is left as it
+// came.
+pub fn advertise_multipart_http_push_uri(mut v: Value) -> Value {
+    let advertised = v
+        .get("MultipartHttpPushUri")
+        .and_then(Value::as_str)
+        .is_some_and(|uri| !uri.trim().is_empty());
+    if advertised {
+        return v;
+    }
+    let Some(upload) = v
+        .get("@odata.id")
+        .and_then(Value::as_str)
+        .map(|service| format!("{}/upload", service.trim_end_matches('/')))
+    else {
+        return v;
+    };
+    if let Some(service) = v.as_object_mut() {
+        service.insert("MultipartHttpPushUri".into(), Value::String(upload));
+    }
+    v
 }
 
 // `ReleaseDate` is an `Edm.DateTimeOffset`, but some systems put
@@ -114,6 +140,35 @@ pub fn normalize_invalid_uuid_field(mut v: Value) -> Value {
     v
 }
 
+// BlueField-4 serves `NvidiaChassis.Reset` on its `BlueField_0` chassis
+// without advertising it; the action is advertised at the target the BMC
+// serves, and an advertised one is left as it came.
+pub fn advertise_bluefield_nvidia_chassis_reset(mut v: Value) -> Value {
+    let target = match (
+        v.get("Id").and_then(Value::as_str),
+        v.get("@odata.id").and_then(Value::as_str),
+    ) {
+        (Some("BlueField_0"), Some(chassis_id)) => {
+            Some(format!("{chassis_id}/Actions/Oem/NvidiaChassis.Reset"))
+        }
+        _ => None,
+    };
+    let Some(target) = target else {
+        return v;
+    };
+    if let Some(chassis) = v.as_object_mut() {
+        let actions = chassis.entry("Actions").or_insert_with(|| json!({}));
+        if let Some(actions) = actions.as_object_mut() {
+            let oem = actions.entry("Oem").or_insert_with(|| json!({}));
+            if let Some(oem) = oem.as_object_mut() {
+                oem.entry("#NvidiaChassis.Reset")
+                    .or_insert_with(|| json!({ "target": target }));
+            }
+        }
+    }
+    v
+}
+
 // `Controllers` is a collection, but iDRAC reports `{}` on an empty
 // network adapter slot. A controller list, and an object that is not
 // empty, are left as they came.
@@ -143,6 +198,30 @@ pub fn remove_wrong_last_reset_time(v: Value) -> Value {
     } else {
         v
     }
+}
+
+// `PasswordExpiration` is an `Edm.DateTimeOffset`, which needs seconds, but
+// Lenovo XCC 3 leaves them out, as in `2026-10-26T16:49+00:00`; `:00` is
+// added.
+pub fn add_password_expiration_seconds(v: Value) -> Value {
+    if let Value::Object(mut obj) = v {
+        if let Some(Value::String(date)) = obj.get_mut("PasswordExpiration") {
+            if let Some(fixed) = with_seconds(date) {
+                *date = fixed;
+            }
+        }
+        Value::Object(obj)
+    } else {
+        v
+    }
+}
+
+/// `date` with `:00` seconds when it is `YYYY-MM-DDTHH:MM` and an offset,
+/// which is when the result is a valid `Edm.DateTimeOffset`.
+fn with_seconds(date: &str) -> Option<String> {
+    let (minutes, offset) = date.split_at_checked(16)?;
+    let fixed = format!("{minutes}:00{offset}");
+    fixed.parse::<EdmDateTimeOffset>().is_ok().then_some(fixed)
 }
 
 /// Vera Rubin firmware reports composite `BootOrder` entries such as
@@ -261,6 +340,92 @@ mod tests {
 
     use super::*;
 
+    /// The upload URI is added where the update service advertises none or
+    /// an empty one; an advertised URI is left as it came.
+    #[test]
+    fn multipart_push_uri_is_advertised_only_where_missing() {
+        let service = |fields: Value| {
+            let mut service =
+                json!({ "@odata.id": "/redfish/v1/UpdateService", "Id": "UpdateService" });
+            if let (Some(service), Value::Object(fields)) = (service.as_object_mut(), fields) {
+                service.extend(fields);
+            }
+            service
+        };
+        let upload = json!({ "MultipartHttpPushUri": "/redfish/v1/UpdateService/upload" });
+        for (scenario, document, expected) in [
+            ("absent", service(json!({})), service(upload.clone())),
+            (
+                "empty",
+                service(json!({ "MultipartHttpPushUri": "" })),
+                service(upload),
+            ),
+            (
+                "advertised",
+                service(
+                    json!({ "MultipartHttpPushUri": "/redfish/v1/UpdateService/update-multipart" }),
+                ),
+                service(
+                    json!({ "MultipartHttpPushUri": "/redfish/v1/UpdateService/update-multipart" }),
+                ),
+            ),
+        ] {
+            assert_eq!(
+                advertise_multipart_http_push_uri(document),
+                expected,
+                "{scenario}"
+            );
+        }
+    }
+
+    /// BlueField-4's `BlueField_0` chassis advertises only the standard
+    /// `Chassis.Reset`; the NVIDIA reset it serves is added beside it, and
+    /// nothing changes on another chassis or where the action is advertised.
+    #[test]
+    fn bluefield_chassis_reset_is_advertised_only_where_missing() {
+        let target = "/redfish/v1/Chassis/BlueField_0/Actions/Oem/NvidiaChassis.Reset";
+        let standard = json!({
+            "@Redfish.ActionInfo": "/redfish/v1/Chassis/BlueField_0/ResetActionInfo",
+            "target": "/redfish/v1/Chassis/BlueField_0/Actions/Chassis.Reset"
+        });
+        let chassis = |id: &str, actions: Value| json!({ "@odata.id": format!("/redfish/v1/Chassis/{id}"), "Id": id, "Actions": actions });
+        for (scenario, document, expected) in [
+            (
+                "BlueField_0 as captured",
+                chassis("BlueField_0", json!({ "#Chassis.Reset": standard })),
+                chassis(
+                    "BlueField_0",
+                    json!({
+                        "#Chassis.Reset": standard,
+                        "Oem": { "#NvidiaChassis.Reset": { "target": target } }
+                    }),
+                ),
+            ),
+            (
+                "another chassis",
+                chassis("BlueField_IRoT_NIC_0", json!({})),
+                chassis("BlueField_IRoT_NIC_0", json!({})),
+            ),
+            (
+                "advertised",
+                chassis(
+                    "BlueField_0",
+                    json!({ "Oem": { "#NvidiaChassis.Reset": { "target": "/advertised" } } }),
+                ),
+                chassis(
+                    "BlueField_0",
+                    json!({ "Oem": { "#NvidiaChassis.Reset": { "target": "/advertised" } } }),
+                ),
+            ),
+        ] {
+            assert_eq!(
+                advertise_bluefield_nvidia_chassis_reset(document),
+                expected,
+                "{scenario}"
+            );
+        }
+    }
+
     #[test]
     fn vera_rubin_boot_order_entry_reference_strips_display_name_suffix() {
         assert_eq!(
@@ -295,6 +460,25 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn password_expiration_gets_only_missing_seconds() {
+        let expiring = |date: &str| json!({ "PasswordExpiration": date });
+        for (date, repaired) in [
+            ("2026-10-26T16:49+00:00", "2026-10-26T16:49:00+00:00"),
+            ("2026-10-26T16:49Z", "2026-10-26T16:49:00Z"),
+            ("2026-10-26T16:49:30+00:00", "2026-10-26T16:49:30+00:00"),
+            ("XXXXXXXXXXTXX:XX+bad", "XXXXXXXXXXTXX:XX+bad"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                add_password_expiration_seconds(expiring(date)),
+                expiring(repaired),
+                "{date}"
+            );
+        }
+        assert_eq!(add_password_expiration_seconds(json!({})), json!({}));
     }
 
     #[test]

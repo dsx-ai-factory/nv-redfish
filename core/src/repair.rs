@@ -98,6 +98,13 @@ impl<E: BmcError + 'static> BmcError for RepairError<E> {
         }
     }
 
+    fn response_body(&self) -> Option<&str> {
+        match self {
+            Self::Transport(error) => error.response_body(),
+            Self::Decode(_) => None,
+        }
+    }
+
     fn into_decode_error(self) -> Result<DecodeError, Self> {
         match self {
             Self::Transport(error) => error.into_decode_error().map_err(Self::Transport),

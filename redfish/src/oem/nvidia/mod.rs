@@ -62,6 +62,9 @@ pub enum BaseMacTag {}
 pub mod cbc_chassis;
 
 #[cfg(feature = "chassis")]
+pub mod chassis;
+
+#[cfg(feature = "chassis")]
 pub mod chassis_actions;
 
 #[cfg(feature = "computer-systems")]
@@ -91,6 +94,18 @@ pub mod switch;
 #[cfg(feature = "chassis")]
 #[doc(inline)]
 pub use cbc_chassis::NvidiaCbcChassis;
+
+#[cfg(feature = "chassis")]
+#[doc(inline)]
+pub use chassis::NvidiaChassis;
+
+#[cfg(feature = "chassis")]
+#[doc(inline)]
+pub use chassis::NvidiaChassisUpdate;
+
+#[cfg(feature = "chassis")]
+#[doc(inline)]
+pub use chassis::NvidiaChassisUpdateExt;
 
 #[cfg(feature = "chassis")]
 #[doc(inline)]

@@ -176,10 +176,8 @@ impl<'a> RustGenerator<'a> {
                 )
                 .chain(
                     compiled
-                        .excerpt_copies
-                        .get(&t.name)
+                        .sorted_excerpt_copies(t.name)
                         .into_iter()
-                        .flatten()
                         .map(GenerateType::Excerpt),
                 )
                 .collect();
@@ -523,6 +521,83 @@ mod tests {
         );
         assert!(!generated.contains("ChassisIgnoredAction"));
         assert!(!generated.contains("ResolveOnlyIgnoredAction"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn excerpt_copies_are_generated_in_key_order() -> Result<(), String> {
+        const COMPILATIONS_WITH_NEW_HASH_SEEDS: usize = 8;
+
+        let schema = r#"<edmx:Edmx Version="4.0">
+          <edmx:DataServices>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Sensor">
+              <EntityType Name="Sensor">
+                <Property Name="Reading" Type="Edm.Decimal">
+                  <Annotation Term="Redfish.Excerpt"/>
+                </Property>
+              </EntityType>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Metrics">
+              <EntityType Name="Metrics">
+                <NavigationProperty Name="Single" Type="Sensor.Sensor" Nullable="false">
+                  <Annotation Term="Redfish.ExcerptCopy" String="Single"/>
+                </NavigationProperty>
+                <NavigationProperty Name="Fan" Type="Sensor.Sensor" Nullable="false">
+                  <Annotation Term="Redfish.ExcerptCopy" String="Fan"/>
+                </NavigationProperty>
+                <NavigationProperty Name="Array" Type="Sensor.Sensor" Nullable="false">
+                  <Annotation Term="Redfish.ExcerptCopy" String="Array"/>
+                </NavigationProperty>
+                <NavigationProperty Name="All" Type="Sensor.Sensor" Nullable="false">
+                  <Annotation Term="Redfish.ExcerptCopy"/>
+                </NavigationProperty>
+              </EntityType>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
+              <EntityType Name="Resource" Abstract="true"/>
+              <EntityType Name="ResourceCollection" Abstract="true"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+              <Term Name="Settings" Type="Settings.Settings"/>
+              <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
+            </Schema>
+            <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
+              <ComplexType Name="Settings"/><ComplexType Name="PreferredApplyTime"/>
+            </Schema>
+          </edmx:DataServices>
+        </edmx:Edmx>"#;
+
+        let bundle = SchemaBundle::new(
+            vec![Edmx::parse(schema).map_err(|error| error.to_string())?],
+            Vec::new(),
+        );
+
+        for _ in 0..COMPILATIONS_WITH_NEW_HASH_SEEDS {
+            let compiled = bundle
+                .compile_all(CompilerConfig::default())
+                .map_err(|error| error.to_string())?;
+            let generated = RustGenerator::new(&compiled, Config::default())
+                .map_err(|error| error.to_string())?
+                .generate()
+                .to_string();
+            let excerpts = generated
+                .split("pub struct ")
+                .skip(1)
+                .filter_map(|rest| rest.split_whitespace().next())
+                .filter(|name| name.starts_with("SensorExcerpt"))
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                excerpts,
+                [
+                    "SensorExcerpt",
+                    "SensorExcerptArray",
+                    "SensorExcerptFan",
+                    "SensorExcerptSingle"
+                ]
+            );
+        }
 
         Ok(())
     }

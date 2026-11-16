@@ -23,9 +23,12 @@ use crate::hardware_id::SerialNumber as HardwareIdSerialNumber;
 use crate::patch_support::ReadPatchFn;
 use crate::resource::ResetType;
 use crate::schema::chassis::Chassis as ChassisSchema;
+#[doc(inline)]
+pub use crate::schema::chassis::ChassisUpdate;
 use crate::Error;
 use crate::NvBmc;
 use nv_redfish_core::bmc::Bmc;
+use nv_redfish_core::EntityTypeRef as _;
 use nv_redfish_core::ModificationResponse;
 use nv_redfish_core::NavProperty;
 use std::future::Future;
@@ -55,6 +58,8 @@ use crate::log_service::LogService;
 use crate::oem::liteon;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaCbcChassis;
+#[cfg(feature = "oem-nvidia")]
+use crate::oem::nvidia::NvidiaChassis;
 #[cfg(feature = "oem-nvidia")]
 use crate::oem::nvidia::NvidiaChassisActions;
 #[cfg(feature = "power-supplies")]
@@ -114,6 +119,22 @@ impl<B: Bmc> Chassis<B> {
     #[must_use]
     pub fn raw(&self) -> Arc<ChassisSchema> {
         self.data.clone()
+    }
+
+    /// Update this chassis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the chassis fails.
+    pub async fn update(
+        &self,
+        update: &ChassisUpdate,
+    ) -> Result<ModificationResponse<Self>, Error<B>> {
+        self.bmc
+            .update::<_, NavProperty<ChassisSchema>>(self.data.odata_id(), self.data.etag(), update)
+            .await?
+            .try_map_entity_async(|nav| async move { Self::new(&self.bmc, &nav).await })
+            .await
     }
 
     /// Reset this chassis.
@@ -436,6 +457,23 @@ impl<B: Bmc> Chassis<B> {
         } else {
             Ok(None)
         }
+    }
+
+    /// NVIDIA chassis OEM extension, advertised as `Chassis.Oem.Nvidia`.
+    ///
+    /// Returns `Ok(None)` when the chassis does not include NVIDIA OEM data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if NVIDIA OEM data parsing fails.
+    #[cfg(feature = "oem-nvidia")]
+    pub fn oem_nvidia(&self) -> Result<Option<NvidiaChassis>, Error<B>> {
+        self.data
+            .oem
+            .as_ref()
+            .map(NvidiaChassis::new)
+            .transpose()
+            .map(|v| v.and_then(identity))
     }
 
     /// NVIDIA CBC chassis OEM extension

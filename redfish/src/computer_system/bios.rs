@@ -16,6 +16,8 @@
 
 #[cfg(feature = "oem-hpe")]
 use crate::oem::hpe::HpeBios;
+#[cfg(feature = "oem-lenovo")]
+use crate::oem::lenovo::LenovoBios;
 use crate::schema::bios::Bios as BiosSchema;
 use crate::Error;
 use crate::NvBmc;
@@ -72,6 +74,21 @@ impl<B: Bmc> Bios<B> {
             .oem
             .as_ref()
             .map_or_else(|| Ok(None), |oem| HpeBios::new(&self.bmc, oem))
+    }
+
+    /// Get the Lenovo OEM extension advertised by this BIOS resource.
+    ///
+    /// Returns `Ok(None)` when the BIOS does not include `Oem.Lenovo`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing the Lenovo BIOS extension fails.
+    #[cfg(feature = "oem-lenovo")]
+    pub fn oem_lenovo(&self) -> Result<Option<LenovoBios>, Error<B>> {
+        self.data
+            .oem
+            .as_ref()
+            .map_or_else(|| Ok(None), LenovoBios::new)
     }
 
     /// Get the advertised BIOS settings object.

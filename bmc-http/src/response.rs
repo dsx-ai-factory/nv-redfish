@@ -100,6 +100,14 @@ impl BmcError for ModificationDecodeError {
         }
     }
 
+    /// The body of an unsuccessful or unrecognized response.
+    fn response_body(&self) -> Option<&str> {
+        match self {
+            Self::InvalidResponse { text, .. } => Some(text),
+            Self::Json(_) | Self::Decode(_) => None,
+        }
+    }
+
     /// Extracts the inner [`DecodeError`] when the failure is a schema mismatch.
     fn into_decode_error(self) -> Result<DecodeError, Self> {
         match self {
@@ -121,37 +129,46 @@ pub enum SuccessCode {
     /// `NoOperation`: the request changed nothing, because nothing needed
     /// to change.
     NoOperation,
+    /// `ResetRequired`: the request made a change that takes effect when a
+    /// component is reset.
+    ResetRequired,
 }
 
 impl SuccessCode {
     /// The code a message ID or an error `code` names by its key, as in
     /// `Base.1.8.Success`, whatever its registry and version.
+    /// `ResetRequired` is only the Base registry's, since vendors such as
+    /// HPE iLO have their own.
     fn of(message_id: &str) -> Option<Self> {
         match key(message_id) {
             "Success" => Some(Self::Success),
             "Created" => Some(Self::Created),
             "NoOperation" => Some(Self::NoOperation),
+            "ResetRequired" if message_id.split('.').next() == Some("Base") => {
+                Some(Self::ResetRequired)
+            }
             _ => None,
         }
     }
 
     /// Which code a body reports when its messages name several: `Created`,
-    /// then `Success`, then `NoOperation`.
+    /// then `ResetRequired`, then `Success`, then `NoOperation`.
     const fn precedence(self) -> u8 {
         match self {
             Self::NoOperation => 0,
             Self::Success => 1,
-            Self::Created => 2,
+            Self::ResetRequired => 2,
+            Self::Created => 3,
         }
     }
 
     /// Whether a message naming this code may have `severity`: the one the
     /// Base registry gives it or a lesser one. `Success` and `Created` are
-    /// `OK` there, and `NoOperation` is a `Warning`.
+    /// `OK` there, and `NoOperation` and `ResetRequired` are `Warning`.
     fn allows(self, severity: &str) -> bool {
         match severity {
             "OK" => true,
-            "Warning" => self == Self::NoOperation,
+            "Warning" => matches!(self, Self::NoOperation | Self::ResetRequired),
             _ => false,
         }
     }
@@ -175,15 +192,14 @@ fn key(id: &str) -> &str {
 ///
 /// - A body with `error`, or with `Success` as Supermicro BMCs use, reports
 ///   the `code` of that object, with or without its `message`, as in
-///   `{"error": {"code": "Base.1.8.Success", "message": "..."}}`. A code
-///   whose key is `ExtendedInfo`, as HPE iLO's `iLO.0.10.ExtendedInfo`,
-///   reports what the object's own `@Message.ExtendedInfo` names. Any other
+///   `{"error": {"code": "Base.1.8.Success", "message": "..."}}`. Any other
 ///   code, or an object without one, is not a success, whatever messages
 ///   are beside it.
 /// - Otherwise, a body with `@Message.ExtendedInfo` reports what its
 ///   messages name: [`SuccessCode::Created`] when one is `Created`, else
-///   [`SuccessCode::Success`] when one is `Success`, else
-///   [`SuccessCode::NoOperation`] when one is `NoOperation`. When none
+///   [`SuccessCode::ResetRequired`] when one is the Base registry's
+///   `ResetRequired`, else [`SuccessCode::Success`] when one is `Success`,
+///   else [`SuccessCode::NoOperation`] when one is `NoOperation`. When none
 ///   names an outcome, as in an empty array or a message from another
 ///   registry, the body is [`SuccessCode::Success`], which its HTTP status
 ///   reports.
@@ -205,9 +221,10 @@ pub fn success_code(body: &Value) -> Option<SuccessCode> {
 /// that reports nothing else, as [`success_code`] reads it.
 ///
 /// A status object's `code` or a message's `MessageId` must name the
-/// outcome. Every message must name `Success`, `Created` or `NoOperation`
-/// with no severity worse than the Base registry gives it: `OK`, or
-/// `Warning` for `NoOperation`. `NoOperation` must not be named beside
+/// outcome. Every message must name `Success`, `Created`, `NoOperation` or
+/// the Base registry's `ResetRequired` with no severity worse than the Base
+/// registry gives it: `OK`, or `Warning` for `NoOperation` and
+/// `ResetRequired`. `NoOperation` must not be named beside
 /// `Success` or `Created`, as when part of a request did nothing.
 ///
 /// So a warning, a message from another registry such as Dell's
@@ -312,13 +329,7 @@ fn report(body: &Value) -> Option<Report> {
     {
         let status_messages = messages(status)?;
         let code = status.get("code")?.as_str()?;
-        let code = match SuccessCode::of(code) {
-            Some(code) => code,
-            // HPE iLO answers with `iLO.0.10.ExtendedInfo`, "See
-            // @Message.ExtendedInfo for more information."
-            None if key(code) == "ExtendedInfo" => status_messages.code?,
-            None => return None,
-        };
+        let code = SuccessCode::of(code)?;
         status_codes.name(code);
         named.add(status_messages);
     }
@@ -779,32 +790,6 @@ mod tests {
                 }),
                 Some(SuccessCode::Success),
             ),
-            // HPE iLO: a code that refers to the object's own messages.
-            (
-                json!({"error": {
-                    "code": "iLO.0.10.ExtendedInfo",
-                    "message": "See @Message.ExtendedInfo for more information.",
-                    "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
-                }}),
-                Some(SuccessCode::Success),
-            ),
-            (
-                json!({"error": {
-                    "code": "iLO.0.10.ExtendedInfo",
-                    "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Created"}]
-                }}),
-                Some(SuccessCode::Created),
-            ),
-            (
-                json!({"error": {
-                    "code": "iLO.0.10.ExtendedInfo",
-                    "@Message.ExtendedInfo": [{
-                        "MessageId": "Base.1.4.NoOperation",
-                        "MessageSeverity": "Warning"
-                    }]
-                }}),
-                Some(SuccessCode::NoOperation),
-            ),
         ] {
             assert_eq!(success_code(&body), code, "{body}");
         }
@@ -983,18 +968,12 @@ mod tests {
                 "error": "Failed.",
                 "@Message.ExtendedInfo": [{"MessageId": "Base.1.8.Success"}]
             }),
-            // A code that refers to its messages needs one that is a success.
+            // A vendor's code is not a success, whatever its messages name;
+            // the compatibility layer reads the platforms that answer so.
             json!({"error": {
                 "code": "iLO.0.10.ExtendedInfo",
-                "message": "See @Message.ExtendedInfo for more information."
-            }}),
-            json!({"error": {
-                "code": "iLO.0.10.ExtendedInfo",
-                "@Message.ExtendedInfo": []
-            }}),
-            json!({"error": {
-                "code": "iLO.0.10.ExtendedInfo",
-                "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.ActionParameterNotSupported"}]
+                "message": "See @Message.ExtendedInfo for more information.",
+                "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
             }}),
             // Messages must be an array of objects with a MessageId.
             json!({"@Message.ExtendedInfo": [{"Message": "Done."}]}),
@@ -1013,6 +992,26 @@ mod tests {
             assert_eq!(success_code(&body), None, "{body}");
             assert_eq!(strict_success_code(&body), None, "{body}");
         }
+    }
+
+    /// The Base registry's `ResetRequired` is its own outcome, as Lenovo
+    /// XCC 3 answers a BIOS settings write or reset; a vendor registry's
+    /// message of that name is not.
+    #[test]
+    fn only_the_base_reset_required_is_reset_required() {
+        let base = json!({"error": {
+            "code": "Base.1.16.0.ResetRequired",
+            "message": "In order to apply changes, recover from errors, or complete \
+                        the operation, a component reset is required.",
+            "@Message.ExtendedInfo": [{
+                "MessageId": "Base.1.16.0.ResetRequired",
+                "MessageSeverity": "Warning"
+            }]
+        }});
+        assert_eq!(success_code(&base), Some(SuccessCode::ResetRequired));
+        assert_eq!(strict_success_code(&base), Some(SuccessCode::ResetRequired));
+        let ilo = json!({"error": {"code": "iLO.2.15.ResetRequired"}});
+        assert_eq!(success_code(&ilo), None);
     }
 
     /// Verifies the success messages that BMCs send instead of `204 No
@@ -1046,15 +1045,6 @@ mod tests {
                     "code": "Base.1.8.Success",
                     "message": "Successfully Completed Request",
                     "@Message.ExtendedInfo": [{"MessageId": "Base.1.8.Success", "Severity": "OK"}]
-                }}),
-                Some(SuccessCode::Success),
-            ),
-            (
-                "HPE iLO",
-                json!({"error": {
-                    "code": "iLO.0.10.ExtendedInfo",
-                    "message": "See @Message.ExtendedInfo for more information.",
-                    "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
                 }}),
                 Some(SuccessCode::Success),
             ),
@@ -1211,16 +1201,6 @@ mod tests {
                 }}),
                 SuccessCode::Success,
             ),
-            (
-                json!({"error": {
-                    "code": "iLO.0.10.ExtendedInfo",
-                    "@Message.ExtendedInfo": [
-                        {"MessageId": "Base.1.4.Success"},
-                        {"MessageId": "Base.1.4.PropertyValueModified"}
-                    ]
-                }}),
-                SuccessCode::Success,
-            ),
             // Part of the request did nothing.
             (
                 json!({"@Message.ExtendedInfo": [
@@ -1253,11 +1233,6 @@ mod tests {
                 "Success": {"code": "Base.1.10.Success"},
                 "@Message.ExtendedInfo": [{"MessageId": "Base.1.10.Success"}]
             }),
-            json!({"error": {
-                "code": "iLO.0.10.ExtendedInfo",
-                "message": "See @Message.ExtendedInfo for more information.",
-                "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
-            }}),
             json!({"@Message.ExtendedInfo": [{"MessageId": "Base.1.13.0.Success"}]}),
             // NoOperation and warnings are successes too; strict_success_code
             // tells them apart on the preserved ModificationResponse::Message body.
@@ -1289,9 +1264,10 @@ mod tests {
                 "code": "Base.1.8.GeneralError",
                 "@Message.ExtendedInfo": [{"MessageId": "Base.1.8.Success"}]
             }}),
+            // A vendor's code, with the body text the compatibility layer reads.
             json!({"error": {
                 "code": "iLO.0.10.ExtendedInfo",
-                "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.ActionParameterNotSupported"}]
+                "@Message.ExtendedInfo": [{"MessageId": "Base.1.4.Success"}]
             }}),
             json!({"Success": {"code": "Base.1.10.GeneralError", "message": "Failed."}}),
             json!({"@Message.ExtendedInfo": [{

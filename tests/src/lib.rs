@@ -133,8 +133,7 @@ pub fn ami_service_root(
 
 /// Build a ServiceRoot payload for Lite-On power shelves merged with `fields`.
 ///
-/// Live shelves may omit the `Systems` navigation property on `/redfish/v1` while
-/// `/redfish/v1/Systems` still responds to GET.
+/// Power shelves may omit the optional `Systems` navigation property.
 pub fn liteon_powershelf_service_root(root_id: &ODataId, fields: Value) -> Value {
     let base = json!({
         ODATA_ID: root_id,

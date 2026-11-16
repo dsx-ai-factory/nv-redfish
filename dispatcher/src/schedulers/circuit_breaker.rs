@@ -372,6 +372,25 @@ mod tests {
     }
 
     #[test]
+    fn trips_only_when_the_failure_share_reaches_the_threshold() {
+        let leaf = MockLeaf::ready_firing(1);
+        let mut cb = CircuitBreaker::new(cfg(Duration::from_millis(100)), leaf);
+        let t0 = Instant::now();
+
+        // One failure alone is below `min_samples`; 1 of 4 and 2 of 5 are
+        // below the 50% threshold.
+        drive_outcome(&mut cb, t0, CompletionOutcome::Failed);
+        for _ in 0..3 {
+            drive_outcome(&mut cb, t0, CompletionOutcome::Succeeded);
+        }
+        drive_outcome(&mut cb, t0, CompletionOutcome::Failed);
+        assert!(matches!(cb.state(), BreakerState::Closed));
+
+        drive_outcome(&mut cb, t0, CompletionOutcome::Failed);
+        assert!(matches!(cb.state(), BreakerState::Open { .. }), "3 of 6");
+    }
+
+    #[test]
     fn cool_down_promotes_to_half_open() {
         let leaf = MockLeaf::ready_firing(1);
         let cool_down = Duration::from_millis(50);

@@ -85,6 +85,11 @@ pub enum Error<B: Bmc> {
     /// Metric report definitions are not available for telemetry service
     #[cfg(feature = "telemetry-service")]
     MetricReportDefinitionsNotAvailable,
+    /// A `StorageControllers` entry is a reference instead of an embedded
+    /// object.  These entries point into their containing Storage
+    /// resource, so there is nothing further to fetch.
+    #[cfg(feature = "storages")]
+    StorageControllerNotExpanded(nv_redfish_core::ODataId),
     /// JSON parse error.
     Json(JsonError),
     /// A document did not deserialize into the schema type it was read as:
@@ -163,6 +168,10 @@ impl<B: Bmc> Display for Error<B> {
             #[cfg(feature = "telemetry-service")]
             Self::MetricReportDefinitionsNotAvailable => {
                 write!(f, "Metric report definitions are not available")
+            }
+            #[cfg(feature = "storages")]
+            Self::StorageControllerNotExpanded(id) => {
+                write!(f, "StorageControllers entry {id} is not embedded")
             }
         }
     }

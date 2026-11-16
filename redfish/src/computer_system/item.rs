@@ -18,6 +18,7 @@ use crate::core::EntityTypeRef as _;
 use crate::core::ModificationResponse;
 use crate::core::NavProperty;
 use crate::core::RedfishSettings as _;
+use crate::entity_link::FromLink;
 use crate::hardware_id::HardwareIdRef;
 use crate::hardware_id::Manufacturer as HardwareIdManufacturer;
 use crate::hardware_id::Model as HardwareIdModel;
@@ -33,6 +34,7 @@ use crate::Error;
 use crate::NvBmc;
 
 use std::convert::identity;
+use std::future::Future;
 use std::sync::Arc;
 use tagged_types::TaggedType;
 
@@ -224,6 +226,22 @@ impl<B: Bmc> ComputerSystem<B> {
     ) -> Result<ModificationResponse<Self>, Error<B>> {
         self.update_at(self.data.odata_id(), self.data.etag(), update)
             .await
+    }
+
+    /// Get the advertised computer system settings object.
+    ///
+    /// Returns `Ok(None)` when this computer system does not advertise
+    /// `@Redfish.Settings`. [`Self::update`] on the returned handle writes
+    /// to the settings object with its own `ETag`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching the settings object fails.
+    pub async fn settings(&self) -> Result<Option<Self>, Error<B>> {
+        match self.data.settings_object() {
+            Some(settings) => Self::new(&self.bmc, &settings).await.map(Some),
+            None => Ok(None),
+        }
     }
 
     /// Reset this computer system.
@@ -615,5 +633,16 @@ impl<B: Bmc> ComputerSystem<B> {
                 || Ok(None),
                 |actions| SupermicroComputerSystemActions::new(&self.bmc, actions),
             )
+    }
+}
+
+impl<B: Bmc> FromLink<B> for ComputerSystem<B> {
+    type Schema = ComputerSystemSchema;
+
+    fn from_link(
+        bmc: &NvBmc<B>,
+        nav: &NavProperty<Self::Schema>,
+    ) -> impl Future<Output = Result<Self, Error<B>>> + Send {
+        Self::new(bmc, nav)
     }
 }

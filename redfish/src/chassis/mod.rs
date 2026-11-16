@@ -30,6 +30,8 @@ use std::sync::Arc;
 #[doc(inline)]
 pub use item::Chassis;
 #[doc(inline)]
+pub use item::ChassisUpdate;
+#[doc(inline)]
 pub use item::Manufacturer;
 #[doc(inline)]
 pub use item::Model;
