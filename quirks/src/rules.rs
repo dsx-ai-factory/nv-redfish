@@ -105,6 +105,11 @@ const RULES: &[Rule] = &[
         fix: fixes::normalize_empty_network_adapter_controllers,
     },
     Rule {
+        resource_type: "PCIeDevice",
+        enabled: BmcQuirks::bug_empty_pcie_interface,
+        fix: fixes::remove_empty_pcie_interface,
+    },
+    Rule {
         resource_type: "ComputerSystem",
         enabled: BmcQuirks::bug_empty_uuid_field,
         fix: fixes::normalize_empty_uuid_field,
@@ -461,6 +466,32 @@ mod tests {
 
         let hpe = enabled_for(&json!({ "Vendor": "HPE" }));
         assert_eq!(repaired(&hpe, empty.clone()), empty);
+    }
+
+    #[test]
+    fn an_empty_pcie_interface_string_is_removed() {
+        let xcc = enabled_for(&json!({ "Vendor": "Lenovo" }));
+        let vroc = json!({
+            "@odata.type": "#PCIeDevice.v1_19_0.PCIeDevice",
+            "Id": "ob0_0x140005",
+            "Model": "Intel VROC 9.1",
+            "PCIeInterface": "",
+        });
+        let mended = repaired(&xcc, vroc.clone());
+        assert!(mended.get("PCIeInterface").is_none());
+        assert_eq!(mended["Model"], "Intel VROC 9.1");
+
+        let nic = json!({
+            "@odata.type": "#PCIeDevice.v1_19_0.PCIeDevice",
+            "Id": "slot_1",
+            "PCIeInterface": { "PCIeType": "Gen5", "LanesInUse": 16 },
+        });
+        assert_eq!(repaired(&xcc, nic.clone()), nic);
+
+        let lenovo_ami = enabled_for(&json!({ "Vendor": "Lenovo", "Oem": { "Ami": {} } }));
+        assert_eq!(repaired(&lenovo_ami, vroc.clone()), vroc);
+        let hpe = enabled_for(&json!({ "Vendor": "HPE" }));
+        assert_eq!(repaired(&hpe, vroc.clone()), vroc);
     }
 
     #[test]
