@@ -91,6 +91,7 @@ enum Quirk {
     CertificateTypeWrongPemChainCase,
     ComputerSystemsWrongLastResetTime,
     EmptyNetworkAdapterControllers,
+    EmptyPcieInterface,
     SseNoMemberId,
     SseEmptyLogEntry,
     SseWrongTimestampOffset,
@@ -162,6 +163,7 @@ const RULES: &[Rule] = &[
         quirks: &[
             Quirk::PasswordExpirationWithoutSeconds,
             Quirk::AnnotationOnlyUpdateReply,
+            Quirk::EmptyPcieInterface,
         ],
     },
     // The H100 Viking.
@@ -425,6 +427,13 @@ impl BmcQuirks {
         self.has(Quirk::EmptyNetworkAdapterControllers)
     }
 
+    /// Lenovo XCC 3 reports `PCIeInterface` as `""` on a PCIe device without
+    /// one, such as the Intel VROC RAID controller. The schema types it as
+    /// an object, so one such device fails the whole PCIe device collection.
+    pub(crate) fn bug_empty_pcie_interface(&self) -> bool {
+        self.has(Quirk::EmptyPcieInterface)
+    }
+
     /// Event records in the SSE payload omit `MemberId`.
     pub(crate) fn event_service_sse_no_member_id(&self) -> bool {
         self.has(Quirk::SseNoMemberId)
@@ -671,6 +680,7 @@ mod tests {
                 &[
                     Quirk::PasswordExpirationWithoutSeconds,
                     Quirk::AnnotationOnlyUpdateReply,
+                    Quirk::EmptyPcieInterface,
                 ],
             ),
             (

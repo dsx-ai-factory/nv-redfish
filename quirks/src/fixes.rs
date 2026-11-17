@@ -184,6 +184,24 @@ pub fn normalize_empty_network_adapter_controllers(mut v: Value) -> Value {
     v
 }
 
+// `PCIeInterface` is a complex type, but Lenovo XCC 3 reports `""` on
+// devices without one, such as the Intel VROC RAID controller; the field
+// is removed. An interface object is left as it came.
+pub fn remove_empty_pcie_interface(v: Value) -> Value {
+    if let Value::Object(mut obj) = v {
+        if obj
+            .get("PCIeInterface")
+            .and_then(Value::as_str)
+            .is_some_and(str::is_empty)
+        {
+            obj.remove("PCIeInterface");
+        }
+        Value::Object(obj)
+    } else {
+        v
+    }
+}
+
 // `LastResetTime` is an `Edm.DateTimeOffset`, but some systems put
 // `0000-00-00T00:00:00+00:00` there, which does not conform to its ABNF;
 // the field is removed.
