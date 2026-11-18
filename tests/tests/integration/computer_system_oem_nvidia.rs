@@ -197,49 +197,51 @@ async fn system_with_null_nvidia_oem_returns_none() -> Result<(), Box<dyn StdErr
 
 #[test]
 async fn oem_nvidia_dpu_inline_oem_object_shape_supported() -> Result<(), Box<dyn StdError>> {
-    // Platform under test: NVIDIA BlueField DPU.
-    // Regression check: inline Oem.Nvidia object shape in ComputerSystem response.
-    let bmc = Arc::new(Bmc::default());
-    let ids = ids();
-    let system = get_system(
-        bmc.clone(),
-        &ids,
-        system_payload(
+    // Both product names expose a partial OEM stub; mode lives at its link.
+    for product in ["BlueField-3 DPU", "BlueField-3 SuperNIC"] {
+        let bmc = Arc::new(Bmc::default());
+        let ids = ids();
+        let system = get_system_on_platform(
+            bmc.clone(),
             &ids,
-            Some(json!({
-                "Nvidia": {
-                    ODATA_ID: &ids.nvidia_oem_id,
-                    ODATA_TYPE: "#NvidiaComputerSystem.v1_3_0.NvidiaComputerSystem",
-                    "SystemConfigProfile": {
-                        ODATA_ID: format!("{}/SystemConfigProfile", ids.nvidia_oem_id),
-                        ODATA_TYPE: "#SystemConfigProfile.v1_0_0.SystemConfigProfile"
+            system_payload(
+                &ids,
+                Some(json!({
+                    "Nvidia": {
+                        ODATA_ID: &ids.nvidia_oem_id,
+                        ODATA_TYPE: "#NvidiaComputerSystem.v1_3_0.NvidiaComputerSystem",
+                        "SystemConfigProfile": {
+                            ODATA_ID: format!("{}/SystemConfigProfile", ids.nvidia_oem_id),
+                            ODATA_TYPE: "#SystemConfigProfile.v1_0_0.SystemConfigProfile"
+                        }
                     }
-                }
-            })),
-        ),
-    )
-    .await?;
+                })),
+            ),
+            "Nvidia",
+            product,
+        )
+        .await?;
 
-    // Inline Oem.Nvidia shape still resolves via @odata.id fetch path.
-    bmc.expect(Expect::get(
-        &ids.nvidia_oem_id,
-        json!({
-            ODATA_ID: &ids.nvidia_oem_id,
-            ODATA_TYPE: "#NvidiaComputerSystem.v1_3_0.NvidiaComputerSystem",
-            "BaseMAC": "001122334455",
-            "Mode": "NicMode"
-        }),
-    ));
-    let oem = system
-        .oem_nvidia()
-        .await?
-        .expect("NVIDIA OEM extension must be available");
-    assert_eq!(
-        oem.base_mac().map(|v| v.to_string()),
-        Some("001122334455".into())
-    );
-    assert_eq!(oem.mode(), Some(Mode::NicMode));
-
+        // Inline Oem.Nvidia shape still resolves via @odata.id fetch path.
+        bmc.expect(Expect::get(
+            &ids.nvidia_oem_id,
+            json!({
+                ODATA_ID: &ids.nvidia_oem_id,
+                ODATA_TYPE: "#NvidiaComputerSystem.v1_3_0.NvidiaComputerSystem",
+                "BaseMAC": "001122334455",
+                "Mode": "NicMode"
+            }),
+        ));
+        let oem = system
+            .oem_nvidia()
+            .await?
+            .expect("NVIDIA OEM extension must be available");
+        assert_eq!(
+            oem.base_mac().map(|v| v.to_string()),
+            Some("001122334455".into())
+        );
+        assert_eq!(oem.mode(), Some(Mode::NicMode));
+    }
     Ok(())
 }
 
