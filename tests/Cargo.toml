@@ -42,6 +42,7 @@ nv-redfish = { workspace = true, features = [
     "power-supplies",
     "sensors",
     "session-service",
+    "storages",
     "task-service",
     "telemetry-service",
     "update-service",
