@@ -36,16 +36,19 @@
 //! ```
 //!
 //! ```rust
-//! use nv_redfish_core::EdmDuration;
+//! use nv_redfish_core::{edm_duration::Error, EdmDuration};
 //! use std::convert::TryFrom;
-//! use std::time::Duration as StdDuration;
-//! use std::str::FromStr;
+//! use std::time::Duration;
 //!
-//! let one_day = EdmDuration::from_str("P1D").unwrap();
-//! let std = StdDuration::try_from(one_day).unwrap();
-//! assert_eq!(std.as_secs(), 86_400);
-//! // Negative durations cannot convert to StdDuration
-//! assert!(StdDuration::try_from(EdmDuration::from_str("-PT1S").unwrap()).is_err());
+//! let convert = |input: &str| Duration::try_from(input.parse::<EdmDuration>().unwrap());
+//! let large = convert("PT20000000000.000000001S").unwrap();
+//! assert_eq!(large, Duration::new(20_000_000_000, 1));
+//! assert_eq!(convert("P1D").unwrap(), Duration::from_secs(86_400));
+//! assert_eq!(convert("PT0S").unwrap(), Duration::ZERO);
+//! assert_eq!(convert("PT1.0000000005S").unwrap(), Duration::from_secs(1));
+//! assert_eq!(convert("PT1.9999999995S").unwrap(), Duration::from_secs(2));
+//! assert!(matches!(convert("-PT1S"), Err(Error::CannotConvertNegativeEdmDuration)));
+//! assert!(matches!(convert("PT18446744073709551616S"), Err(Error::ValueTooBig)));
 //! ```
 
 use rust_decimal::prelude::ToPrimitive as _;
@@ -144,41 +147,34 @@ impl Display for Error {
 
 impl StdError for Error {}
 
-// Conversion duration to the standard duration. Can return error if
-// value cannot be represented by EdmDuration (Example: negative
-// durations). If EdmDuration fraction of seconds is less than
-// nanoseconds then duration will be rounded to the closes nanosecond.
+/// Converts to the nearest nanosecond, with ties rounded to even.
+///
+/// # Errors
+///
+/// Returns [`Error::CannotConvertNegativeEdmDuration`] for negative durations and
+/// [`Error::ValueTooBig`] when the rounded duration exceeds [`std::time::Duration::MAX`].
 impl TryFrom<EdmDuration> for StdDuration {
     type Error = Error;
 
-    fn try_from(v: EdmDuration) -> Result<Self, Error> {
-        if v.0.is_sign_negative() {
+    fn try_from(duration: EdmDuration) -> Result<Self, Error> {
+        const NANOSECOND_DECIMAL_PLACES: u32 = 9;
+        const NANOS_PER_SECOND: u32 = 10_u32.pow(NANOSECOND_DECIMAL_PLACES);
+
+        if duration.0.is_sign_negative() {
             return Err(Error::CannotConvertNegativeEdmDuration);
         }
-        if v.0.is_integer() {
-            let p = u64::try_from(v.0).map_err(|_| Error::ValueTooBig)?;
-            return Ok(Self::from_secs(p));
-        }
-        let v =
-            v.0.checked_mul(Decimal::ONE_THOUSAND)
-                .ok_or(Error::ValueTooBig)?;
-        if v.is_integer() {
-            let p = u64::try_from(v).map_err(|_| Error::ValueTooBig)?;
-            return Ok(Self::from_millis(p));
-        }
-        let v = v
-            .checked_mul(Decimal::ONE_THOUSAND)
+
+        let whole_seconds = duration.0.to_u64().ok_or(Error::ValueTooBig)?;
+
+        let fractional_seconds = duration.0.fract().round_dp(NANOSECOND_DECIMAL_PLACES);
+
+        let nanoseconds = (fractional_seconds * Decimal::from(NANOS_PER_SECOND))
+            .to_u64()
             .ok_or(Error::ValueTooBig)?;
-        if v.is_integer() {
-            let p = u64::try_from(v).map_err(|_| Error::ValueTooBig)?;
-            return Ok(Self::from_micros(p));
-        }
-        let v = v
-            .checked_mul(Decimal::ONE_THOUSAND)
-            .ok_or(Error::ValueTooBig)?
-            .round();
-        let p = u64::try_from(v).map_err(|_| Error::ValueTooBig)?;
-        Ok(Self::from_nanos(p))
+
+        Self::from_secs(whole_seconds)
+            .checked_add(Self::from_nanos(nanoseconds))
+            .ok_or(Error::ValueTooBig)
     }
 }
 
