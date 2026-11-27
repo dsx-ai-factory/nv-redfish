@@ -31,7 +31,6 @@ http-extras = ["dep:tokio", "tokio/sync"]
 
 [dependencies]
 bytes = { workspace = true, optional = true }
-futures-core = { workspace = true }
 futures-util = { workspace = true, optional = true }
 nv-redfish-core = { workspace = true }
 http = { workspace = true }
@@ -50,8 +49,6 @@ tokio-util = { workspace = true, optional = true, features = ["compat", "io"] }
 url = { workspace = true }
 webpki-root-certs = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
-uuid = { workspace = true, features = ["serde"] }
-time = { workspace = true, features = ["serde", "formatting", "parsing"] }
 
 [dev-dependencies]
 rustls = { workspace = true }
