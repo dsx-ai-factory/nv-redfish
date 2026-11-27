@@ -200,6 +200,18 @@ impl<E> Bmc<E> {
             println!("{:#?}", v.request);
         }
     }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "Reuse the mock's public error type for both queue failures"
+    )]
+    fn pop_expectation(&self) -> Result<Expect<E>, Error> {
+        self.expect
+            .lock()
+            .map_err(Error::mutex_lock)?
+            .pop_front()
+            .ok_or(Error::NothingIsExpected)
+    }
 }
 
 impl<E> NvRedfishBmc for Bmc<E>
@@ -212,12 +224,8 @@ where
     where
         T: Expandable,
     {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
+
         match expect {
             Expect {
                 request: ExpectedRequest::Expand { id },
@@ -235,12 +243,8 @@ where
         &self,
         in_id: &ODataId,
     ) -> Result<Arc<T>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
+
         match expect {
             Expect {
                 request: ExpectedRequest::Get { id },
@@ -263,12 +267,7 @@ where
         in_etag: Option<&ODataETag>,
         update: &V,
     ) -> Result<ModificationResponse<R>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
 
         let in_request = to_value(update).expect("json serializable");
 
@@ -322,12 +321,7 @@ where
         in_id: &ODataId,
         create: &V,
     ) -> Result<ModificationResponse<R>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
 
         let in_request = to_value(create).expect("json serializable");
 
@@ -364,12 +358,7 @@ where
         in_id: &ODataId,
         create: &V,
     ) -> Result<SessionCreateResponse<R>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
         let in_request = to_value(create).expect("json serializable");
         match expect {
             Expect {
@@ -402,12 +391,8 @@ where
         &self,
         in_id: &ODataId,
     ) -> Result<ModificationResponse<R>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
+
         match expect {
             Expect {
                 request: ExpectedRequest::Delete { id },
@@ -429,12 +414,7 @@ where
         action: &nv_redfish_core::Action<T, R>,
         params: &T,
     ) -> Result<ModificationResponse<R>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
         let in_request = to_value(params).expect("json serializable");
         match expect {
             Expect {
@@ -489,12 +469,7 @@ where
         R: Send + Sync + for<'de> serde::Deserialize<'de>,
         V: Send + Sync + Serialize,
     {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
 
         let MultipartUpdateRequest {
             update_parameters,
@@ -546,12 +521,7 @@ where
         U: UploadReader,
         R: Send + Sync + for<'de> serde::Deserialize<'de>,
     {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
 
         match expect {
             Expect {
@@ -616,12 +586,8 @@ where
         in_uri: &str,
         last_event_id: Option<&str>,
     ) -> Result<nv_redfish_core::BoxTryStream<StreamEvent<T>, Self::Error>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
+
         match expect {
             Expect {
                 request: ExpectedRequest::Stream { uri },
@@ -666,12 +632,8 @@ where
         &self,
         location: &ODataId,
     ) -> Result<ModificationResponse<T>, Self::Error> {
-        let expect = self
-            .expect
-            .lock()
-            .map_err(Error::mutex_lock)?
-            .pop_front()
-            .ok_or(Error::NothingIsExpected)?;
+        let expect = self.pop_expectation()?;
+
         match expect {
             Expect {
                 request: ExpectedRequest::PollResult { id },
