@@ -13,10 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::Parser;
+use std::io;
+use std::io::Write as _;
+
 use nv_redfish_csdl_compiler::commands::process_command;
 use nv_redfish_csdl_compiler::commands::Commands;
 use nv_redfish_csdl_compiler::Error;
+
+use clap::Parser;
 
 /// Compiler CLI.
 #[derive(Parser, Debug)]
@@ -30,10 +34,15 @@ struct Cli {
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
-    let _ = process_command(&cli.command)?
+    let messages = process_command(&cli.command)?;
+
+    let mut stdout = io::stdout().lock();
+
+    messages
         .into_iter()
-        .map(|msg| println!("{msg}"));
-    Ok(())
+        .try_for_each(|message| writeln!(stdout, "{message}"))
+        .and_then(|()| stdout.flush())
+        .map_err(|error| Error::Io("stdout".into(), error))
 }
 
 #[cfg(test)]

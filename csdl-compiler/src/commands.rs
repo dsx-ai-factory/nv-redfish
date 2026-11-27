@@ -27,8 +27,16 @@
 //! - Optimize the compiled set and run the Rust generator.
 //! - Pretty-print the resulting syntax and write it to the `output` path.
 
+use std::collections::BTreeMap;
+use std::fs::write;
+use std::fs::File;
+use std::io::Read as _;
+use std::path::Path;
+use std::path::PathBuf;
+
 use crate::compiler::ActionFilter;
 use crate::compiler::ActionFilterPattern;
+use crate::compiler::Compiled;
 use crate::compiler::Config as CompilerConfig;
 use crate::compiler::EntityTypeFilter;
 use crate::compiler::EntityTypeFilterPattern;
@@ -41,12 +49,8 @@ use crate::generator::client_rust::RustGenerator;
 use crate::optimizer::optimize;
 use crate::optimizer::Config as OptimizerConfig;
 use crate::Error;
+
 use clap::Subcommand;
-use std::collections::BTreeMap;
-use std::fs::write;
-use std::fs::File;
-use std::io::Read as _;
-use std::path::PathBuf;
 
 /// Default root singleton to compile.
 pub const DEFAULT_ROOT: &str = "Service";
@@ -135,20 +139,21 @@ pub enum Commands {
     },
 }
 
-/// Process a compiler command.
+/// Write generated Rust and return a completion message with the output path.
 ///
 /// # Errors
 ///
-/// Returns an error if command processing fails.
+/// Returns an error if command processing fails. For [`Commands::Compile`], an
+/// unknown root singleton causes a compilation error before the file is written.
 pub fn process_command(command: &Commands) -> Result<Vec<String>, Error> {
     process_command_inner(command, false)
 }
 
-/// Process a compiler command with serialization enabled for read and excerpt models.
+/// Like [`process_command`], with serialization enabled for read and excerpt models.
 ///
 /// # Errors
 ///
-/// Returns an error if command processing fails.
+/// Returns the same errors as [`process_command`].
 pub fn process_command_with_read_model_serialization(
     command: &Commands,
 ) -> Result<Vec<String>, Error> {
@@ -159,7 +164,6 @@ fn process_command_inner(
     command: &Commands,
     serialize_read_models: bool,
 ) -> Result<Vec<String>, Error> {
-    let mut display_output = Vec::new();
     match command {
         Commands::Compile {
             root,
@@ -170,11 +174,21 @@ fn process_command_inner(
             rigid_array_patterns,
         } => {
             let root_service = root.parse().map_err(Error::WrongRootService)?;
+
             if csdls.is_empty() {
                 return Err(Error::AtLeastOneCSDLFileNeeded);
             }
 
             let schema_bundle = read_csdls(csdls, &[])?;
+
+            if !schema_bundle
+                .root_singletons()
+                .any(|singleton| singleton.name == root_service)
+            {
+                return Err(Error::Compile(vec![format!(
+                    "root singleton not found: {root_service}"
+                )]));
+            }
 
             let compiled = schema_bundle
                 .compile(
@@ -189,22 +203,8 @@ fn process_command_inner(
                     },
                 )
                 .map_err(Error::compile_error)?;
-            let compiled = optimize(compiled, &OptimizerConfig::default());
-            let generator = RustGenerator::new(
-                &compiled,
-                GeneratorConfig {
-                    serialize_read_models,
-                    ..GeneratorConfig::default()
-                },
-            )
-            .map_err(Error::generate_error)?;
 
-            let syntax_tree =
-                syn::parse2::<syn::File>(generator.generate()).map_err(Error::ParseGenerated)?;
-            write(output, prettyplease::unparse(&syntax_tree))
-                .map_err(|e| Error::WriteOutput(output.clone(), e))?;
-            display_output.push(format!("{} file has been written", output.display()));
-            Ok(display_output)
+            write_compiled_rust(compiled, output, serialize_read_models)
         }
         Commands::CompileOem {
             root_csdls,
@@ -217,7 +217,9 @@ fn process_command_inner(
             if root_csdls.is_empty() {
                 return Err(Error::AtLeastOneCSDLFileNeeded);
             }
+
             let schema_bundle = read_csdls(root_csdls, resolve_csdls)?;
+
             let compiled = schema_bundle
                 .compile_all(CompilerConfig {
                     entity_type_filter: EntityTypeFilter::new_permissive(
@@ -228,23 +230,35 @@ fn process_command_inner(
                     ..CompilerConfig::default()
                 })
                 .map_err(Error::compile_error)?;
-            let compiled = optimize(compiled, &OptimizerConfig::default());
-            let generator = RustGenerator::new(
-                &compiled,
-                GeneratorConfig {
-                    serialize_read_models,
-                    ..GeneratorConfig::default()
-                },
-            )
-            .map_err(Error::generate_error)?;
-            let syntax_tree =
-                syn::parse2::<syn::File>(generator.generate()).map_err(Error::ParseGenerated)?;
-            write(output, prettyplease::unparse(&syntax_tree))
-                .map_err(|e| Error::WriteOutput(output.clone(), e))?;
-            display_output.push(format!("{} file has been written", output.display()));
-            Ok(display_output)
+
+            write_compiled_rust(compiled, output, serialize_read_models)
         }
     }
+}
+
+fn write_compiled_rust(
+    compiled: Compiled<'_>,
+    output: &Path,
+    serialize_read_models: bool,
+) -> Result<Vec<String>, Error> {
+    let compiled = optimize(compiled, &OptimizerConfig::default());
+
+    let generator = RustGenerator::new(
+        &compiled,
+        GeneratorConfig {
+            serialize_read_models,
+            ..GeneratorConfig::default()
+        },
+    )
+    .map_err(Error::generate_error)?;
+
+    let syntax_tree =
+        syn::parse2::<syn::File>(generator.generate()).map_err(Error::ParseGenerated)?;
+
+    write(output, prettyplease::unparse(&syntax_tree))
+        .map_err(|e| Error::WriteOutput(output.to_path_buf(), e))?;
+
+    Ok(vec![format!("{} file has been written", output.display())])
 }
 
 fn read_csdls(root_csdls: &[String], resolve_csdls: &[String]) -> Result<SchemaBundle, Error> {

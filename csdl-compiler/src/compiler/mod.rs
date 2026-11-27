@@ -170,6 +170,7 @@ use crate::edmx::Action as EdmxAction;
 use crate::edmx::Edmx;
 use crate::edmx::Schema;
 use crate::edmx::SimpleIdentifier;
+use crate::edmx::Singleton;
 use crate::edmx::Type;
 use schema_index::SchemaIndex;
 use stack::Stack;
@@ -304,6 +305,15 @@ impl SchemaBundle {
         self.root_docs.iter().chain(&self.resolve_docs)
     }
 
+    /// Singletons declared in the root documents.
+    pub(crate) fn root_singletons(&self) -> impl Iterator<Item = &Singleton> {
+        self.root_docs
+            .iter()
+            .flat_map(|edmx| &edmx.data_services.schemas)
+            .filter_map(|schema| schema.entity_container.as_ref())
+            .flat_map(|container| &container.singletons)
+    }
+
     /// Compile multiple schemas, resolving all type dependencies.
     ///
     /// The root set is defined by the specified singletons.
@@ -352,36 +362,13 @@ impl SchemaBundle {
         singletons: &[SimpleIdentifier],
         root_patterns: &EntityTypeFilter,
     ) -> Result<RootSet<'a>, Error<'a>> {
-        // Iterate through all singletons located in
-        // EDMX documents -> schemas -> entity containers.
-        //
-        // If a singleton matches the requested set, collect its most recent
-        // descendant type into the root set.
         let entity_types = self
-            .root_docs
-            .iter()
-            .flat_map(|edmx| {
-                edmx.data_services.schemas.iter().flat_map(|s| {
-                    s.entity_container
-                        .as_ref()
-                        .map_or(Vec::new(), |entity_container| {
-                            entity_container
-                                .singletons
-                                .iter()
-                                .filter_map(|singleton| {
-                                    if singletons.contains(&singleton.name) {
-                                        Some(
-                                            schema_index
-                                                .find_child_entity_type((&singleton.stype).into())
-                                                .map(|(qname, _)| qname),
-                                        )
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                })
+            .root_singletons()
+            .filter(|singleton| singletons.contains(&singleton.name))
+            .map(|singleton| {
+                schema_index
+                    .find_child_entity_type((&singleton.stype).into())
+                    .map(|(qname, _)| qname)
             })
             .chain(self.root_docs.iter().flat_map(|edmx| {
                 edmx.data_services

@@ -1,0 +1,19 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
+  <edmx:DataServices>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="ExampleOem">
+      <ComplexType Name="AdapterInfo">
+        <Property Name="Model" Type="Edm.String"/>
+      </ComplexType>
+      <Action Name="Reset" IsBound="true">
+        <Parameter Name="ServiceRoot" Type="ServiceRoot.v1_0_0.OemActions"/>
+      </Action>
+      <Action Name="Skip" IsBound="true">
+        <Parameter Name="ServiceRoot" Type="ServiceRoot.v1_0_0.OemActions"/>
+      </Action>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

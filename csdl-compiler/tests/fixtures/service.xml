@@ -1,0 +1,34 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
+  <edmx:DataServices>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Resource">
+      <EntityType Name="Resource" Abstract="true"/>
+      <EntityType Name="ResourceCollection" Abstract="true"/>
+    </Schema>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="ServiceRoot.v1_0_0">
+      <EntityType Name="ServiceRoot" BaseType="Resource.Resource">
+        <Property Name="RedfishVersion" Type="Edm.String"/>
+      </EntityType>
+      <EntityType Name="AdditionalRoot" BaseType="Resource.Resource"/>
+      <ComplexType Name="OemActions"/>
+      <EntityContainer Name="ServiceContainer">
+        <Singleton Name="Service" Type="ServiceRoot.v1_0_0.ServiceRoot"/>
+      </EntityContainer>
+    </Schema>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="RedfishExtensions.v1_0_0">
+      <Term Name="Settings" Type="Settings.Settings"/>
+      <Term Name="SettingsApplyTime" Type="Settings.PreferredApplyTime"/>
+      <Term Name="OperationApplyTime" Type="Settings.OperationApplyTime"/>
+    </Schema>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Settings">
+      <ComplexType Name="Settings"/>
+      <ComplexType Name="PreferredApplyTime"/>
+      <EnumType Name="OperationApplyTime">
+        <Member Name="OnReset"/>
+      </EnumType>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
