@@ -107,6 +107,9 @@ nv-redfish-csdl-compiler compile \
 ```
 
 `--root` defaults to `Service`, and `--output` defaults to `redfish.rs`.
+An unknown root singleton causes compilation to fail before writing the output
+file.
+
 Repeat `--include-root-pattern` to select additional entity roots even when
 they are not reachable from the singleton. Repeat `--pattern` to allow
 navigation targets: for example, `SomeNamespace.*.Entity1|Entity2` selects two
@@ -128,6 +131,10 @@ All data types in the OEM root documents are selected. OEM actions must be
 selected explicitly with `--action-pattern`; none are included by default.
 The OEM command also supports `--pattern` and `--rigid-arrays`.
 Use `compile --help` or `compile-oem --help` for all options.
+
+Both subcommands write generated Rust to `--output` and print the output path
+once to stdout after writing the file. When redirecting stdout, use a separate
+destination from the generated Rust file.
 
 ## Lower-level library APIs
 
